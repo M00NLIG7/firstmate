@@ -297,7 +297,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   id="brief-direct-authority-a4"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
-  assert_grep "The configured merge authority decides whether to merge the PR; firstmate relays the outcome." "$brief" \
+  assert_grep "The configured merge authority decides whether to merge the PR or MR; firstmate relays the outcome." "$brief" \
     "direct-PR brief lost configured merge authority"
   assert_no_grep "The captain reviews and merges the PR" "$brief" \
     "direct-PR brief hard-coded captain-only authority"
@@ -317,6 +317,52 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the no-mistakes --intent contract"
   pass "fm-brief.sh: faster paths use configured authority without stacked review"
+}
+
+# Every ordinary worker scaffold must carry the same bounded forge selection,
+# while direct delivery and green completion use the forge's own review noun.
+# shellcheck disable=SC2016 # Backtick-wrapped tool names are literal generated prose.
+test_forge_axi_guidance_is_bounded_and_delivery_aware() {
+  local home id mode brief id_mode
+  home="$TMP_ROOT/forge-axi-home"
+  mkdir -p "$home/data"
+
+  for id_mode in "brief-forge-direct:direct-PR" "brief-forge-nm:no-mistakes" "brief-forge-local:local-only"; do
+    id=${id_mode%%:*}
+    mode=${id_mode##*:}
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "$mode brief did not scaffold"
+    brief="$home/data/$id/brief.md"
+    assert_grep 'Use `gh-axi` for GitHub operations and `glab-axi` only for GitLab authentication status/import, merge-request ensure/view, and CI status/jobs/trace operations' "$brief" \
+      "$mode brief did not select the forge-appropriate AXI within the native GitLab allowlist"
+    assert_grep '`glab-axi` does not support merge, approve, close, comment, repository creation, pipeline mutation, generic API access, browser login, or arbitrary writes.' "$brief" \
+      "$mode brief blurred the native GitLab capability boundary"
+    assert_grep 'If a required GitLab operation is outside that allowlist or `glab-axi` is unavailable, append `blocked: {what is missing}` and stop for firstmate instead of using `glab` or another unsupported path.' "$brief" \
+      "$mode brief did not stop and escalate an unsupported or unavailable GitLab operation"
+    assert_grep 'consult current help rather than memorizing flags' "$brief" \
+      "$mode brief did not defer command syntax to current help"
+  done
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-forge-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "scout brief did not scaffold"
+  brief="$home/data/brief-forge-scout/brief.md"
+  assert_grep 'Use `gh-axi` for GitHub operations and `glab-axi` only for GitLab authentication status/import, merge-request ensure/view, and CI status/jobs/trace operations' "$brief" \
+    "scout brief did not carry forge-appropriate AXI selection"
+  assert_grep 'instead of using `glab` or another unsupported path' "$brief" \
+    "scout brief did not reject an unsupported GitLab fallback"
+
+  brief="$home/data/brief-forge-direct/brief.md"
+  assert_grep 'use `gh-axi` for a GitHub PR or `glab-axi mr ensure` for a GitLab MR' "$brief" \
+    "direct-PR delivery did not use the supported forge-specific creation operation"
+  assert_grep 'append `done: PR {url}` for GitHub or `done: MR {url}` for GitLab' "$brief" \
+    "direct-PR delivery did not report the forge-appropriate review-request noun"
+  assert_no_grep 'open a PR with `gh-axi`' "$brief" \
+    "direct-PR delivery retained the GitHub-only creation instruction"
+
+  brief="$home/data/brief-forge-nm/brief.md"
+  assert_grep 'append `done: PR {url} checks green` for GitHub or `done: MR {url} checks green` for GitLab' "$brief" \
+    "no-mistakes delivery did not report the forge-appropriate green result"
+  pass "fm-brief.sh: worker guidance bounds glab-axi and uses forge-aware delivery language"
 }
 
 # Pin the specific line the bug lived on: the no-mistakes DOD's no-mistakes
@@ -718,6 +764,7 @@ test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
+test_forge_axi_guidance_is_bounded_and_delivery_aware
 test_no_mistakes_dod_wording
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete

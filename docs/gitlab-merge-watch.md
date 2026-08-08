@@ -2,6 +2,7 @@
 
 Empirical record for the merge watch on GitLab, alongside the existing GitHub watch.
 Every command below was run on 2026-07-21 and its output is reproduced exactly.
+This record covers the merge watch's narrow internal integration with upstream `glab`, not worker tool selection; `AGENTS.md` and generated briefs route supported GitLab authentication, MR, and CI work to native `glab-axi` and stop when an operation is outside its allowlist.
 
 ## Versions
 
