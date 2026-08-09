@@ -756,10 +756,10 @@ test_composer_state_borderless_claude_nbsp_prompt_is_empty() {
   cmux_panes_response "$dir" 1 "bbbbbbbb-1111-1111-1111-111111111111"
   cmux_read_screen_response "$dir" 2 $'────────────────────────\n❯\302\240\n────────────────────────\nHaiku 4.5'
   fb=$(make_cmux_fakebin "$dir")
-  out=$( PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+  out=$( LC_ALL=C PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_composer_state "aaaaaaaa-0000-0000-0000-000000000000:bbbbbbbb-1111-1111-1111-111111111111"' "$ROOT" )
-  [ "$out" = empty ] || fail "a borderless Claude '❯'+NBSP row bounded by horizontal rules should read empty, got '$out'"
-  pass "fm_backend_cmux_composer_state: a borderless Claude '❯'+NBSP composer row reads empty"
+  [ "$out" = empty ] || fail "a borderless Claude '❯'+NBSP row bounded by horizontal rules should read empty under LC_ALL=C, got '$out'"
+  pass "fm_backend_cmux_composer_state: a borderless Claude '❯'+NBSP composer row reads empty under LC_ALL=C"
 }
 
 test_composer_state_borderless_claude_text_is_pending() {

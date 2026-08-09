@@ -578,6 +578,9 @@ fm_backend_cmux_composer_state() {  # <target> [expected-label] -> empty|pending
   if [ "$bare_index" -gt "$bordered_index" ]; then
     # cmux has no cursor-position primitive. The horizontal-rule container plus
     # an agent-only prompt glyph is the structural proof for this bare row.
+    case "$bare" in
+      $'❯\302\240') bare="" ;;
+    esac
     fm_composer_classify_content 0 "$bare" "$FM_BACKEND_CMUX_IDLE_RE"
     return 0
   fi
