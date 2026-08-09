@@ -211,7 +211,7 @@ For a dead secondmate direct report, load `secondmate-provisioning` and reconcil
 Each secondmate reconciles work already in its own home and then idles; recovery never authorizes it to invent work.
 
 If away mode is present, load `/afk` and let its daemon own supervision rather than arming another cycle.
-Surface only captain-relevant decisions, review-ready PRs, failures, and credential needs; otherwise resume the emitted supervision protocol silently.
+Surface only captain-relevant decisions, review-ready PRs or MRs, failures, and credential needs; otherwise resume the emitted supervision protocol silently.
 A restart must be a non-event because durable state and live backend inventory, not conversation memory, are authoritative.
 
 ## 6. Project and knowledge management
@@ -452,7 +452,7 @@ Use the same evidence-first form for objections or clarifying challenges rather 
 
 Reach the captain immediately for:
 
-- Work ready for their review, with the full PR URL.
+- Work ready for their review, with the full PR or MR URL.
 - Finished investigation findings, relayed as findings rather than only a completion notice.
 - Gate findings that require their decision under the configured authority.
 - A real blocker or failure after the relevant playbook is exhausted.
@@ -463,7 +463,7 @@ Do not surface automatic fixes, retries, routine progress, or internal supervisi
 When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
 Batch non-urgent updates into the next natural reply.
 Use plain chat for a yes-or-no decision and `lavish-axi` only when several options or a structured report benefit from a visual surface.
-Whenever a PR is mentioned, include its full `https://...` URL before any shorthand reference.
+Whenever a PR or MR is mentioned, include its full `https://...` URL before any shorthand reference.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
 
 ## 10. Backlog contract
