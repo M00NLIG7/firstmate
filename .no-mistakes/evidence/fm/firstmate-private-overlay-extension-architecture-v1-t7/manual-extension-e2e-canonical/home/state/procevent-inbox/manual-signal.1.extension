@@ -1,0 +1,6 @@
+schema=fm-procevent-extension-owner.v1
+extension_id=org.firstmate.example.file-signal
+extension_version=1.0.0
+capability_version=1
+package_digest=sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+binding_digest=sha256:e625df011f6ae64af49c9cdb87ab9e3d97f6b0704e1f88b5b4ae818609a629e2

@@ -1,0 +1,86 @@
+Firstmate trusted external process-event adapter: fresh-home operator flow
+=======================================================================
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh list
+no extension bindings
+OBSERVED: absent registry remained absent after discovery.
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh bind <external-package> --adapter file-signal --trust-same-user-code --consent artifact-references
+bound: org.firstmate.example.file-signal@1.0.0
+binding: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/home/config/extensions.d/org.firstmate.example.file-signal.json
+binding-digest: sha256:e625df011f6ae64af49c9cdb87ab9e3d97f6b0704e1f88b5b4ae818609a629e2
+package: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/home/data/extensions/packages/org.firstmate.example.file-signal/1.0.0/a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+package-digest: sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+verified: process-event-adapter/1 (file-signal)
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh list
+EXTENSION VERSION CAPABILITY ADAPTERS PACKAGE_DIGEST
+org.firstmate.example.file-signal 1.0.0 process-event-adapter/1 file-signal sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh inspect org.firstmate.example.file-signal
+{
+  "capabilities": [
+    {
+      "adapter_names": [
+        "file-signal"
+      ],
+      "name": "process-event-adapter",
+      "version": 1
+    }
+  ],
+  "consents": {
+    "artifact_references": true,
+    "credential_store": false,
+    "network": false,
+    "task_metadata": false,
+    "trusted_same_user_code": true
+  },
+  "entrypoint": "file-signal.mjs",
+  "entrypoint_sha256": "sha256:fa90eeea9f90e84afe07cd44797216fdd6196c0aefd9f0d3add25f2354eff82a",
+  "extension_id": "org.firstmate.example.file-signal",
+  "extension_version": "1.0.0",
+  "host_protocol": 1,
+  "manifest_sha256": "sha256:bc8f76ad0cb19e6d9e492eb3cab4c983938f57f40ea75def895d184274f7e32c",
+  "package_digest": "sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76",
+  "package_root": "/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/home/data/extensions/packages/org.firstmate.example.file-signal/1.0.0/a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76",
+  "schema": "firstmate.extension-binding.v1",
+  "source": {
+    "kind": "local-directory",
+    "path": "/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/package/file-signal"
+  },
+  "timeout_ms": 300000
+}
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh verify org.firstmate.example.file-signal
+verified: org.firstmate.example.file-signal@1.0.0 sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh register-extension file-signal manual-signal --config-ref file:<absolute-result-path>
+registered: manual-signal (file-signal from org.firstmate.example.file-signal@1.0.0)
+owner-token: sha256:cc3b1af2a0af58a41bd53288d3c8522ebd423b2788b1a39c8bfec094f79a5958
+retire: bin/fm-procevent.sh retire manual-signal --if-owner sha256:cc3b1af2a0af58a41bd53288d3c8522ebd423b2788b1a39c8bfec094f79a5958
+
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh start manual-signal  # supervised runner
+retired: manual-signal (adapter classified the captured result terminal)
+not-autohandled: manual-signal (left for the handler; still unacknowledged)
+captured: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/home/state/procevent-inbox/manual-signal.1.result
+
+OBSERVED captured result (state/procevent-inbox/manual-signal.1.result):
+build 108 completed successfully
+
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh classify <captured-result>
+file-signal
+
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh list
+no sources registered
+
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh handled manual-signal 1
+handled: manual-signal 1
+$ FM_HOME=<fresh-home> bin/fm-procevent.sh retire manual-signal --if-owner <owner-token>
+retired: manual-signal
+$ FM_HOME=<fresh-home> bin/fm-extension.sh retire-binding org.firstmate.example.file-signal --if-binding-digest <binding-digest>
+retired-binding: org.firstmate.example.file-signal sha256:e625df011f6ae64af49c9cdb87ab9e3d97f6b0704e1f88b5b4ae818609a629e2
+retained-at: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M128D0HQD1H14TY216SB4VP2/manual-extension-e2e-canonical/home/data/extensions/retired-bindings/org.firstmate.example.file-signal/e625df011f6ae64af49c9cdb87ab9e3d97f6b0704e1f88b5b4ae818609a629e2.json
+
+$ FM_HOME=<fresh-home> bin/fm-extension.sh list
+no extension bindings
+OBSERVED: exact binding retired; discovery is disabled while retained package bytes remain inspectable.
