@@ -277,6 +277,7 @@ run_owner_check() {
     mkdir -p "$home/data/extensions/staging"
     chmod 0700 "$home/data" "$home/data/extensions" "$home/data/extensions/staging"
     chown "$foreign_uid" "$home/data/extensions/staging"
+    # shellcheck disable=SC2016 # Positional parameters expand in the child shell.
     expect_failure "not owned by the active user" sh -c \
       'FM_HOME="$1" "$2" receive-transfer-bind --adapter ext-owner --trust-same-user-code < "$3"' \
       sh "$home" "$HOST" "$transfer"
@@ -970,10 +971,10 @@ for transfer_case in traversal symlink hash size duplicate unexpected; do
   mutate_transfer "$transfer_case" "$bad_transfer"
   case "$transfer_case" in
     traversal) transfer_error=path-unsafe ;;
-    symlink) transfer_error=package-invalid ;;
+    symlink) transfer_error="package-invalid" ;;
     hash) transfer_error=integrity-mismatch ;;
     size|duplicate) transfer_error=schema-invalid ;;
-    unexpected) transfer_error=package-invalid ;;
+    unexpected) transfer_error="package-invalid" ;;
   esac
   expect_failure "$transfer_error" remote_receive_file "$bad_transfer" ext-remote
 done
