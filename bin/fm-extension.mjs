@@ -887,24 +887,6 @@ function readProcessTable(invocationMarker = "") {
   return table;
 }
 
-function processWorkingDirectory(pid) {
-  if (process.platform === "linux") {
-    try { return realpathSync(`/proc/${pid}/cwd`); } catch { return ""; }
-  }
-  if (process.platform === "darwin") {
-    const result = spawnSync("/usr/sbin/lsof", ["-a", "-d", "cwd", "-p", String(pid), "-Fn"], {
-      encoding: "utf8",
-      env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
-      maxBuffer: 64 * 1024,
-      timeout: 1000,
-    });
-    if (result.status !== 0 || result.error) return "";
-    const name = result.stdout.split("\n").find((line) => line.startsWith("n"));
-    return name ? name.slice(1) : "";
-  }
-  return "";
-}
-
 function processExecutable(pid) {
   if (process.platform === "linux") {
     try { return realpathSync(`/proc/${pid}/exe`); } catch { return ""; }
@@ -935,16 +917,7 @@ function refreshProcessTracker(tracker) {
     changed = false;
     for (const [pid, entry] of table) {
       const alreadyTracked = tracker.descendants.get(pid) === entry.identity;
-      const untrackedInvocationProcess = pid !== tracker.rootPid && !alreadyTracked && !entry.invocation
-        && !parents.has(entry.ppid) && tracker.baseline.get(pid) !== entry.identity;
-      const reparentedInvocationProcess = untrackedInvocationProcess && entry.ppid === 1;
-      const sameUserInvocationOrphan = reparentedInvocationProcess
-        && entry.uid === tracker.uid && entry.startedAt >= tracker.startedAt - 1000;
-      const detachedChild = untrackedInvocationProcess
-        && (processWorkingDirectory(pid) === tracker.packageRoot
-          || (reparentedInvocationProcess && processExecutable(pid) === tracker.rootExecutable)
-          || sameUserInvocationOrphan);
-      if (pid !== tracker.rootPid && (entry.invocation || parents.has(entry.ppid) || detachedChild) && !alreadyTracked) {
+      if (pid !== tracker.rootPid && (entry.invocation || parents.has(entry.ppid)) && !alreadyTracked) {
         tracker.descendants.set(pid, entry.identity);
         parents.add(pid);
         changed = true;
@@ -954,16 +927,11 @@ function refreshProcessTracker(tracker) {
   tracker.table = table;
 }
 
-function startProcessTracker(packageRoot, invocationMarker) {
+function startProcessTracker(invocationMarker) {
   const table = readProcessTable();
   return {
     rootPid: 0,
-    uid: currentUid(),
-    startedAt: Date.now(),
-    packageRoot,
     invocationMarker,
-    rootExecutable: "",
-    baseline: new Map([...table].map(([pid, entry]) => [pid, entry.identity])),
     descendants: new Map(),
     table,
     timer: null,
@@ -973,8 +941,7 @@ function startProcessTracker(packageRoot, invocationMarker) {
 
 function armProcessTracker(tracker, child, onError) {
   tracker.rootPid = child.pid;
-  tracker.rootExecutable = processExecutable(child.pid);
-  if (!tracker.rootExecutable) {
+  if (!processExecutable(child.pid)) {
     tracker.error = new HostError("process-tracking-unavailable", "cannot inspect the extension executable identity");
     onError();
     return;
@@ -1064,7 +1031,7 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
 
   let child;
   const invocationMarker = randomBytes(32).toString("hex");
-  const processTracker = startProcessTracker(packageInfo.root, invocationMarker);
+  const processTracker = startProcessTracker(invocationMarker);
   try {
     child = spawn(packageInfo.entrypoint, [verb], {
       cwd: packageInfo.root,
