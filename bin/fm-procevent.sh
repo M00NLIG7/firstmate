@@ -1235,14 +1235,17 @@ cmd_binding_retirement_preflight() {
 }
 
 cmd_extension_retirement() {
-  local mode=${1-} status=0
+  local mode=${1-} owner
   [ "$#" -ge 1 ] || die "extension-retirement requires a retirement mode"
   shift
   case "$mode" in binding|transfer) ;; *) die "unsupported extension retirement mode: $mode" ;; esac
   extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
-  "$EXTENSION_HOST" "retire-$mode-locked" "$@" || status=$?
-  extension_lifecycle_lock_release
-  return "$status"
+  owner=${FM_LOCK_OWNER_DIR:-}
+  [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
+  export FM_EXTENSION_RETIREMENT_MODE="$mode"
+  export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
+  export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
+  exec "$EXTENSION_HOST" "$@"
 }
 
 case "${1-}" in
