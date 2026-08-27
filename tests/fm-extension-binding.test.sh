@@ -187,7 +187,7 @@ else if (mode === "control") {
 } else if (mode === "timeout") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
     detached: true,
     env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
@@ -198,7 +198,7 @@ else if (mode === "control") {
 } else if (mode === "leak") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
     detached: true,
     stdio: "ignore",
   });
@@ -208,7 +208,7 @@ else if (mode === "control") {
 } else if (mode === "rapid-reparent") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
     detached: true,
     env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
