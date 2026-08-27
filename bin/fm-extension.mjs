@@ -45,7 +45,7 @@
 // receive one bounded UTF-8 JSON document on stdin, and must return exactly one
 // bounded UTF-8 JSON document on stdout. Extension stderr is bounded and never
 // copied into authoritative records. Timeout, malformed output, nonzero exit,
-// or a surviving process group is rejected after TERM/KILL cleanup.
+// or a surviving tracked process tree is rejected after TERM/KILL cleanup.
 //
 // This is a trust and integrity boundary, not an operating-system sandbox.
 // Enabled packages are trusted same-user code and retain that user's OS access.
@@ -53,7 +53,7 @@
 // merge, decision, destination, force, discard, cleanup, credential-use, task
 // mutation, or stronger-operation capability.
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { constants as fsConstants } from "node:fs";
 import {
   chmod,
@@ -851,8 +851,79 @@ function childEnvironment(binding, statePath = "") {
 }
 
 let activeChild = null;
+let activeProcessTracker = null;
 let terminatingForSignal = false;
 let activeLifecycleLock = null;
+
+function readProcessTable() {
+  if (process.platform === "win32") return new Map();
+  const result = spawnSync("/bin/ps", ["-A", "-o", "pid=,ppid=,state=,lstart="], {
+    encoding: "utf8",
+    env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
+    maxBuffer: 4 * 1024 * 1024,
+    timeout: 1000,
+  });
+  if (result.status !== 0 || result.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
+  const table = new Map();
+  for (const line of result.stdout.split("\n")) {
+    const match = /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+(.+?)\s*$/.exec(line);
+    if (!match) continue;
+    const [, pid, ppid, state, started] = match;
+    table.set(Number(pid), {
+      ppid: Number(ppid),
+      state,
+      identity: `${pid}:${started}`,
+    });
+  }
+  return table;
+}
+
+function refreshProcessTracker(tracker) {
+  if (!tracker || process.platform === "win32") return;
+  const table = readProcessTable();
+  const parents = new Set([tracker.rootPid]);
+  for (const [pid, identity] of tracker.descendants) {
+    if (table.get(pid)?.identity === identity) parents.add(pid);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, entry] of table) {
+      if (pid !== tracker.rootPid && parents.has(entry.ppid) && tracker.descendants.get(pid) !== entry.identity) {
+        tracker.descendants.set(pid, entry.identity);
+        parents.add(pid);
+        changed = true;
+      }
+    }
+  }
+  tracker.table = table;
+}
+
+function startProcessTracker(child) {
+  const tracker = { rootPid: child.pid, descendants: new Map(), table: new Map(), timer: null, error: null };
+  refreshProcessTracker(tracker);
+  tracker.timer = setInterval(() => {
+    try { refreshProcessTracker(tracker); } catch (error) { tracker.error = error; }
+  }, 20);
+  return tracker;
+}
+
+function stopProcessTracker(tracker) {
+  if (!tracker) return;
+  if (tracker.timer) clearInterval(tracker.timer);
+  refreshProcessTracker(tracker);
+}
+
+function trackedDescendantsAlive(tracker) {
+  if (!tracker || process.platform === "win32") return false;
+  if (tracker.error) throw tracker.error;
+  refreshProcessTracker(tracker);
+  for (const [pid, identity] of tracker.descendants) {
+    const entry = tracker.table.get(pid);
+    if (entry?.identity === identity && !entry.state.startsWith("Z")) return true;
+  }
+  return false;
+}
 
 function groupAlive(pid) {
   if (!pid || process.platform === "win32") return false;
@@ -864,27 +935,34 @@ function groupAlive(pid) {
   }
 }
 
-function signalGroup(child, signal) {
+function signalProcessTree(child, tracker, signal) {
   if (!child || !child.pid) return;
   try {
     if (process.platform === "win32") child.kill(signal);
     else process.kill(-child.pid, signal);
   } catch {}
+  if (!tracker || process.platform === "win32") return;
+  try { refreshProcessTracker(tracker); } catch (error) { tracker.error = error; }
+  for (const [pid, identity] of tracker.descendants) {
+    const entry = tracker.table.get(pid);
+    if (entry?.identity !== identity || entry.state.startsWith("Z")) continue;
+    try { process.kill(pid, signal); } catch {}
+  }
 }
 
 async function sleep(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function cleanupGroup(child) {
-  if (!child || !child.pid || !groupAlive(child.pid)) return;
-  signalGroup(child, "SIGTERM");
+async function cleanupProcessTree(child, tracker) {
+  if (!child || !child.pid || (!groupAlive(child.pid) && !trackedDescendantsAlive(tracker))) return;
+  signalProcessTree(child, tracker, "SIGTERM");
   const termUntil = Date.now() + TERMINATE_GRACE_MS;
-  while (Date.now() < termUntil && groupAlive(child.pid)) await sleep(20);
-  if (groupAlive(child.pid)) signalGroup(child, "SIGKILL");
+  while (Date.now() < termUntil && (groupAlive(child.pid) || trackedDescendantsAlive(tracker))) await sleep(20);
+  if (groupAlive(child.pid) || trackedDescendantsAlive(tracker)) signalProcessTree(child, tracker, "SIGKILL");
   const killUntil = Date.now() + CLEANUP_WAIT_MS;
-  while (Date.now() < killUntil && groupAlive(child.pid)) await sleep(20);
-  if (groupAlive(child.pid)) fail("process-cleanup-failed", "extension process group survived TERM and KILL");
+  while (Date.now() < killUntil && (groupAlive(child.pid) || trackedDescendantsAlive(tracker))) await sleep(20);
+  if (groupAlive(child.pid) || trackedDescendantsAlive(tracker)) fail("process-cleanup-failed", "extension process tree survived TERM and KILL");
 }
 
 async function runExtensionProcess(packageInfo, binding, verb, request, timeoutMs, statePath = "") {
@@ -896,6 +974,7 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   }
 
   let child;
+  if (process.platform !== "win32") readProcessTable();
   try {
     child = spawn(packageInfo.entrypoint, [verb], {
       cwd: packageInfo.root,
@@ -908,6 +987,8 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     fail("entrypoint-missing", "bound extension entrypoint could not be started");
   }
   activeChild = child;
+  const processTracker = startProcessTracker(child);
+  activeProcessTracker = processTracker;
   let stdoutBytes = 0;
   let stderrBytes = 0;
   const stdout = [];
@@ -919,8 +1000,8 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     if (forcedCode) return;
     forcedCode = code;
     forcedMessage = message;
-    signalGroup(child, "SIGTERM");
-    killTimer = setTimeout(() => signalGroup(child, "SIGKILL"), TERMINATE_GRACE_MS);
+    signalProcessTree(child, processTracker, "SIGTERM");
+    killTimer = setTimeout(() => signalProcessTree(child, processTracker, "SIGKILL"), TERMINATE_GRACE_MS);
   };
 
   const completion = new Promise((resolve, reject) => {
@@ -950,17 +1031,24 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   } catch (error) {
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    await cleanupGroup(child).catch(() => {});
+    await cleanupProcessTree(child, processTracker).catch(() => {});
+    stopProcessTracker(processTracker);
     activeChild = null;
+    activeProcessTracker = null;
     throw error;
   }
   clearTimeout(timeout);
   if (killTimer) clearTimeout(killTimer);
-  const leakedProcessGroup = !forcedCode && groupAlive(child.pid);
-  if (forcedCode || leakedProcessGroup) await cleanupGroup(child);
+  const leakedProcessTree = !forcedCode && (groupAlive(child.pid) || trackedDescendantsAlive(processTracker));
+  try {
+    if (forcedCode || leakedProcessTree) await cleanupProcessTree(child, processTracker);
+  } finally {
+    stopProcessTracker(processTracker);
+  }
   activeChild = null;
+  activeProcessTracker = null;
   if (forcedCode) fail(forcedCode, forcedMessage);
-  if (leakedProcessGroup) fail("process-leak", `extension ${verb} left a background process group`);
+  if (leakedProcessTree) fail("process-leak", `extension ${verb} left a background process tree`);
   if (outcome.signal || outcome.code !== 0) fail("process-failed", `extension ${verb} exited nonzero`);
   return parseStrictJson(Buffer.concat(stdout), `extension ${verb} response`);
 }
@@ -969,9 +1057,9 @@ async function handleSignal(signal) {
   if (terminatingForSignal) return;
   terminatingForSignal = true;
   if (activeChild) {
-    signalGroup(activeChild, "SIGTERM");
+    signalProcessTree(activeChild, activeProcessTracker, "SIGTERM");
     await sleep(TERMINATE_GRACE_MS);
-    signalGroup(activeChild, "SIGKILL");
+    signalProcessTree(activeChild, activeProcessTracker, "SIGKILL");
   }
   process.exit(signal === "SIGTERM" ? 143 : 130);
 }
