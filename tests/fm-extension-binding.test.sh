@@ -26,6 +26,7 @@ signal_worker_pid=
 active_runner_pid=
 active_runner_release=
 remote_active_release=
+unrelated_daemon_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
@@ -41,6 +42,7 @@ extension_test_cleanup() {
   [ -z "$active_runner_release" ] || touch "$active_runner_release" 2>/dev/null || true
   [ -z "$active_runner_pid" ] || kill -TERM "$active_runner_pid" 2>/dev/null || true
   [ -z "$remote_active_release" ] || touch "$remote_active_release" 2>/dev/null || true
+  [ -z "$unrelated_daemon_pid" ] || kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
   fi
@@ -215,18 +217,14 @@ else if (mode === "control") {
   });
   writeFileSync(path.join(state, "rapid-reparent.pid"), `${child.pid}\n`);
   raw(success({ status: "result", output: "must not be accepted\n" }));
-} else if (mode === "identity-evasion") {
+} else if (mode === "overlap") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
-  const child = spawn("/bin/sh", ["-c", "cd /; trap '' TERM; while :; do sleep 1; done"], {
-    detached: true,
-    env: { LANG: "C", LC_ALL: "C", PATH: "/usr/bin:/bin" },
-    stdio: "ignore",
-  });
-  child.unref();
-  writeFileSync(path.join(state, "identity-evasion.pid"), `${child.pid}\n`);
-  raw(success({ status: "result", output: "must not be accepted\n" }));
-  process.exit(0);
+  writeFileSync(path.join(state, "overlap-ready"), "ready\n");
+  while (!existsSync(path.join(state, "overlap-release"))) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  raw(success({ status: "result", output: "overlap complete\n" }));
 } else if (mode === "replay" || mode === "replay-no-result") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
@@ -577,7 +575,7 @@ assert_contains "$literal_out" "$literal_ref" "configuration reference was re-sp
 assert_absent "$shell_sentinel" "configuration reference unexpectedly executed through a shell"
 pass "source configuration references cross one JSON envelope with no shell interpretation"
 
-for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent identity-evasion error-injection authority; do
+for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent error-injection authority; do
   rc=0
   out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "invalid extension response was accepted: $scenario"
@@ -597,19 +595,40 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$rapid_pid" 2>/dev/null && fail "a rapidly reparented descendant escaped cleanup"
-evasion_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/identity-evasion.pid")
-for _ in $(seq 1 50); do
-  kill -0 "$evasion_pid" 2>/dev/null || break
-  sleep 0.05
-done
-kill -0 "$evasion_pid" 2>/dev/null && fail "a marker-free, changed-cwd, different-executable descendant escaped cleanup"
-pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, identity-evasion, and authority responses are rejected"
+pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, and authority responses are rejected"
+
+state_root="$H_MATRIX/state/extensions/org.example.matrix"
+overlap_out="$TMP_ROOT/overlap.out"
+invoke_matrix overlap >"$overlap_out" &
+overlap_invoke_pid=$!
+wait_for_file "$state_root/overlap-ready" || fail "overlap fixture never entered its invocation window"
+unrelated_pid_file="$TMP_ROOT/unrelated-daemon.pid"
+node - "$unrelated_pid_file" <<'NODE'
+const { spawn } = require("node:child_process");
+const { writeFileSync } = require("node:fs");
+const child = spawn("/bin/sh", ["-c", "trap '' TERM; while :; do sleep 1; done"], {
+  cwd: "/",
+  detached: true,
+  env: { LANG: "C", LC_ALL: "C", PATH: "/usr/bin:/bin" },
+  stdio: "ignore",
+});
+writeFileSync(process.argv[2], `${child.pid}\n`);
+child.unref();
+NODE
+unrelated_daemon_pid=$(cat "$unrelated_pid_file")
+sleep 0.1
+touch "$state_root/overlap-release"
+wait "$overlap_invoke_pid" || fail "an unrelated daemon made a valid extension invocation fail"
+assert_contains "$(cat "$overlap_out")" "overlap complete" "overlap fixture did not return its valid result"
+kill -0 "$unrelated_daemon_pid" 2>/dev/null || fail "extension cleanup terminated an unrelated same-user daemon"
+kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
+unrelated_daemon_pid=
+pass "process cleanup never adopts an unrelated same-user orphan"
 
 fixed_request="sha256:$(printf '1%.0s' $(seq 1 64))"
 out_one=$(invoke_matrix replay "$fixed_request")
 out_two=$(invoke_matrix replay "$fixed_request")
 [ "$out_one" = "$out_two" ] || fail "replaying one exact request identity changed its result"
-state_root="$H_MATRIX/state/extensions/org.example.matrix"
 [ "$(cat "$state_root/side-effect-count")" = 1 ] || fail "the reference adapter applied one replay identity more than once"
 pass "an exact request id is matched and supports idempotent replay"
 
