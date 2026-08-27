@@ -188,6 +188,7 @@ else if (mode === "control") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+    detached: true,
     stdio: "ignore",
   });
   writeFileSync(path.join(state, "descendant.pid"), `${child.pid}\n`);
@@ -197,9 +198,11 @@ else if (mode === "control") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+    detached: true,
     stdio: "ignore",
   });
   writeFileSync(path.join(state, "leaked.pid"), `${child.pid}\n`);
+  await new Promise((resolve) => setTimeout(resolve, 100));
   raw(success({ status: "result", output: "must not be accepted\n" }));
 } else if (mode === "replay" || mode === "replay-no-result") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
@@ -601,7 +604,7 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$descendant" 2>/dev/null && fail "timed-out extension left its descendant alive"
-pass "timeout escalates through process-group cleanup and reaps descendants"
+pass "timeout escalates through process-tree cleanup and reaps detached descendants"
 
 # A missing installed executable is actionable evidence, never fallback to a
 # similarly named command or another adapter.
