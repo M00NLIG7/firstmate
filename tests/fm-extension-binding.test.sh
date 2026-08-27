@@ -189,6 +189,7 @@ else if (mode === "control") {
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
     detached: true,
+    env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
   });
   writeFileSync(path.join(state, "descendant.pid"), `${child.pid}\n`);
@@ -209,6 +210,7 @@ else if (mode === "control") {
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
     detached: true,
+    env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
   });
   writeFileSync(path.join(state, "rapid-reparent.pid"), `${child.pid}\n`);
