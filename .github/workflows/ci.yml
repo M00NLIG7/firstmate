@@ -50,8 +50,9 @@ jobs:
       - name: Require foreign-owner rejection
         run: |
           set -eu
-          sudo env "PATH=$PATH" FM_TEST_OWNER_ONLY=1 FM_TEST_REQUIRE_FOREIGN_OWNER=1 \
-            bin/fm-test-run.sh tests/fm-extension-binding.test.sh
+          unshare --user --map-auto --setgroups=deny \
+            env "PATH=$PATH" FM_TEST_OWNER_ONLY=1 FM_TEST_REQUIRE_FOREIGN_OWNER=1 \
+              bin/fm-test-run.sh tests/fm-extension-binding.test.sh
 
   # Two duration-balanced portable parallel shards of the Phase 2 proven-isolated
   # set only. Composition owner: bin/fm-test-run.sh (docs/fm-test-portable-shards.md).
