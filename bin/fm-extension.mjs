@@ -924,6 +924,23 @@ function refreshProcessTracker(tracker) {
       }
     }
   }
+  const unrelatedParents = new Set();
+  for (const [pid, identity] of tracker.baseline) {
+    if (pid !== 1 && table.get(pid)?.identity === identity) unrelatedParents.add(pid);
+  }
+  for (const [pid, identity] of tracker.unrelated) {
+    if (table.get(pid)?.identity === identity) unrelatedParents.add(pid);
+  }
+  changed = true;
+  while (changed) {
+    changed = false;
+    for (const [pid, entry] of table) {
+      if (pid === tracker.rootPid || parents.has(pid) || unrelatedParents.has(pid) || !unrelatedParents.has(entry.ppid)) continue;
+      tracker.unrelated.set(pid, entry.identity);
+      unrelatedParents.add(pid);
+      changed = true;
+    }
+  }
   tracker.table = table;
 }
 
@@ -931,12 +948,72 @@ function startProcessTracker(invocationMarker) {
   const table = readProcessTable();
   return {
     rootPid: 0,
+    uid: currentUid(),
+    startedAt: Date.now(),
     invocationMarker,
+    baseline: new Map([...table].map(([pid, entry]) => [pid, entry.identity])),
     descendants: new Map(),
+    unrelated: new Map(),
     table,
     timer: null,
     error: null,
   };
+}
+
+function ambiguousInvocationOrphans(tracker) {
+  if (!tracker || process.platform === "win32") return [];
+  if (!tracker.error) refreshProcessTracker(tracker);
+  const candidates = [];
+  for (const [pid, entry] of tracker.table) {
+    if (pid === tracker.rootPid || entry.ppid !== 1 || entry.uid !== tracker.uid || entry.state.startsWith("Z")) continue;
+    if (entry.startedAt < tracker.startedAt - 1000 || tracker.baseline.get(pid) === entry.identity) continue;
+    if (tracker.descendants.get(pid) === entry.identity) continue;
+    if (tracker.unrelated.get(pid) === entry.identity) continue;
+    candidates.push({ pid, identity: entry.identity });
+  }
+  return candidates;
+}
+
+function processQuarantinePath(statePath) {
+  return statePath ? path.join(statePath, ".firstmate-process-quarantine.json") : "";
+}
+
+async function refuseActiveProcessQuarantine(statePath) {
+  const quarantinePath = processQuarantinePath(statePath);
+  if (!quarantinePath) return;
+  const info = await maybeLstat(quarantinePath);
+  if (!info) return;
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== currentUid() || (info.mode & 0o077) !== 0) {
+    fail("process-quarantine-invalid", "extension process quarantine state is unsafe");
+  }
+  const quarantine = parseStrictJson(await readFile(quarantinePath), "extension process quarantine");
+  exactKeys(quarantine, ["schema", "processes"], "extension process quarantine");
+  if (quarantine.schema !== "firstmate.extension-process-quarantine.v1" || !Array.isArray(quarantine.processes) || quarantine.processes.length === 0) {
+    fail("process-quarantine-invalid", "extension process quarantine state is invalid");
+  }
+  const table = readProcessTable();
+  const active = quarantine.processes.some((processIdentity) => {
+    if (!isPlainObject(processIdentity)) fail("process-quarantine-invalid", "extension process quarantine identity is invalid");
+    exactKeys(processIdentity, ["identity", "pid"], "extension process quarantine identity");
+    if (!Number.isSafeInteger(processIdentity.pid) || processIdentity.pid <= 1 || typeof processIdentity.identity !== "string") {
+      fail("process-quarantine-invalid", "extension process quarantine identity is invalid");
+    }
+    const entry = table.get(processIdentity.pid);
+    return entry?.identity === processIdentity.identity && !entry.state.startsWith("Z");
+  });
+  if (active) fail("process-quarantined", "a prior invocation left an unattributable same-user process; refuse until that exact process identity exits");
+  await unlink(quarantinePath);
+}
+
+async function quarantineAmbiguousProcesses(statePath, processes) {
+  const quarantinePath = processQuarantinePath(statePath);
+  if (!quarantinePath || processes.length === 0) return;
+  await writeFile(quarantinePath, prettyJson({
+    schema: "firstmate.extension-process-quarantine.v1",
+    processes,
+  }), { flag: "wx", mode: 0o600 }).catch((error) => {
+    if (error?.code !== "EEXIST") throw error;
+  });
 }
 
 function armProcessTracker(tracker, child, onError) {
@@ -1028,6 +1105,7 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || entryInfo.nlink !== 1 || entryInfo.uid !== currentUid()) {
     fail("entrypoint-invalid", "bound extension entrypoint identity is unsafe");
   }
+  await refuseActiveProcessQuarantine(statePath);
 
   let child;
   const invocationMarker = randomBytes(32).toString("hex");
@@ -1105,11 +1183,16 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   } finally {
     stopProcessTracker(processTracker);
   }
+  const ambiguousProcesses = statePath ? ambiguousInvocationOrphans(processTracker) : [];
+  await quarantineAmbiguousProcesses(statePath, ambiguousProcesses);
   activeChild = null;
   activeProcessTracker = null;
   if (processTracker.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
   if (forcedCode) fail(forcedCode, forcedMessage);
   if (leakedProcessTree) fail("process-leak", `extension ${verb} left a background process tree`);
+  if (ambiguousProcesses.length) {
+    fail("process-attribution-ambiguous", `extension ${verb} overlapped a newly orphaned same-user process and its response cannot be accepted safely`);
+  }
   if (outcome.signal || outcome.code !== 0) fail("process-failed", `extension ${verb} exited nonzero`);
   return parseStrictJson(Buffer.concat(stdout), `extension ${verb} response`);
 }
@@ -1146,7 +1229,7 @@ function validateHandshakeResponse(response, request, binding) {
   }
 }
 
-async function handshake(record) {
+async function handshake(record, statePath = "") {
   const binding = record.binding;
   const request = {
     schema: HANDSHAKE_REQUEST_SCHEMA,
@@ -1161,7 +1244,7 @@ async function handshake(record) {
       adapter_names: binding.capabilities[0].adapter_names,
     },
   };
-  const response = await runExtensionProcess(record.packageInfo, binding, "handshake", request, HANDSHAKE_TIMEOUT_MS);
+  const response = await runExtensionProcess(record.packageInfo, binding, "handshake", request, HANDSHAKE_TIMEOUT_MS, statePath);
   validateHandshakeResponse(response, request, binding);
 }
 
@@ -1270,8 +1353,8 @@ async function invokeProcessEvent(home, adapter, operation, options) {
   const bindings = await loadBindings(home, { packages: true });
   const record = selectAdapter(bindings, adapter);
   assertExpectedRecord(record, options);
-  await handshake(record);
   const statePath = await ensureExtensionState(home, record.binding);
+  await handshake(record, statePath);
   let input;
   if (operation === "source.poll") {
     const sourceId = boundedString(options["--source-id"], 64, "source id", /^[A-Za-z0-9._-]+$/);

@@ -109,6 +109,8 @@ The parser rejects malformed UTF-8, a byte-order mark, duplicate object keys, un
 A timeout or output-bound violation sends `TERM`, escalates to `KILL`, and refuses until the attributable extension process tree is gone, including descendants that create another session or process group while retaining the invocation identity until observed.
 The host combines an unguessable invocation-scoped environment identity with parent-child traversal so cleanup never claims a merely contemporaneous same-user orphan.
 Because this is not an operating-system sandbox, an adapter must not deliberately erase both its invocation identity and observable ancestry before the host records the descendant.
+A newly orphaned same-user process that cannot be attributed safely makes the host reject the response without signaling that process and quarantines later invocations until the exact process identity exits.
+This fail-closed quarantine prevents repeated polls from accumulating possible adapter descendants without killing an unrelated daemon that happened to start concurrently.
 A child that exits while leaving tracked descendants behind is also rejected and cleaned up.
 Extension stderr and failure diagnostics are never copied into a wake or authority-bearing record.
 
