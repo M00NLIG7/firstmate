@@ -12,6 +12,7 @@
 #   fm-procevent.sh handled <source-id> <sequence>
 #   fm-procevent.sh retire <source-id> [--if-absent|--if-matches <adapter> -- <argv>...|--if-owner <registration-token>]
 #   fm-procevent.sh sweep-home [--preflight]
+#   fm-procevent.sh binding-retirement-preflight <binding-digest>
 #   fm-procevent.sh list
 #
 # register   Record a built-in source: its adapter, its canonical id, and the
@@ -63,6 +64,10 @@
 # sweep-home Retire a bounded snapshot of this home's registrations and owned
 #            claims, then refuse unless no registration, runner record, or owned
 #            claim remains. Used by supported Firstmate home retirement.
+# binding-retirement-preflight
+#            Refuse while an extension registration or unhandled captured result
+#            still owns the exact enabled binding digest. Called by the tracked
+#            extension host before identity-conditional binding retirement.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
@@ -1160,6 +1165,45 @@ cmd_list() {
   done
 }
 
+cmd_binding_retirement_preflight() {
+  local digest=${1-} rec id owner_state result
+  [ "$#" -eq 1 ] && fm_procevent_digest_valid "$digest" \
+    || die "binding-retirement-preflight requires one binding digest"
+  for rec in "$REG"/*.source; do
+    [ -e "$rec" ] || continue
+    [ -f "$rec" ] && [ ! -L "$rec" ] || die "binding retirement found unsafe registration state"
+    id=${rec##*/}; id=${id%.source}
+    fm_procevent_source_id_valid "$id" || die "binding retirement found malformed registration state"
+    fm_procevent_source_lock_acquire "$id" || die "binding retirement could not lock registration: $id"
+    fm_procevent_extension_registration_load_locked "$STATE" "$id"
+    owner_state=$?
+    fm_procevent_source_lock_release "$id"
+    case "$owner_state" in
+      0) [ "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" != "$digest" ] \
+        || die "binding still owns process-event registration: $id" ;;
+      1) ;;
+      *) die "binding retirement found malformed extension registration: $id" ;;
+    esac
+  done
+  for result in "$(fm_procevent_inbox_dir "$STATE")"/*.result; do
+    [ -e "$result" ] || continue
+    if [ -e "${result%.result}.handled" ] || [ -L "${result%.result}.handled" ]; then
+      [ -f "${result%.result}.handled" ] && [ ! -L "${result%.result}.handled" ] \
+        || die "binding retirement found unsafe handled-result state: ${result##*/}"
+      continue
+    fi
+    fm_procevent_result_extension_load "$result"
+    owner_state=$?
+    case "$owner_state" in
+      0) [ "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" != "$digest" ] \
+        || die "binding still owns unhandled process-event result: ${result##*/}" ;;
+      1) ;;
+      *) die "binding retirement found malformed extension result: ${result##*/}" ;;
+    esac
+  done
+  printf 'binding retirement preflight: ready\n'
+}
+
 case "${1-}" in
   register)           shift; cmd_register "$@" ;;
   register-extension) shift; cmd_register_extension "$@" ;;
@@ -1170,6 +1214,7 @@ case "${1-}" in
   handled)            shift; cmd_handled "$@" ;;
   retire)             shift; cmd_retire "$@" ;;
   sweep-home)         shift; cmd_sweep_home "$@" ;;
+  binding-retirement-preflight) shift; cmd_binding_retirement_preflight "$@" ;;
   list)               shift; cmd_list "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;

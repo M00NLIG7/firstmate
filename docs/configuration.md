@@ -613,7 +613,11 @@ bin/fm-extension.sh remote-bind <secondmate-id> \
   --consent artifact-references
 ```
 
-The command serializes only the validated extension package, stages it below the addressed remote home's fixed extension staging root, binds it there, and prints its transfer digest. Registration uses `bin/fm-on.sh <secondmate-id> fm-procevent.sh ...`. Retire the registration with its printed owner token, then reversibly retire the transferred staging copy with `bin/fm-on.sh <secondmate-id> fm-extension.sh retire-transfer <extension-id> --if-transfer-digest <digest>`. Retiring the staging copy does not remove the validated content-addressed installed package or enabled binding.
+The command serializes only the validated extension package, stages it below the addressed remote home's fixed extension staging root, binds it there, and prints transfer and binding digests.
+Registration uses `bin/fm-on.sh <secondmate-id> fm-procevent.sh ...`.
+After retiring every registration with its printed owner token and handling every captured result, retire the enabled remote binding and its exact staged transfer together with `bin/fm-on.sh <secondmate-id> fm-extension.sh retire-transfer <extension-id> --if-transfer-digest <transfer-digest> --if-binding-digest <binding-digest>`.
+For a direct local binding, use `bin/fm-extension.sh retire-binding <extension-id> --if-binding-digest <binding-digest>` after the same process-event retirement and handling steps.
+Both commands retain the retired identity reversibly and leave unrelated bindings and content-addressed installed packages unchanged.
 
 Register one file completion source with a path-safe source id and an explicit non-secret source configuration reference.
 Credential values never belong in that reference, command argv, or a process-event result:

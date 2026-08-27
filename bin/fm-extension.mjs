@@ -5,8 +5,10 @@
 //   fm-extension.mjs bind <package-root> --adapter <name> [--adapter <name> ...]
 //     --trust-same-user-code [--consent <fact> ...] [--timeout-ms <milliseconds>]
 //   fm-extension.sh remote-bind <secondmate-id> <package-root> [bind options]
+//   fm-extension.mjs retire-binding <extension-id>
+//     --if-binding-digest <sha256:digest>
 //   fm-extension.mjs retire-transfer <extension-id>
-//     --if-transfer-digest <sha256:digest>
+//     --if-transfer-digest <sha256:digest> --if-binding-digest <sha256:digest>
 //   fm-extension.mjs list
 //   fm-extension.mjs inspect <extension-id>
 //   fm-extension.mjs verify [extension-id]
@@ -1276,6 +1278,7 @@ async function cmdBindFrom(args, stagedRoot) {
     await handshake(loaded);
     process.stdout.write(`bound: ${binding.extension_id}@${binding.extension_version}\n`);
     process.stdout.write(`binding: ${destination}\n`);
+    process.stdout.write(`binding-digest: ${loaded.bindingDigest}\n`);
     process.stdout.write(`package: ${binding.package_root}\n`);
     process.stdout.write(`package-digest: ${binding.package_digest}\n`);
     process.stdout.write(`verified: ${PROCESS_EVENT_CAPABILITY}/${commonCapability} (${selected.join(",")})\n`);
@@ -1470,10 +1473,14 @@ async function cmdReceiveTransferBind(args) {
 }
 
 async function cmdRetireTransfer(args) {
-  if (args.length !== 3 || args[1] !== "--if-transfer-digest") fail("usage", "retire-transfer requires <extension-id> --if-transfer-digest <sha256:digest>");
+  if (args.length !== 5 || args[1] !== "--if-transfer-digest" || args[3] !== "--if-binding-digest") {
+    fail("usage", "retire-transfer requires <extension-id> --if-transfer-digest <sha256:digest> --if-binding-digest <sha256:digest>");
+  }
   const extensionId = boundedString(args[0], 128, "extension id", ID_RE);
   const transferDigest = args[2];
+  const bindingDigest = args[4];
   if (!DIGEST_RE.test(transferDigest)) fail("usage", "--if-transfer-digest must be sha256:<64 lowercase hex>");
+  if (!DIGEST_RE.test(bindingDigest)) fail("usage", "--if-binding-digest must be sha256:<64 lowercase hex>");
   const home = await activeHome();
   const idRoot = path.join(home, "data", "extensions", "staging", extensionId);
   const versions = await readdir(idRoot).catch((error) => error?.code === "ENOENT" ? [] : Promise.reject(error));
@@ -1494,10 +1501,101 @@ async function cmdRetireTransfer(args) {
   exactKeys(receipt, ["schema", "extension_id", "extension_version", "package_digest", "transfer_digest"], "transfer receipt");
   if (receipt.schema !== TRANSFER_MANIFEST_SCHEMA || receipt.extension_id !== extensionId || receipt.transfer_digest !== transferDigest
       || !SEMVER_RE.test(receipt.extension_version) || !DIGEST_RE.test(receipt.package_digest)) fail("integrity-mismatch", "staged transfer receipt does not match retirement identity");
-  await validatePackage(path.join(matches[0], "package"), { installed: false });
-  const retired = await retirePublishedTransfer(home, matches[0], receipt);
+  if (path.basename(path.dirname(matches[0])) !== receipt.extension_version) fail("integrity-mismatch", "staged transfer version directory does not match its receipt");
+  const stagedPackage = await validatePackage(path.join(matches[0], "package"), { installed: false });
+  if (stagedPackage.manifest.id !== receipt.extension_id || stagedPackage.manifest.version !== receipt.extension_version
+      || stagedPackage.tree.digest !== receipt.package_digest) fail("integrity-mismatch", "staged package identity does not match its transfer receipt");
+  const bindings = await loadBindings(home, { packages: true });
+  const record = bindings.find((candidate) => candidate.binding.extension_id === extensionId);
+  if (!record) fail("binding-missing", `no enabled binding exists for extension: ${extensionId}`);
+  if (record.bindingDigest !== bindingDigest) fail("owner-mismatch", "current extension binding does not match the expected binding identity");
+  if (record.binding.extension_version !== receipt.extension_version
+      || record.binding.package_digest !== receipt.package_digest
+      || record.binding.source.path !== path.join(matches[0], "package")) {
+    fail("owner-mismatch", "current extension binding is not owned by this staged transfer identity");
+  }
+  await bindingRetirementPreflight(home, bindingDigest);
+  const retired = await transferRetiredDestination(home, receipt);
+  if (await maybeLstat(retired)) fail("transfer-exists", "this transfer identity is already retired");
+  const retiredBinding = path.join(matches[0], "binding.json");
+  if (await maybeLstat(retiredBinding)) fail("retirement-partial", "staged transfer already contains retirement state");
+  let bindingMoved = false;
+  try {
+    await rename(record.bindingPath, retiredBinding);
+    bindingMoved = true;
+    const movedBytes = await readFile(retiredBinding);
+    if (digestBytes(movedBytes) !== bindingDigest || Buffer.compare(movedBytes, record.bytes) !== 0) {
+      fail("owner-mismatch", "binding changed during conditional retirement");
+    }
+    await rename(matches[0], retired);
+    bindingMoved = false;
+  } catch (error) {
+    if (bindingMoved) await rename(retiredBinding, record.bindingPath).catch(() => {});
+    throw error;
+  }
   process.stdout.write(`retired-transfer: ${extensionId} ${transferDigest}\n`);
+  process.stdout.write(`retired-binding: ${extensionId} ${bindingDigest}\n`);
   process.stdout.write(`retained-at: ${retired}\n`);
+}
+
+async function cmdRetireBinding(args) {
+  if (args.length !== 3 || args[1] !== "--if-binding-digest") fail("usage", "retire-binding requires <extension-id> --if-binding-digest <sha256:digest>");
+  const extensionId = boundedString(args[0], 128, "extension id", ID_RE);
+  const bindingDigest = args[2];
+  if (!DIGEST_RE.test(bindingDigest)) fail("usage", "--if-binding-digest must be sha256:<64 lowercase hex>");
+  const home = await activeHome();
+  const bindings = await loadBindings(home, { packages: true });
+  const record = bindings.find((candidate) => candidate.binding.extension_id === extensionId);
+  if (!record) fail("binding-missing", `no enabled binding exists for extension: ${extensionId}`);
+  if (record.bindingDigest !== bindingDigest) fail("owner-mismatch", "current extension binding does not match the expected binding identity");
+  const stagingRoot = path.join(home, "data", "extensions", "staging");
+  if (isInside(stagingRoot, record.binding.source.path)) fail("retirement-incomplete", "a transferred binding must retire with its exact transfer identity");
+  await bindingRetirementPreflight(home, bindingDigest);
+  const parent = await ensureHomePrivatePath(home, ["data", "extensions", "retired-bindings", extensionId]);
+  const destination = path.join(parent, `${bindingDigest.slice("sha256:".length)}.json`);
+  if (await maybeLstat(destination)) fail("binding-exists", "this binding identity is already retired");
+  let moved = false;
+  try {
+    await rename(record.bindingPath, destination);
+    moved = true;
+    const retiredBytes = await readFile(destination);
+    if (digestBytes(retiredBytes) !== bindingDigest || Buffer.compare(retiredBytes, record.bytes) !== 0) {
+      fail("owner-mismatch", "binding changed during conditional retirement");
+    }
+    moved = false;
+  } catch (error) {
+    if (moved) await rename(destination, record.bindingPath).catch(() => {});
+    throw error;
+  }
+  process.stdout.write(`retired-binding: ${extensionId} ${bindingDigest}\n`);
+  process.stdout.write(`retained-at: ${destination}\n`);
+}
+
+async function bindingRetirementPreflight(home, bindingDigest) {
+  const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
+  const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
+  if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+  if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  const child = spawn(command, ["binding-retirement-preflight", bindingDigest], {
+    cwd: CODE_ROOT,
+    env,
+    shell: false,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  const stderr = [];
+  let stderrBytes = 0;
+  child.stderr.on("data", (chunk) => {
+    stderrBytes += chunk.length;
+    if (stderrBytes <= MAX_STDERR_BYTES) stderr.push(chunk);
+  });
+  const outcome = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).catch(() => fail("retirement-preflight-failed", "process-event retirement preflight could not start"));
+  if (stderrBytes > MAX_STDERR_BYTES || outcome.code !== 0 || outcome.signal) {
+    const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
+    fail("binding-in-use", diagnostic || "binding retirement process-event preflight refused");
+  }
 }
 
 async function cmdList(args) {
@@ -1592,7 +1690,8 @@ function usage() {
 Usage:
   bin/fm-extension.mjs bind <package-root> --adapter <name> [--adapter <name> ...] --trust-same-user-code [--consent <fact> ...] [--timeout-ms <milliseconds>]
   bin/fm-extension.sh remote-bind <secondmate-id> <package-root> --adapter <name> --trust-same-user-code [bind options]
-  bin/fm-extension.mjs retire-transfer <extension-id> --if-transfer-digest <sha256:digest>
+  bin/fm-extension.mjs retire-binding <extension-id> --if-binding-digest <sha256:digest>
+  bin/fm-extension.mjs retire-transfer <extension-id> --if-transfer-digest <sha256:digest> --if-binding-digest <sha256:digest>
   bin/fm-extension.mjs list
   bin/fm-extension.mjs inspect <extension-id>
   bin/fm-extension.mjs verify [extension-id]
@@ -1608,6 +1707,7 @@ async function main() {
     case "bind": await cmdBind(args); break;
     case "pack-transfer": await cmdPackTransfer(args); break;
     case "receive-transfer-bind": await cmdReceiveTransferBind(args); break;
+    case "retire-binding": await cmdRetireBinding(args); break;
     case "retire-transfer": await cmdRetireTransfer(args); break;
     case "list": await cmdList(args); break;
     case "inspect": await cmdInspect(args); break;
