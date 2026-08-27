@@ -107,7 +107,7 @@ Logs must use stderr.
 Each JSON envelope is limited to 65,536 bytes, extension stderr is limited to 8,192 bytes, and a raw process-event result is limited to 32,768 bytes so it can be carried into later classification requests.
 The parser rejects malformed UTF-8, a byte-order mark, duplicate object keys, unknown fields, unescaped controls, unpaired surrogates, multiple documents, and trailing bytes.
 A timeout or output-bound violation sends `TERM`, escalates to `KILL`, and refuses until the tracked extension process tree is gone, including descendants that create another session or process group.
-The host combines an invocation-scoped environment identity with a pre-invocation process snapshot and the fixed package working directory so it can retain ownership of a rapidly reparented descendant after the parent relationship disappears or the descendant replaces its environment.
+The host combines an invocation-scoped environment identity with a pre-invocation process snapshot, the fixed package working directory, and executable identity so it can retain ownership of a rapidly reparented descendant after the parent relationship disappears or the descendant replaces its environment and working directory.
 A child that exits while leaving tracked descendants behind is also rejected and cleaned up.
 Extension stderr and failure diagnostics are never copied into a wake or authority-bearing record.
 
