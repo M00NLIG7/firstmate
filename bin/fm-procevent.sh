@@ -5,17 +5,31 @@
 #
 # Usage:
 #   fm-procevent.sh register <adapter> <source-id> -- <argv>...
+#   fm-procevent.sh register-extension <adapter> <source-id> --config-ref <reference>
 #   fm-procevent.sh start <source-id>
 #   fm-procevent.sh reconcile
+#   fm-procevent.sh classify <result-file>
 #   fm-procevent.sh handled <source-id> <sequence>
-#   fm-procevent.sh retire <source-id>
+#   fm-procevent.sh retire <source-id> [--if-absent|--if-matches <adapter> -- <argv>...|--if-owner <registration-token>]
 #   fm-procevent.sh sweep-home [--preflight]
 #   fm-procevent.sh list
 #
-# register   Record a source: its adapter, its canonical id, and the exact argv
-#            to execute. argv is stored one argument per line and executed
-#            directly, so there is no shell surface and no argument splitting.
-#            Adapters register sources; nothing here parses user text.
+# register   Record a built-in source: its adapter, its canonical id, and the
+#            exact argv to execute. argv is stored one argument per line and
+#            executed directly, so there is no shell surface and no argument
+#            splitting. Built-in adapters register sources; nothing here parses
+#            user text.
+# register-extension
+#            Resolve an explicitly enabled home-local process-event-adapter/1
+#            binding, verify its package and handshake, and record the source
+#            configuration reference with the exact extension id/version,
+#            capability version, package digest, binding digest, and a fresh
+#            registration token. The tracked extension host constructs every
+#            invocation; no package argv or shell command is stored.
+# classify   Ask the immutable adapter owner captured beside <result-file> for a
+#            bounded classification. Built-in results keep their existing
+#            script command; extension results must still match the exact bound
+#            package identity captured with them.
 # start      Claim the source, run its child to completion, durably capture the
 #            output, publish normalized wakes for pending results, then release
 #            the claim. It blocks for as long as the source blocks and is meant
@@ -39,34 +53,41 @@
 #            handled does not retire its source registration or claim.
 # retire     Drop a registration, stop a runner this home owns, release the claim.
 #            Idempotent, and still the supported explicit path after a source has
-#            already retired itself on its adapter's terminal verdict.
+#            already retired itself on its adapter's terminal verdict. Existing
+#            unconditional built-in retirement remains compatible. An external
+#            registration requires --if-owner. --if-matches compares a complete
+#            built-in registration, --if-absent refuses while any registration
+#            exists, and --if-owner removes only the exact extension registration
+#            token printed by register-extension, so a stale owner cannot retire
+#            a replacement generation.
 # sweep-home Retire a bounded snapshot of this home's registrations and owned
 #            claims, then refuse unless no registration, runner record, or owned
 #            claim remains. Used by supported Firstmate home retirement.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
-# never names an adapter-specific status: it calls
-# `bin/fm-procevent-<adapter>.sh terminal <result-file>` and treats exit 0 as the
-# only terminal verdict. A missing command, an error, or any other exit keeps the
-# registration armed, so an adapter that has no notion of ending needs no change.
+# never names an adapter-specific status: built-ins keep the existing
+# `bin/fm-procevent-<adapter>.sh terminal <result-file>` path, while an external
+# result uses the exact process-event-adapter/1 package identity captured beside
+# it. Exit 0 is the only terminal verdict. A missing command, an error, or any
+# other exit keeps the registration armed, so an adapter that has no notion of
+# ending needs no change.
 #
 # Routine no-op knowledge is adapter-owned through the same kind of seam. Some
 # sources produce a result that carries no news at all - a review surface that
 # simply closed with nothing said - and announcing it makes the handler read a
-# wake to learn that nothing happened. So before publishing, this runner calls
-# `bin/fm-procevent-<adapter>.sh silent <result-file>` and treats exit 0 as the
-# only silence verdict: the result is recorded handled and never announced, so
-# it neither wakes a handler now nor returns on a later reconcile. A missing
-# adapter command, an error, or any other exit publishes the wake exactly as
-# before, so an adapter with no notion of a no-op needs no change and an
-# unknown or degraded result always reaches its handler. This runner still
-# inspects nothing and still names no adapter-specific condition. Silence is
-# deliberately independent of the keyed-answer feed below, which runs once per
-# capture for every adapter: suppressing an announcement never suppresses the
-# captain's own answer.
+# wake to learn that nothing happened. So before publishing, this runner asks
+# the immutable captured adapter owner - the built-in `silent` command or the
+# bound extension operation - and treats exit 0 as the only silence verdict: the
+# result is recorded handled and never announced, so it neither wakes a handler
+# now nor returns on a later reconcile. A missing command, an error, or any other
+# exit publishes the wake exactly as before, so an adapter with no notion of a
+# no-op needs no change and an unknown or degraded result always reaches its
+# handler. This runner still inspects nothing and still names no adapter-specific
+# condition. For built-ins, silence remains independent of the keyed-answer feed
+# below: suppressing an announcement never suppresses the captain's own answer.
 #
-# Applying a result is adapter-owned through the same kind of seam. Some results
+# Applying a built-in result is adapter-owned through the same kind of seam. Some results
 # carry no judgement at all - they must simply be applied idempotently to the
 # home's own durable state - and leaving that to an agent that has to remember
 # means it silently does not happen. So after publishing, `start` calls
@@ -76,8 +97,9 @@
 # a failure of capture: the result stays unacknowledged and therefore eligible
 # for re-announcement, so the handler still receives it exactly as before. This
 # runner still inspects nothing and still names no adapter-specific condition.
+# External bindings deliberately receive no autohandle operation.
 #
-# Announcement is adapter-owned through one more seam of the same kind. An
+# Built-in announcement is adapter-owned through one more seam of the same kind. An
 # adapter that answers exit 0 to `bin/fm-procevent-<adapter>.sh self-announcing`
 # declares that every result its autohandle fully applies is announced through a
 # durable downstream channel of its own (for remote-reply, the mirrored parent
@@ -90,7 +112,7 @@
 # go silent. An unhandled result stays eligible for bounded re-announcement on
 # every reconcile in both modes, exactly as before.
 #
-# Keyed captain answers are adapter-owned through one more seam of the same kind,
+# Keyed captain answers from built-in adapters use one more seam of the same kind,
 # and this runner still decides nothing about them. Some sources carry the
 # captain's answer to a captain-held task. What such an answer MEANS is owned
 # once, by bin/fm-captain-hold.sh's keyed-answer intake, and reaching it must not
@@ -100,7 +122,8 @@
 # is piped straight into that one intake. The adapter reports only what the
 # captain chose; the intake owns every rule about what happens next. This runner
 # names no adapter, parses no result, and knows no decision rule, so a future
-# source needs nothing here beyond an `answers` command and a binding.
+# built-in source needs nothing here beyond an `answers` command and a binding.
+# External binding responses never enter this authority-bearing intake.
 #
 # Feeding is deliberately independent of handling: it never acknowledges a result
 # and never suppresses a wake. Recording the captain's answer is transcription,
@@ -133,18 +156,43 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 
 REG=$(fm_procevent_registry_dir "$STATE")
 MAX_OUTPUT_BYTES=${FM_PROCEVENT_MAX_OUTPUT_BYTES:-1048576}
+EXTENSION_HOST="$SCRIPT_DIR/fm-extension.mjs"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,119p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,142p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 adapter_script() { printf '%s/bin/fm-procevent-%s.sh\n' "$FM_ROOT" "$1"; }
+
+# Invoke one captured result through its exact extension owner. The immutable
+# sidecar, not the current adapter name alone, supplies every expected binding
+# field, so replacing a binding cannot reinterpret old evidence.
+extension_result_command() {  # <adapter> <operation> <result-file>
+  local adapter=$1 operation=$2 result=$3 owner_state
+  fm_procevent_result_extension_load "$result"
+  owner_state=$?
+  [ "$owner_state" -eq 0 ] || return 1
+  [ -x "$EXTENSION_HOST" ] && [ ! -L "$EXTENSION_HOST" ] || return 1
+  "$EXTENSION_HOST" process-event "$adapter" "$operation" \
+    --result-file "$result" \
+    --expect-extension "$FM_PROCEVENT_RESULT_EXTENSION_ID" \
+    --expect-version "$FM_PROCEVENT_RESULT_EXTENSION_VERSION" \
+    --expect-capability-version "$FM_PROCEVENT_RESULT_EXTENSION_CAPABILITY_VERSION" \
+    --expect-package-digest "$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST" \
+    --expect-binding-digest "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST"
+}
 
 # Ask the source's own adapter whether a captured result ends the source. Exit 0
 # is the only terminal verdict; everything else - including a missing adapter
 # command - keeps the registration armed. See the terminal-knowledge note in the
 # header: no adapter-specific condition may appear in this runner.
 adapter_result_is_terminal() {  # <adapter> <result-file>
-  local script
+  local script owner_state
+  fm_procevent_result_extension_load "$2"
+  owner_state=$?
+  case "$owner_state" in
+    0) extension_result_command "$1" result.terminal "$2" >/dev/null 2>&1; return $? ;;
+    2) return 1 ;;
+  esac
   script=$(adapter_script "$1")
   [ -f "$script" ] && [ ! -L "$script" ] || return 1
   "$script" terminal "$2" >/dev/null 2>&1
@@ -156,7 +204,13 @@ adapter_result_is_terminal() {  # <adapter> <result-file>
 # command - publishes the wake. See the routine-no-op note in the header: no
 # adapter-specific condition may appear in this runner.
 adapter_result_is_silent() {  # <adapter> <result-file>
-  local script
+  local script owner_state
+  fm_procevent_result_extension_load "$2"
+  owner_state=$?
+  case "$owner_state" in
+    0) extension_result_command "$1" result.silent "$2" >/dev/null 2>&1; return $? ;;
+    2) return 1 ;;
+  esac
   script=$(adapter_script "$1")
   [ -f "$script" ] && [ ! -L "$script" ] || return 1
   "$script" silent "$2" >/dev/null 2>&1
@@ -259,6 +313,77 @@ cmd_register() {
   printf 'registered: %s (%s)\n' "$id" "$adapter"
 }
 
+new_extension_registration_token() {
+  local hex
+  hex=$(LC_ALL=C od -An -v -tx1 -N 32 /dev/urandom 2>/dev/null | tr -d ' \n') || return 1
+  [ "${#hex}" -eq 64 ] || return 1
+  printf 'sha256:%s\n' "$hex"
+}
+
+extension_source_request_id() {  # <adapter> <source-id> <next-sequence> <registration-token> <package-digest>
+  local digest
+  if command -v shasum >/dev/null 2>&1; then
+    digest=$(printf 'firstmate-process-event-request-v1\n%s\n%s\n%s\n%s\n%s\n' "$@" \
+      | shasum -a 256 | awk '{print $1}') || return 1
+  elif command -v sha256sum >/dev/null 2>&1; then
+    digest=$(printf 'firstmate-process-event-request-v1\n%s\n%s\n%s\n%s\n%s\n' "$@" \
+      | sha256sum | awk '{print $1}') || return 1
+  else
+    return 1
+  fi
+  [ "${#digest}" -eq 64 ] || return 1
+  printf 'sha256:%s\n' "$digest"
+}
+
+next_result_sequence() {  # <source-id>
+  local id=$1 inbox seq=1
+  inbox=$(fm_procevent_inbox_dir "$STATE")
+  while [ -e "$inbox/$id.$seq.result" ]; do seq=$((seq + 1)); done
+  printf '%s\n' "$seq"
+}
+
+cmd_register_extension() {
+  local adapter=${1-} id=${2-} option=${3-} config_ref=${4-} resolution schema extension_id
+  local extension_version capability_version package_digest binding_digest extra registration_token
+  [ "$#" -eq 4 ] || usage
+  fm_procevent_adapter_valid "$adapter" || die "adapter name must be lowercase alphanumeric or dash: $adapter"
+  fm_procevent_source_id_valid "$id" || die "source id must be path-safe and at most 64 characters: $id"
+  [ "$option" = --config-ref ] || usage
+  fm_procevent_extension_config_ref_valid "$config_ref" \
+    || die "source configuration reference must be one bounded line"
+  if [ ! -x "$EXTENSION_HOST" ] || [ -L "$EXTENSION_HOST" ]; then
+    die "the tracked extension host is unavailable"
+  fi
+  resolution=$("$EXTENSION_HOST" resolve-process-event "$adapter") \
+    || die "extension adapter verification failed: $adapter"
+  [ "$(printf '%s\n' "$resolution" | wc -l | tr -d ' ')" = 1 ] \
+    || die "extension adapter resolution was malformed: $adapter"
+  IFS=$'\t' read -r schema extension_id extension_version capability_version \
+    package_digest binding_digest extra <<< "$resolution"
+  [ "$schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$extra" ] \
+    || die "extension adapter resolution was malformed: $adapter"
+  if ! fm_procevent_extension_id_valid "$extension_id" \
+    || ! fm_procevent_extension_version_valid "$extension_version" \
+    || [ "$capability_version" != 1 ] \
+    || ! fm_procevent_digest_valid "$package_digest" \
+    || ! fm_procevent_digest_valid "$binding_digest"; then
+    die "extension adapter identity was malformed: $adapter"
+  fi
+  registration_token=$(new_extension_registration_token) \
+    || die "cannot create an extension registration identity"
+  fm_procevent_source_lock_acquire "$id" || die "cannot lock the source"
+  if ! fm_procevent_extension_registration_publish_locked "$STATE" "$adapter" "$id" \
+      "$extension_id" "$extension_version" "$capability_version" "$package_digest" \
+      "$binding_digest" "$config_ref" "$registration_token"; then
+    fm_procevent_source_lock_release "$id"
+    die "cannot publish the extension registration"
+  fi
+  fm_procevent_source_lock_release "$id"
+  printf 'registered: %s (%s from %s@%s)\n' "$id" "$adapter" "$extension_id" "$extension_version"
+  printf 'owner-token: %s\n' "$registration_token"
+  printf 'retire: bin/fm-procevent.sh retire %s --if-owner %s\n' "$id" "$registration_token"
+}
+
 # Publish every durably captured result with no handled acknowledgement yet.
 # Capture already happened, so this only turns durable state into durable
 # events - and it republishes on every call regardless of any earlier
@@ -352,6 +477,7 @@ cmd_start_public() {
 
 cmd_start() {
   local id=${1-} adapter out rc claimed bound_rc published_capture=0 handled_capture=0 self_announcing=0
+  local extension_owner=0 extension_load_state extension_sequence='' extension_request_id=''
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe: $id"
   require_runner_group
   fm_procevent_source_lock_acquire "$id" || die "cannot lock source: $id"
@@ -367,10 +493,44 @@ cmd_start() {
     fm_procevent_source_lock_release "$id"
     die "registration names an invalid adapter"
   fi
-  if ! read_argv "$id"; then
-    fm_procevent_source_lock_release "$id"
-    die "registration argv is unreadable: $id"
-  fi
+  fm_procevent_extension_registration_load_locked "$STATE" "$id"
+  extension_load_state=$?
+  case "$extension_load_state" in
+    0)
+      extension_owner=1
+      [ "$FM_PROCEVENT_EXTENSION_ADAPTER" = "$adapter" ] || {
+        fm_procevent_source_lock_release "$id"
+        die "extension registration adapter identity is inconsistent: $id"
+      }
+      [ -x "$EXTENSION_HOST" ] && [ ! -L "$EXTENSION_HOST" ] || {
+        fm_procevent_source_lock_release "$id"
+        die "the tracked extension host is unavailable"
+      }
+      extension_sequence=$(next_result_sequence "$id") \
+        || { fm_procevent_source_lock_release "$id"; die "cannot derive extension request sequence: $id"; }
+      extension_request_id=$(extension_source_request_id "$adapter" "$id" "$extension_sequence" \
+        "$FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN" "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST") \
+        || { fm_procevent_source_lock_release "$id"; die "cannot derive extension request identity: $id"; }
+      ARGV=("$EXTENSION_HOST" process-event "$adapter" source.poll \
+        --source-id "$id" --config-ref "$FM_PROCEVENT_EXTENSION_CONFIG_REF" \
+        --request-id "$extension_request_id" \
+        --expect-extension "$FM_PROCEVENT_EXTENSION_ID" \
+        --expect-version "$FM_PROCEVENT_EXTENSION_VERSION" \
+        --expect-capability-version "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
+        --expect-package-digest "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" \
+        --expect-binding-digest "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST")
+      ;;
+    1)
+      if ! read_argv "$id"; then
+        fm_procevent_source_lock_release "$id"
+        die "registration argv is unreadable: $id"
+      fi
+      ;;
+    *)
+      fm_procevent_source_lock_release "$id"
+      die "extension registration owner is unreadable: $id"
+      ;;
+  esac
   fm_procevent_claim_acquire_locked "$id" "$FM_HOME" "$$" "$(source_file "$id")"
   claimed=$?
   fm_procevent_source_lock_release "$id"
@@ -450,14 +610,24 @@ cmd_start() {
   fi
 
   local durable
-  durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out") || { rm -f -- "$out"; die "cannot durably capture the result"; }
+  if [ "$extension_owner" -eq 1 ]; then
+    durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out" \
+      "$FM_PROCEVENT_EXTENSION_ID" "$FM_PROCEVENT_EXTENSION_VERSION" \
+      "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
+      "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST") \
+      || { rm -f -- "$out"; die "cannot durably capture the extension result"; }
+  else
+    durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out") \
+      || { rm -f -- "$out"; die "cannot durably capture the result"; }
+  fi
   rm -f -- "$out"
   STAGED_OUTPUT=
   [ "$truncated" -eq 1 ] && printf 'truncated: %s at %s bytes\n' "$id" "$MAX_OUTPUT_BYTES" >&2
 
   # Independent of publication and acknowledgement, so it runs once per capture
   # for every adapter and cannot change what the handler receives.
-  if feed_keyed_answers "$adapter" "$id" "$durable"; then
+  if [ "$extension_owner" -eq 0 ] \
+    && feed_keyed_answers "$adapter" "$id" "$durable"; then
     printf 'answers-fed: %s\n' "$id"
   fi
 
@@ -465,7 +635,7 @@ cmd_start() {
   # downstream channel, so publication waits until after application and covers
   # only what remains unhandled; every other adapter keeps the strict
   # publish-before-apply order (announcement-ownership note in the header).
-  if adapter_self_announcing "$adapter"; then
+  if [ "$extension_owner" -eq 0 ] && adapter_self_announcing "$adapter"; then
     self_announcing=1
   else
     if publish_result "$durable"; then
@@ -506,7 +676,9 @@ cmd_start() {
     publish_pending "$durable" >/dev/null
   elif [ "$handled_capture" -eq 1 ]; then
     :
-  elif [ "$published_capture" -eq 1 ] && adapter_autohandle "$adapter" "$id" "$durable"; then
+  elif [ "$extension_owner" -eq 0 ] \
+    && [ "$published_capture" -eq 1 ] \
+    && adapter_autohandle "$adapter" "$id" "$durable"; then
     printf 'autohandled: %s\n' "$id"
   else
     printf 'not-autohandled: %s (left for the handler; still unacknowledged)\n' "$id" >&2
@@ -710,6 +882,23 @@ stop_runner_pid() {  # <pid> <identity>
 # other mutation here, on top of the marker's own atomic O_EXCL create, so a
 # caller can trust the reported first-time/repeat distinction to authorize a
 # paired external effect at most once.
+cmd_classify() {
+  local result=${1-} adapter script owner_state
+  [ "$#" -eq 1 ] || usage
+  adapter=$(fm_procevent_result_adapter "$result" 2>/dev/null) \
+    || die "captured result has no readable adapter identity: $result"
+  fm_procevent_result_extension_load "$result"
+  owner_state=$?
+  case "$owner_state" in
+    0) extension_result_command "$adapter" result.classify "$result"; return $? ;;
+    2) die "captured extension result has an unreadable owner identity: $result" ;;
+  esac
+  script=$(adapter_script "$adapter")
+  [ -f "$script" ] && [ ! -L "$script" ] \
+    || die "captured result adapter is unavailable: $adapter"
+  "$script" classify "$result"
+}
+
 cmd_handled() {
   local id=${1-} seq=${2-} status
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe: $id"
@@ -726,9 +915,69 @@ cmd_handled() {
 }
 
 cmd_retire() {
-  local id=${1-} owner='' pid='' token='' identity='' stop_state
+  local id=${1-} condition=${2-} adapter='' sep='' expected_owner='' owner='' pid='' token='' identity='' stop_state owner_state
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe: $id"
+  case "$condition" in
+    '') [ "$#" -eq 1 ] || usage ;;
+    --if-absent) [ "$#" -eq 2 ] || usage ;;
+    --if-owner)
+      [ "$#" -eq 3 ] || usage
+      expected_owner=${3-}
+      fm_procevent_extension_registration_token_valid "$expected_owner" \
+        || die "extension registration owner token is invalid"
+      ;;
+    --if-matches)
+      adapter=${3-}
+      sep=${4-}
+      shift 4 2>/dev/null || usage
+      fm_procevent_adapter_valid "$adapter" \
+        || die "adapter name must be lowercase alphanumeric or dash: $adapter"
+      [ "$sep" = -- ] && [ "$#" -ge 1 ] || usage
+      ;;
+    *) usage ;;
+  esac
   fm_procevent_source_lock_acquire "$id" || die "cannot lock source: $id"
+  if [ -e "$(source_file "$id")" ] || [ -L "$(source_file "$id")" ]; then
+    if [ -z "$condition" ]; then
+      fm_procevent_extension_registration_load_locked "$STATE" "$id"
+      owner_state=$?
+      case "$owner_state" in
+        0)
+          fm_procevent_source_lock_release "$id"
+          die "extension registration requires its exact --if-owner token: $id"
+          ;;
+        2)
+          fm_procevent_source_lock_release "$id"
+          die "cannot safely read extension registration ownership: $id"
+          ;;
+      esac
+    fi
+    case "$condition" in
+      --if-absent)
+        fm_procevent_source_lock_release "$id"
+        die "source registration does not match the expected owner: $id"
+        ;;
+      --if-matches)
+        if ! fm_procevent_registration_matches_locked "$STATE" "$adapter" "$id" "$@"; then
+          fm_procevent_source_lock_release "$id"
+          die "source registration does not match the expected owner: $id"
+        fi
+        ;;
+      --if-owner)
+        fm_procevent_extension_registration_load_locked "$STATE" "$id"
+        owner_state=$?
+        if [ "$owner_state" -ne 0 ] \
+          || [ "$FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN" != "$expected_owner" ]; then
+          fm_procevent_source_lock_release "$id"
+          die "source registration does not match the expected owner: $id"
+        fi
+        ;;
+    esac
+  elif [ "$condition" = --if-owner ] \
+    && { [ -e "$(fm_procevent_claim_path "$id")" ] || [ -L "$(fm_procevent_claim_path "$id")" ]; }; then
+    fm_procevent_source_lock_release "$id"
+    die "source owner cannot be proved after its registration disappeared: $id"
+  fi
   if [ -e "$(fm_procevent_claim_path "$id")" ]; then
     if ! fm_procevent_claim_load_locked "$id" 2>/dev/null; then
       fm_procevent_source_lock_release "$id"
@@ -805,6 +1054,28 @@ sweep_source_preflight() {
   fm_procevent_source_lock_release "$id"
 }
 
+sweep_retire_source() {  # <source-id>
+  local id=$1 owner_state expected_owner=''
+  if [ -e "$(source_file "$id")" ] || [ -L "$(source_file "$id")" ]; then
+    fm_procevent_source_lock_acquire "$id" || return 1
+    fm_procevent_extension_registration_load_locked "$STATE" "$id"
+    owner_state=$?
+    case "$owner_state" in
+      0) expected_owner=$FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN ;;
+      1) ;;
+      *) fm_procevent_source_lock_release "$id"; return 1 ;;
+    esac
+    fm_procevent_source_lock_release "$id"
+  fi
+  if [ -n "$expected_owner" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-procevent.sh" retire "$id" --if-owner "$expected_owner"
+  else
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$SCRIPT_DIR/fm-procevent.sh" retire "$id"
+  fi
+}
+
 cmd_sweep_home() {
   local preflight_only=${1-} path id owner attempted=0 failed=0
   [ -z "$preflight_only" ] || [ "$preflight_only" = --preflight ] || usage
@@ -858,8 +1129,7 @@ cmd_sweep_home() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     attempted=$((attempted + 1))
-    if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
-        "$SCRIPT_DIR/fm-procevent.sh" retire "$id"; then
+    if ! sweep_retire_source "$id"; then
       failed=$((failed + 1))
     fi
   done <<< "$SWEEP_IDS"
@@ -891,14 +1161,16 @@ cmd_list() {
 }
 
 case "${1-}" in
-  register)  shift; cmd_register "$@" ;;
-  start)     shift; cmd_start_public "$@" ;;
-  _start)    shift; cmd_start "$@" ;;
-  reconcile) shift; cmd_reconcile "$@" ;;
-  handled)   shift; cmd_handled "$@" ;;
-  retire)    shift; cmd_retire "$@" ;;
-  sweep-home) shift; cmd_sweep_home "$@" ;;
-  list)      shift; cmd_list "$@" ;;
+  register)           shift; cmd_register "$@" ;;
+  register-extension) shift; cmd_register_extension "$@" ;;
+  start)              shift; cmd_start_public "$@" ;;
+  _start)             shift; cmd_start "$@" ;;
+  reconcile)          shift; cmd_reconcile "$@" ;;
+  classify)           shift; cmd_classify "$@" ;;
+  handled)            shift; cmd_handled "$@" ;;
+  retire)             shift; cmd_retire "$@" ;;
+  sweep-home)         shift; cmd_sweep_home "$@" ;;
+  list)               shift; cmd_list "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;
 esac
