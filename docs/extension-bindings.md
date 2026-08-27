@@ -93,7 +93,7 @@ Binding publication is atomic and does not replace a concurrent file.
 `list`, `inspect`, and `verify` expose the resulting identity and live compatibility without creating state when no registry exists.
 Binding publication prints the binding digest used as its conditional retirement identity.
 `retire-binding` fully validates the current binding and installed package, refuses a stale digest or a transferred source, and atomically moves only that exact local binding into `data/extensions/retired-bindings`.
-One home-local lifecycle lock serializes extension resolution through registration publication against dependency preflight through exact binding removal.
+One home-local lifecycle lock serializes extension resolution through registration publication against dependency preflight through exact binding removal, and the retirement worker owns that lock with its own process identity for the full mutation lifetime.
 Before either retirement form, the process-event owner refuses while an exact registration or unhandled captured result still depends on the binding.
 Retirement disables discovery and invocation without deleting the content-addressed installed package, and retained binding state can be restored deliberately.
 

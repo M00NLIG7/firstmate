@@ -18,11 +18,18 @@ concurrent_release=
 race_register_pid=
 race_retire_pid=
 race_release=
+owner_retire_pid=
+owner_worker_pid=
+owner_register_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
   [ -z "$race_register_pid" ] || kill -TERM "$race_register_pid" 2>/dev/null || true
   [ -z "$race_retire_pid" ] || kill -TERM "$race_retire_pid" 2>/dev/null || true
+  [ -z "$owner_retire_pid" ] || kill -TERM "$owner_retire_pid" 2>/dev/null || true
+  [ -z "$owner_worker_pid" ] || kill -CONT "$owner_worker_pid" 2>/dev/null || true
+  [ -z "$owner_worker_pid" ] || kill -KILL "$owner_worker_pid" 2>/dev/null || true
+  [ -z "$owner_register_pid" ] || kill -TERM "$owner_register_pid" 2>/dev/null || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
   fi
@@ -673,6 +680,51 @@ FM_HOME="$H_RETIRE_RACE" "$PROCEVENT" retire race-source --if-owner "$race_owner
 FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding org.example.retire-race --if-binding-digest "$race_binding_digest" >/dev/null
 race_release=
 pass "registration publication and binding retirement share one lifecycle boundary"
+
+expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding-locked org.example.retire-race --if-binding-digest "$race_binding_digest"
+expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-transfer-locked org.example.retire-race --if-transfer-digest "$wrong_binding_digest" --if-binding-digest "$race_binding_digest"
+pass "public extension dispatch exposes no unlocked retirement entry"
+
+P_LOCK_OWNER="$PACKAGES/lock-owner"
+make_package "$P_LOCK_OWNER" org.example.lock-owner ext-lock-owner
+H_LOCK_OWNER="$HOMES/lock-owner"; new_home "$H_LOCK_OWNER"
+owner_bind=$(bind_package "$H_LOCK_OWNER" "$P_LOCK_OWNER" ext-lock-owner)
+owner_binding_digest=$(printf '%s\n' "$owner_bind" | sed -n 's/^binding-digest: //p')
+owner_lock="$H_LOCK_OWNER/state/procevent/.extension-binding-lifecycle.lock"
+FM_HOME="$H_LOCK_OWNER" "$HOST" retire-binding org.example.lock-owner --if-binding-digest "$owner_binding_digest" > "$TMP_ROOT/lock-owner-retire.out" 2>&1 &
+owner_retire_pid=$!
+owner_worker_pid=
+for _ in $(seq 1 400); do
+  if [ -e "$owner_lock/pid" ]; then
+    candidate=$(cat "$owner_lock/pid" 2>/dev/null || true)
+    if [ -n "$candidate" ] && kill -STOP "$candidate" 2>/dev/null; then
+      owner_worker_pid=$candidate
+      break
+    fi
+  fi
+  sleep 0.005
+done
+[ -n "$owner_worker_pid" ] || fail "retirement worker never acquired its lifecycle lock"
+[ "$owner_worker_pid" != "$owner_retire_pid" ] || fail "retirement fixture did not cross the public wrapper boundary"
+kill -TERM "$owner_retire_pid" 2>/dev/null || true
+wait "$owner_retire_pid" 2>/dev/null || true
+owner_retire_pid=
+FM_HOME="$H_LOCK_OWNER" "$PROCEVENT" register-extension ext-lock-owner owner-source --config-ref good > "$TMP_ROOT/lock-owner-register.out" 2>&1 &
+owner_register_pid=$!
+sleep 0.2
+kill -0 "$owner_register_pid" 2>/dev/null || fail "wrapper death released a live retirement worker's lifecycle lock"
+kill -KILL "$owner_worker_pid" 2>/dev/null || true
+wait "$owner_worker_pid" 2>/dev/null || true
+owner_worker_pid=
+owner_register_rc=0
+wait "$owner_register_pid" || owner_register_rc=$?
+owner_register_pid=
+[ "$owner_register_rc" -eq 0 ] || fail "registration did not recover the dead retirement worker's lifecycle lock"
+assert_present "$H_LOCK_OWNER/config/extensions.d/org.example.lock-owner.json" "dead retirement worker continued mutating after lock recovery"
+owner_token=$(sed -n 's/^owner-token: //p' "$TMP_ROOT/lock-owner-register.out")
+FM_HOME="$H_LOCK_OWNER" "$PROCEVENT" retire owner-source --if-owner "$owner_token" >/dev/null
+FM_HOME="$H_LOCK_OWNER" "$HOST" retire-binding org.example.lock-owner --if-binding-digest "$owner_binding_digest" >/dev/null
+pass "retirement worker ownership survives wrapper death and recovers exactly"
 
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null

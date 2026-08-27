@@ -63,9 +63,11 @@ import {
   mkdir,
   open,
   readFile,
+  readlink,
   readdir,
   realpath,
   rename,
+  rmdir,
   rm,
   unlink,
   writeFile,
@@ -838,6 +840,7 @@ function childEnvironment(binding, statePath = "") {
 
 let activeChild = null;
 let terminatingForSignal = false;
+let activeLifecycleLock = null;
 
 function groupAlive(pid) {
   if (!pid || process.platform === "win32") return false;
@@ -958,6 +961,7 @@ async function handleSignal(signal) {
     await sleep(TERMINATE_GRACE_MS);
     signalGroup(activeChild, "SIGKILL");
   }
+  if (activeLifecycleLock) await releaseLifecycleLock().catch(() => {});
   process.exit(signal === "SIGTERM" ? 143 : 130);
 }
 
@@ -1418,6 +1422,52 @@ async function retirePublishedTransfer(home, published, receipt) {
   return retired;
 }
 
+async function assertLifecycleLockOwned() {
+  if (!activeLifecycleLock) fail("lifecycle-lock-invalid", "retirement has no lifecycle lock ownership");
+  const { lockPath, ownerPath } = activeLifecycleLock;
+  const lockInfo = await maybeLstat(lockPath);
+  if (!lockInfo?.isSymbolicLink()) fail("lifecycle-lock-lost", "retirement lifecycle lock is no longer held");
+  const target = await readlink(lockPath).catch(() => fail("lifecycle-lock-lost", "retirement lifecycle lock cannot be read"));
+  const resolvedTarget = path.isAbsolute(target) ? target : path.resolve(path.dirname(lockPath), target);
+  if (resolvedTarget !== ownerPath) fail("lifecycle-lock-lost", "retirement lifecycle lock owner changed");
+  const ownerInfo = await maybeLstat(ownerPath);
+  if (!ownerInfo?.isDirectory() || ownerInfo.isSymbolicLink() || ownerInfo.uid !== currentUid()) {
+    fail("lifecycle-lock-invalid", "retirement lifecycle lock owner is unsafe");
+  }
+  const pidPath = path.join(ownerPath, "pid");
+  const pidInfo = await maybeLstat(pidPath);
+  if (!pidInfo?.isFile() || pidInfo.isSymbolicLink() || pidInfo.nlink !== 1 || pidInfo.uid !== currentUid()) {
+    fail("lifecycle-lock-invalid", "retirement lifecycle lock pid is unsafe");
+  }
+  const pid = (await readFile(pidPath, "utf8")).trim();
+  if (pid !== String(process.pid)) fail("lifecycle-lock-lost", "retirement process does not own the lifecycle lock");
+}
+
+async function claimInheritedLifecycleLock(home) {
+  const mode = process.env.FM_EXTENSION_RETIREMENT_MODE;
+  if (mode !== "binding" && mode !== "transfer") fail("lifecycle-lock-invalid", "retirement mode is invalid");
+  const stateRoot = path.resolve(process.env.FM_STATE_OVERRIDE || path.join(home, "state"));
+  const expectedLock = path.join(stateRoot, "procevent", ".extension-binding-lifecycle.lock");
+  const lockPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_LOCK || "");
+  const ownerPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_OWNER || "");
+  if (lockPath !== expectedLock || path.dirname(ownerPath) !== path.dirname(lockPath)
+      || !path.basename(ownerPath).startsWith(`${path.basename(lockPath)}.owner.`)) {
+    fail("lifecycle-lock-invalid", "retirement lifecycle lock identity is invalid");
+  }
+  activeLifecycleLock = { lockPath, ownerPath };
+  await assertLifecycleLockOwned();
+  return mode;
+}
+
+async function releaseLifecycleLock() {
+  await assertLifecycleLockOwned();
+  const { lockPath, ownerPath } = activeLifecycleLock;
+  await unlink(lockPath);
+  await unlink(path.join(ownerPath, "pid"));
+  await rmdir(ownerPath);
+  activeLifecycleLock = null;
+}
+
 async function cmdReceiveTransferBind(args) {
   const home = await activeHome();
   const envelope = parseStrictJson(await readStdinBounded(MAX_TRANSFER_JSON_BYTES), "package transfer", MAX_TRANSFER_JSON_BYTES);
@@ -1527,6 +1577,7 @@ async function cmdRetireTransferLocked(args) {
       fail("owner-mismatch", "partial binding does not match the exact transfer retirement identity");
     }
     await bindingRetirementPreflight(home, bindingDigest);
+    await assertLifecycleLockOwned();
     await rename(matches[0], retired);
     process.stdout.write(`retired-transfer: ${extensionId} ${transferDigest}\n`);
     process.stdout.write(`retired-binding: ${extensionId} ${bindingDigest}\n`);
@@ -1543,12 +1594,14 @@ async function cmdRetireTransferLocked(args) {
   await bindingRetirementPreflight(home, bindingDigest);
   let bindingMoved = false;
   try {
+    await assertLifecycleLockOwned();
     await rename(record.bindingPath, retiredBinding);
     bindingMoved = true;
     const movedBytes = await readFile(retiredBinding);
     if (digestBytes(movedBytes) !== bindingDigest || Buffer.compare(movedBytes, record.bytes) !== 0) {
       fail("owner-mismatch", "binding changed during conditional retirement");
     }
+    await assertLifecycleLockOwned();
     await rename(matches[0], retired);
     bindingMoved = false;
   } catch (error) {
@@ -1578,6 +1631,7 @@ async function cmdRetireBindingLocked(args) {
   if (await maybeLstat(destination)) fail("binding-exists", "this binding identity is already retired");
   let moved = false;
   try {
+    await assertLifecycleLockOwned();
     await rename(record.bindingPath, destination);
     moved = true;
     const retiredBytes = await readFile(destination);
@@ -1635,6 +1689,17 @@ async function cmdRetireBinding(args) {
 
 async function cmdRetireTransfer(args) {
   await runLifecycleRetirement("transfer", args);
+}
+
+async function runInheritedLifecycleRetirement(args) {
+  const home = await activeHome();
+  const mode = await claimInheritedLifecycleLock(home);
+  try {
+    if (mode === "binding") await cmdRetireBindingLocked(args);
+    else await cmdRetireTransferLocked(args);
+  } finally {
+    await releaseLifecycleLock();
+  }
 }
 
 async function bindingRetirementPreflight(home, bindingDigest) {
@@ -1768,6 +1833,10 @@ The manifest file is firstmate-extension.json. Supported consent facts are netwo
 }
 
 async function main() {
+  if (process.env.FM_EXTENSION_RETIREMENT_MODE) {
+    await runInheritedLifecycleRetirement(process.argv.slice(2));
+    return;
+  }
   const [command, ...args] = process.argv.slice(2);
   switch (command) {
     case "bind": await cmdBind(args); break;
@@ -1775,8 +1844,6 @@ async function main() {
     case "receive-transfer-bind": await cmdReceiveTransferBind(args); break;
     case "retire-binding": await cmdRetireBinding(args); break;
     case "retire-transfer": await cmdRetireTransfer(args); break;
-    case "retire-binding-locked": await cmdRetireBindingLocked(args); break;
-    case "retire-transfer-locked": await cmdRetireTransferLocked(args); break;
     case "list": await cmdList(args); break;
     case "inspect": await cmdInspect(args); break;
     case "verify": await cmdVerify(args); break;
