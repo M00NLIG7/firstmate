@@ -8,6 +8,7 @@ This record holds reusable version-scoped evidence for the runner's active guara
 Verified on 2026-07-31 on macOS (Darwin 25.5.0) with `lavish-axi` 0.1.45 installed.
 Generic keyed-answer feed verified on 2026-08-16 on the same platform, against the same published poll response shape.
 Cross-origin keyed-answer feed verified on 2026-08-19 through the real runner and Lavish adapter interface.
+Trusted external `process-event-adapter/1` binding conformance and the runnable `file-signal` example were verified on 2026-08-27 on macOS (Darwin 25.5.0) with Node v25.9.0.
 
 ## The published Lavish poll interface the adapter wraps
 
@@ -131,6 +132,38 @@ Exercised by `tests/fm-procevent.test.sh` against a fake blocking source whose c
 | condition->action process bounds | the same suite proves action timeout terminates descendants and command-output staging remains within `FM_WHEN_OUTPUT_TAIL_BYTES` while the command runs |
 | silent failure handling | a nonzero exit with no output publishes nothing and leaves the source registered for retry |
 | inertness | a home with no registered source generates no state, starts no process, and does not need supervision |
+| absent extension registry parity | `tests/fm-extension-binding.test.sh` drives `list` and `verify` in a fresh home while the current directory contains project files and Pi packages and an environment variable names fake package data; both commands report no bindings, create no home path, and discover nothing outside `config/extensions.d` |
+| complete package and binding identity | the same suite drives the public bind and verify commands through manifest duplicate/unknown/version failures, project and task-copy confinement, canonical path and symlink rejection, hard-link rejection, owner/mode checks, a non-executable entrypoint, binding mode drift, complete-tree mutation, exact executable mutation, and a missing executable; the foreign-owner fixture executes when the platform permits constructing another uid and otherwise reports that privilege limitation rather than claiming it ran |
+| strict handshake and negotiation | manifests offering versions 2 and 1 select host protocol 1 and `process-event-adapter/1`, unknown-only versions refuse, and wrong request ids, unknown or duplicate fields, malformed JSON, and nonzero handshake exits publish no binding |
+| strict invocation envelope | malformed UTF-8, a byte-order mark, unescaped controls, malformed or multiple JSON documents, duplicate or unknown fields, oversized stdout, oversized stderr, wrong request ids, crashes, nonzero exits, a successful parent that leaves a background descendant, and authority-shaped result fields are rejected; leaked descendants are reaped and package diagnostic text is not copied into the bounded host-produced error evidence |
+| extension timeout and process-tree cleanup | a bound adapter that ignores `TERM`, spawns a descendant that ignores `TERM`, and exceeds its invocation timeout returns deterministic timeout evidence only after the package process group is gone |
+| exact replay identity | two public host invocations carrying the same request id return the same result and advance the fixture package's request-id-keyed effect ledger once; two generic-runner starts that produce no capturable result also reuse one registration-and-next-sequence-derived request id and apply that fixture effect once |
+| complete external adapter path | the shipped external `file-signal` package is copied outside the Git project, explicitly bound with its required artifact-reference consent, discovered, verified, registered with one file reference, started through the generic runner, completed by a real file appearance, durably captured, published through the existing bounded event, classified through its immutable package identity, left unhandled, and terminally retired |
+| owner-matched replacement safety | two registrations for the same external source receive distinct owner tokens; unconditional external retirement and the first token cannot retire the replacement, the replacement token can, bounded home sweep derives and uses that exact token, and legacy built-in registrations retain unconditional behavior plus exact `--if-matches` retirement |
+| independent homes | two homes bind the same package id/version to different content-addressed absolute paths and independently capture results and extension state, with no cross-home fallback or result path |
+
+Run the focused external-binding evidence with:
+
+```sh
+node --version
+bin/fm-test-run.sh tests/fm-extension-binding.test.sh
+bin/fm-test-run.sh tests/fm-procevent.test.sh
+bin/fm-doc-audience-check.sh
+```
+
+## Harness and session-provider review
+
+The external host runs in the home that owns the process-event source and publishes the same bounded `check` record as every built-in adapter.
+The 2026-08-27 review inspected `bin/fm-harness.sh`, `bin/fm-supervision-instructions.sh`, `bin/fm-supervision-lib.sh`, the process-event delivery and reconcile boundaries in `bin/fm-watch.sh`, `bin/fm-backend.sh`, and `bin/fm-config-inherit-lib.sh` before marking integration axes not applicable.
+
+| Axis | Reviewed boundary and result |
+| --- | --- |
+| Claude, Codex, OpenCode, Pi, pi-signed, Grok, and Cursor primaries | Applicable only at the existing watcher continuation after one shared `check` wake; no package byte, command, state path, or verdict enters a harness-specific integration. |
+| Kimi | The process-event path never enters the worker runtime, and a Kimi primary retains the existing unknown-protocol supervision fallback rather than gaining extension-specific behavior. |
+| Muse | Muse remains a crewmate/scout-only runtime, so no primary process-event integration exists; external adapters still run in the owning home, not in Muse. |
+| Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, Cursor, and Muse task workers | Not applicable after inspecting harness detection and launch ownership, because source registration has no task metadata or worker endpoint and the package is never launched through `fm-spawn`. |
+| tmux, Herdr, Zellij, Orca, and cmux session providers | Not applicable after inspecting the known and spawn-capable backend dispatch sets, because process-event execution calls no backend selector, capture, send, liveness, or cleanup primitive. |
+| Local and remote secondmate homes | Applicable at the home boundary only; each home owns its own binding, content-addressed package, extension state, registration, result, and watcher, and `config/extensions.d` remains outside the inherited-material allowlist. |
 
 ## Runner lifetime and cleanup
 
@@ -159,7 +192,8 @@ Without this launcher, reconcile would silently fail to start a runner on macOS 
 ## Scope
 
 The runner is domain-neutral and creates no endpoint, task metadata, or backlog item, so the supported primary harnesses and runtime backends are unaffected except through the existing `check` and status-signal wake paths they already consume.
-Adapters extend the runner through `bin/fm-procevent-<adapter>.sh`; the `when` adapter also uses the runner library's locked registration publisher so its private trust state and source registration are serialized under one source boundary.
+Built-in adapters extend the runner through `bin/fm-procevent-<adapter>.sh`; the `when` adapter also uses the runner library's locked registration publisher so its private trust state and source registration are serialized under one source boundary.
+Explicit external adapters instead use the single-capability contract in [`docs/extension-bindings.md`](../extension-bindings.md), with no filename discovery or package-supplied argv.
 An adapter's `terminal` command is optional and defaults to keeping the source armed.
 Its `silent` command is optional in the same way and defaults to announcing every result, so an adapter with no notion of a routine no-op is unchanged.
 Its `autohandle` command is optional in the same way and defaults to leaving the captured result unacknowledged, so it keeps being announced to a handler exactly as before.

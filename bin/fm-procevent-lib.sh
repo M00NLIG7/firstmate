@@ -55,6 +55,41 @@ fm_procevent_adapter_valid() {
   [ "${#a}" -le 32 ]
 }
 
+fm_procevent_extension_id_valid() {
+  local id=${1-}
+  case "$id" in
+    ''|[!a-z0-9]*|*[-.]|*[!a-z0-9.-]*|*..*|*.-*|*-.*|*--*) return 1 ;;
+  esac
+  [ "${#id}" -le 128 ]
+}
+
+fm_procevent_extension_version_valid() {
+  local version=${1-}
+  case "$version" in
+    ''|*[!A-Za-z0-9.+-]*) return 1 ;;
+  esac
+  [ "${#version}" -le 128 ]
+}
+
+fm_procevent_digest_valid() {
+  local digest=${1-} hex
+  case "$digest" in sha256:*) ;; *) return 1 ;; esac
+  hex=${digest#sha256:}
+  [ "${#hex}" -eq 64 ] || return 1
+  case "$hex" in *[!0-9a-f]*) return 1 ;; esac
+}
+
+fm_procevent_extension_config_ref_valid() {
+  local ref=${1-}
+  local LC_ALL=C
+  [ -n "$ref" ] && [ "${#ref}" -le 512 ] || return 1
+  ! printf '%s' "$ref" | grep -q '[[:cntrl:]]'
+}
+
+fm_procevent_extension_registration_token_valid() {
+  fm_procevent_digest_valid "${1-}"
+}
+
 # fm_procevent_any_registered <state>
 fm_procevent_any_registered() {
   local reg rec
@@ -117,6 +152,129 @@ fm_procevent_registration_publish_locked() {  # <state> <adapter> <source-id> <a
   fi
   rm -f -- "$tmp"
   return 1
+}
+
+# Publish one extension-owned registration. Its identity fields and random
+# registration token are immutable owner evidence; the executable argv is never
+# stored because the tracked host constructs that command at run time.
+fm_procevent_extension_registration_publish_locked() {  # <state> <adapter> <source-id> <extension-id> <extension-version> <capability-version> <package-digest> <binding-digest> <config-ref> <registration-token>
+  local state=$1 adapter=$2 id=$3 extension_id=$4 extension_version=$5 capability_version=$6
+  local package_digest=$7 binding_digest=$8 config_ref=$9 registration_token=${10} reg dest tmp
+  fm_procevent_adapter_valid "$adapter" || return 1
+  fm_procevent_source_id_valid "$id" || return 1
+  fm_procevent_extension_id_valid "$extension_id" || return 1
+  fm_procevent_extension_version_valid "$extension_version" || return 1
+  [ "$capability_version" = 1 ] || return 1
+  fm_procevent_digest_valid "$package_digest" || return 1
+  fm_procevent_digest_valid "$binding_digest" || return 1
+  fm_procevent_extension_config_ref_valid "$config_ref" || return 1
+  fm_procevent_extension_registration_token_valid "$registration_token" || return 1
+  reg=$(fm_procevent_registry_dir "$state")
+  (umask 077; mkdir -p "$reg") || return 1
+  [ -d "$reg" ] && [ ! -L "$reg" ] || return 1
+  dest="$reg/$id.source"
+  tmp=$(umask 077; mktemp "$reg/.source.XXXXXX") || return 1
+  if {
+    printf 'adapter=%s\n' "$adapter"
+    printf 'owner=extension\n'
+    printf 'extension_schema=fm-procevent-extension-owner.v1\n'
+    printf 'extension_id=%s\n' "$extension_id"
+    printf 'extension_version=%s\n' "$extension_version"
+    printf 'capability_version=%s\n' "$capability_version"
+    printf 'package_digest=%s\n' "$package_digest"
+    printf 'binding_digest=%s\n' "$binding_digest"
+    printf 'config_ref=%s\n' "$config_ref"
+    printf 'registration_token=%s\n' "$registration_token"
+    printf 'argc=0\n'
+    printf 'argv:\n'
+  } > "$tmp" && chmod 0600 "$tmp" && mv -f -- "$tmp" "$dest"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+# Load an extension-owned registration under the caller's source lock.
+# 0 = valid extension owner, 1 = ordinary built-in registration, 2 = malformed
+# extension owner. Sets FM_PROCEVENT_EXTENSION_* on success.
+fm_procevent_extension_registration_load_locked() {  # <state> <source-id>
+  local state=$1 id=$2 file adapter_line owner_line schema_line id_line version_line capability_line
+  local package_line binding_line config_line token_line argc_line argv_line extra
+  file="$(fm_procevent_registry_dir "$state")/$id.source"
+  [ -f "$file" ] && [ ! -L "$file" ] || return 2
+  owner_line=$(sed -n '2p' "$file") || return 2
+  [ "$owner_line" = owner=extension ] || return 1
+  [ "$(fm_pr_file_mode "$file")" = 600 ] \
+    && [ "$(fm_pr_file_link_count "$file")" = 1 ] || return 2
+  {
+    IFS= read -r adapter_line \
+      && IFS= read -r owner_line \
+      && IFS= read -r schema_line \
+      && IFS= read -r id_line \
+      && IFS= read -r version_line \
+      && IFS= read -r capability_line \
+      && IFS= read -r package_line \
+      && IFS= read -r binding_line \
+      && IFS= read -r config_line \
+      && IFS= read -r token_line \
+      && IFS= read -r argc_line \
+      && IFS= read -r argv_line \
+      && ! IFS= read -r extra
+  } < "$file" || return 2
+  [ "$owner_line" = owner=extension ] || return 2
+  [ "$schema_line" = extension_schema=fm-procevent-extension-owner.v1 ] || return 2
+  [ "$capability_line" = capability_version=1 ] || return 2
+  [ "$argc_line" = argc=0 ] && [ "$argv_line" = argv: ] || return 2
+  FM_PROCEVENT_EXTENSION_ADAPTER=${adapter_line#adapter=}
+  FM_PROCEVENT_EXTENSION_ID=${id_line#extension_id=}
+  FM_PROCEVENT_EXTENSION_VERSION=${version_line#extension_version=}
+  # shellcheck disable=SC2034 # Public loader output consumed by fm-procevent.sh.
+  FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION=${capability_line#capability_version=}
+  FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST=${package_line#package_digest=}
+  FM_PROCEVENT_EXTENSION_BINDING_DIGEST=${binding_line#binding_digest=}
+  FM_PROCEVENT_EXTENSION_CONFIG_REF=${config_line#config_ref=}
+  FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN=${token_line#registration_token=}
+  [ "$adapter_line" = "adapter=$FM_PROCEVENT_EXTENSION_ADAPTER" ] || return 2
+  [ "$id_line" = "extension_id=$FM_PROCEVENT_EXTENSION_ID" ] || return 2
+  [ "$version_line" = "extension_version=$FM_PROCEVENT_EXTENSION_VERSION" ] || return 2
+  [ "$package_line" = "package_digest=$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" ] || return 2
+  [ "$binding_line" = "binding_digest=$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" ] || return 2
+  [ "$config_line" = "config_ref=$FM_PROCEVENT_EXTENSION_CONFIG_REF" ] || return 2
+  [ "$token_line" = "registration_token=$FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN" ] || return 2
+  fm_procevent_adapter_valid "$FM_PROCEVENT_EXTENSION_ADAPTER" || return 2
+  fm_procevent_extension_id_valid "$FM_PROCEVENT_EXTENSION_ID" || return 2
+  fm_procevent_extension_version_valid "$FM_PROCEVENT_EXTENSION_VERSION" || return 2
+  fm_procevent_digest_valid "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" || return 2
+  fm_procevent_digest_valid "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" || return 2
+  fm_procevent_extension_config_ref_valid "$FM_PROCEVENT_EXTENSION_CONFIG_REF" || return 2
+  fm_procevent_extension_registration_token_valid "$FM_PROCEVENT_EXTENSION_REGISTRATION_TOKEN" || return 2
+}
+
+# Exact legacy registration comparison used by conditional built-in retirement.
+fm_procevent_registration_matches_locked() {  # <state> <adapter> <source-id> <argv...>
+  local state=$1 adapter=$2 id=$3 reg dest tmp arg status=1
+  shift 3
+  fm_procevent_adapter_valid "$adapter" || return 1
+  fm_procevent_source_id_valid "$id" || return 1
+  [ "$#" -ge 1 ] || return 1
+  for arg in "$@"; do
+    case "$arg" in *$'\n'*) return 1 ;; esac
+  done
+  reg=$(fm_procevent_registry_dir "$state")
+  [ -d "$reg" ] && [ ! -L "$reg" ] || return 1
+  dest="$reg/$id.source"
+  [ -f "$dest" ] && [ ! -L "$dest" ] || return 1
+  tmp=$(umask 077; mktemp "$reg/.source-match.XXXXXX") || return 1
+  if {
+    printf 'adapter=%s\n' "$adapter"
+    printf 'argc=%s\n' "$#"
+    printf 'argv:\n'
+    printf '%s\n' "$@"
+  } > "$tmp" && cmp -s -- "$tmp" "$dest"; then
+    status=0
+  fi
+  rm -f -- "$tmp"
+  return "$status"
 }
 
 fm_procevent_claim_load_locked() {  # <source-id>
@@ -309,13 +467,26 @@ fm_procevent_claim_release_locked() {
 # --- durable capture and publication ----------------------------------------
 
 # fm_procevent_capture <state> <source-id> <adapter> <output-file>
+#   [<extension-id> <extension-version> <capability-version> <package-digest> <binding-digest>]
 # Atomically store the completed output at 0600 and print its durable path. The
 # rename is the commit point; nothing referencing this result may be published
-# before it returns successfully.
+# before it returns successfully. Extension captures retain immutable package
+# identity beside the legacy adapter sidecar, so later classification cannot
+# silently move to a replacement binding.
 fm_procevent_capture() {
-  local state=$1 id=$2 adapter=$3 src=$4 inbox seq dest tmp adapter_dest adapter_tmp
+  local state=$1 id=$2 adapter=$3 src=$4 extension_id=${5-} extension_version=${6-}
+  local capability_version=${7-} package_digest=${8-} binding_digest=${9-}
+  local inbox seq dest tmp adapter_dest adapter_tmp extension_dest='' extension_tmp=''
+  [ "$#" -eq 4 ] || [ "$#" -eq 9 ] || return 1
   fm_procevent_source_id_valid "$id" || return 1
   fm_procevent_adapter_valid "$adapter" || return 1
+  if [ "$#" -eq 9 ]; then
+    fm_procevent_extension_id_valid "$extension_id" || return 1
+    fm_procevent_extension_version_valid "$extension_version" || return 1
+    [ "$capability_version" = 1 ] || return 1
+    fm_procevent_digest_valid "$package_digest" || return 1
+    fm_procevent_digest_valid "$binding_digest" || return 1
+  fi
   inbox=$(fm_procevent_inbox_dir "$state")
   (umask 077; mkdir -p "$inbox") || return 1
   seq=1
@@ -324,11 +495,42 @@ fm_procevent_capture() {
   adapter_dest="$inbox/$id.$seq.adapter"
   tmp=$(umask 077; mktemp "$inbox/.capture.XXXXXX") || return 1
   adapter_tmp=$(umask 077; mktemp "$inbox/.adapter.XXXXXX") || { rm -f -- "$tmp"; return 1; }
-  if ! cat "$src" > "$tmp"; then rm -f -- "$tmp" "$adapter_tmp"; return 1; fi
-  if ! printf '%s\n' "$adapter" > "$adapter_tmp"; then rm -f -- "$tmp" "$adapter_tmp"; return 1; fi
-  if ! chmod 0600 "$tmp" "$adapter_tmp"; then rm -f -- "$tmp" "$adapter_tmp"; return 1; fi
-  if ! mv -f -- "$adapter_tmp" "$adapter_dest"; then rm -f -- "$tmp" "$adapter_tmp"; return 1; fi
-  if ! mv -f -- "$tmp" "$dest"; then rm -f -- "$tmp" "$adapter_dest"; return 1; fi
+  if [ "$#" -eq 9 ]; then
+    extension_dest="$inbox/$id.$seq.extension"
+    extension_tmp=$(umask 077; mktemp "$inbox/.extension.XXXXXX") \
+      || { rm -f -- "$tmp" "$adapter_tmp"; return 1; }
+  fi
+  if ! cat "$src" > "$tmp"; then rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"; return 1; fi
+  if ! printf '%s\n' "$adapter" > "$adapter_tmp"; then rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"; return 1; fi
+  if [ "$#" -eq 9 ] && ! {
+    printf 'schema=fm-procevent-extension-owner.v1\n'
+    printf 'extension_id=%s\n' "$extension_id"
+    printf 'extension_version=%s\n' "$extension_version"
+    printf 'capability_version=%s\n' "$capability_version"
+    printf 'package_digest=%s\n' "$package_digest"
+    printf 'binding_digest=%s\n' "$binding_digest"
+  } > "$extension_tmp"; then
+    rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"
+    return 1
+  fi
+  if ! chmod 0600 "$tmp" "$adapter_tmp"; then
+    rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"
+    return 1
+  fi
+  if [ "$#" -eq 9 ] && ! chmod 0600 "$extension_tmp"; then
+    rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"
+    return 1
+  fi
+  if ! mv -f -- "$adapter_tmp" "$adapter_dest"; then rm -f -- "$tmp" "$adapter_tmp" "$extension_tmp"; return 1; fi
+  if [ "$#" -eq 9 ] && ! mv -f -- "$extension_tmp" "$extension_dest"; then
+    rm -f -- "$tmp" "$adapter_dest" "$extension_tmp"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$dest"; then
+    rm -f -- "$tmp" "$adapter_dest"
+    [ -z "$extension_dest" ] || rm -f -- "$extension_dest"
+    return 1
+  fi
   printf '%s\n' "$dest"
 }
 
@@ -436,4 +638,41 @@ fm_procevent_result_adapter() {
   [ -z "$extra" ] || return 1
   fm_procevent_adapter_valid "$adapter" || return 1
   printf '%s\n' "$adapter"
+}
+
+# Load immutable extension identity for one captured result.
+# 0 = valid extension sidecar, 1 = built-in result (sidecar absent),
+# 2 = malformed or unsafe extension sidecar.
+fm_procevent_result_extension_load() {  # <result-path>
+  local result=$1 file="${1%.result}.extension" schema_line id_line version_line capability_line
+  local package_line binding_line extra
+  [ -e "$file" ] || return 1
+  [ -f "$file" ] && [ ! -L "$file" ] || return 2
+  [ "$(fm_pr_file_mode "$file")" = 600 ] \
+    && [ "$(fm_pr_file_link_count "$file")" = 1 ] || return 2
+  {
+    IFS= read -r schema_line \
+      && IFS= read -r id_line \
+      && IFS= read -r version_line \
+      && IFS= read -r capability_line \
+      && IFS= read -r package_line \
+      && IFS= read -r binding_line \
+      && ! IFS= read -r extra
+  } < "$file" || return 2
+  [ "$schema_line" = schema=fm-procevent-extension-owner.v1 ] || return 2
+  [ "$capability_line" = capability_version=1 ] || return 2
+  FM_PROCEVENT_RESULT_EXTENSION_ID=${id_line#extension_id=}
+  FM_PROCEVENT_RESULT_EXTENSION_VERSION=${version_line#extension_version=}
+  # shellcheck disable=SC2034 # Public loader output consumed by fm-procevent.sh.
+  FM_PROCEVENT_RESULT_EXTENSION_CAPABILITY_VERSION=${capability_line#capability_version=}
+  FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST=${package_line#package_digest=}
+  FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST=${binding_line#binding_digest=}
+  [ "$id_line" = "extension_id=$FM_PROCEVENT_RESULT_EXTENSION_ID" ] || return 2
+  [ "$version_line" = "extension_version=$FM_PROCEVENT_RESULT_EXTENSION_VERSION" ] || return 2
+  [ "$package_line" = "package_digest=$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST" ] || return 2
+  [ "$binding_line" = "binding_digest=$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" ] || return 2
+  fm_procevent_extension_id_valid "$FM_PROCEVENT_RESULT_EXTENSION_ID" || return 2
+  fm_procevent_extension_version_valid "$FM_PROCEVENT_RESULT_EXTENSION_VERSION" || return 2
+  fm_procevent_digest_valid "$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST" || return 2
+  fm_procevent_digest_valid "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" || return 2
 }
