@@ -591,7 +591,9 @@ pass "a missing package executable refuses instead of falling back"
 P_FLOW="$PACKAGES/flow"
 make_package "$P_FLOW" org.example.flow ext-flow
 H_FLOW="$HOMES/flow"; new_home "$H_FLOW"
-bind_package "$H_FLOW" "$P_FLOW" ext-flow >/dev/null
+flow_bind=$(bind_package "$H_FLOW" "$P_FLOW" ext-flow)
+flow_binding_digest=$(printf '%s\n' "$flow_bind" | sed -n 's/^binding-digest: //p')
+case "$flow_binding_digest" in sha256:*) ;; *) fail "local bind returned no binding retirement identity" ;; esac
 registration=$(FM_HOME="$H_FLOW" "$PROCEVENT" register-extension ext-flow flow-source --config-ref good)
 assert_contains "$registration" "org.example.flow@1.2.3" "extension registration omits its exact owner identity"
 owner_one=$(printf '%s\n' "$registration" | sed -n 's/^owner-token: //p')
@@ -599,6 +601,7 @@ case "$owner_one" in
   sha256:*) [ "${#owner_one}" -eq 71 ] || fail "registration emitted a malformed owner token" ;;
   *) fail "registration emitted no bounded owner token" ;;
 esac
+expect_failure "still owns process-event registration" env FM_HOME="$H_FLOW" "$HOST" retire-binding org.example.flow --if-binding-digest "$flow_binding_digest"
 assert_grep 'extension_id=org.example.flow' "$H_FLOW/state/procevent/flow-source.source" "registration did not retain extension identity"
 assert_grep 'capability_version=1' "$H_FLOW/state/procevent/flow-source.source" "registration did not retain capability version"
 assert_grep 'package_digest=sha256:' "$H_FLOW/state/procevent/flow-source.source" "registration did not retain package digest"
@@ -621,6 +624,16 @@ assert_not_contains "$classification" "wrong-built-in-owner" "a later same-name 
 assert_absent "$H_FLOW/state/procevent/flow-source.source" "terminal external source stayed registered"
 FM_HOME="$H_FLOW" "$PROCEVENT" retire flow-source --if-owner "$owner_one" >/dev/null
 pass "one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end"
+wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
+expect_failure "expected binding identity" env FM_HOME="$H_FLOW" "$HOST" retire-binding org.example.flow --if-binding-digest "$wrong_binding_digest"
+assert_present "$H_FLOW/config/extensions.d/org.example.flow.json" "stale identity retired the local binding"
+expect_failure "unhandled process-event result" env FM_HOME="$H_FLOW" "$HOST" retire-binding org.example.flow --if-binding-digest "$flow_binding_digest"
+FM_HOME="$H_FLOW" "$PROCEVENT" handled flow-source 1 >/dev/null
+FM_HOME="$H_FLOW" "$HOST" retire-binding org.example.flow --if-binding-digest "$flow_binding_digest" >/dev/null
+assert_absent "$H_FLOW/config/extensions.d/org.example.flow.json" "exact local binding retirement left discovery enabled"
+assert_present "$H_FLOW/data/extensions/retired-bindings/org.example.flow/${flow_binding_digest#sha256:}.json" "local binding retirement was not reversible"
+expect_failure "no home-local extension binding" env FM_HOME="$H_FLOW" "$HOST" resolve-process-event ext-flow
+pass "local binding retirement requires its exact identity and disables invocation"
 
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null
@@ -790,6 +803,8 @@ remote_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_
 assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
 remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
 case "$remote_transfer_digest" in sha256:*) ;; *) fail "remote bind returned no transfer identity" ;; esac
+remote_binding_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^binding-digest: //p')
+case "$remote_binding_digest" in sha256:*) ;; *) fail "remote bind returned no binding retirement identity" ;; esac
 assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote" "remote transport did not discover the binding"
 remote_package_root=$(binding_value "$H_REMOTE" org.example.remote package_root)
 case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fail "remote package escaped its addressed home: $remote_package_root" ;; esac
@@ -798,6 +813,8 @@ case "$remote_source_root" in "$H_REMOTE"/data/extensions/staging/*/package) ;; 
 [ "$remote_source_root" != "$P_REMOTE" ] || fail "remote binding did not cross the serialized path boundary"
 remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
+expect_failure "still owns process-event registration" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 remote_resolution=$(remote_on fm-extension.sh resolve-process-event ext-remote)
 IFS=$'\t' read -r _remote_schema remote_id remote_version remote_capability remote_package remote_binding remote_extra <<< "$remote_resolution"
 [ -z "$remote_extra" ] || fail "remote resolution returned extra fields"
@@ -811,14 +828,63 @@ remote_result=$(remote_on fm-extension.sh process-event ext-remote source.poll \
   --config-ref remote-result \
   --request-id "sha256:$(printf '6%.0s' {1..64})")
 assert_contains "$remote_result" "external evidence: remote-result" "remote invocation result did not cross back through the transport"
+remote_on fm-procevent.sh start remote-source >/dev/null
 remote_on fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
 assert_absent "$H_REMOTE/state/procevent/remote-source.source" "remote owner-matched retirement left its registration"
-remote_on fm-extension.sh retire-transfer org.example.remote --if-transfer-digest "$remote_transfer_digest" >/dev/null
+remote_stage_root=${remote_source_root%/package}
+remote_receipt="$remote_stage_root/receipt.json"
+expect_failure "unhandled process-event result" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+remote_on fm-procevent.sh handled remote-source 1 >/dev/null
+expect_failure "expected binding identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$wrong_binding_digest"
+assert_present "$H_REMOTE/config/extensions.d/org.example.remote.json" "stale binding identity retired the remote binding"
+expect_failure "no unique staged package" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$wrong_binding_digest" --if-binding-digest "$remote_binding_digest"
+cp "$remote_receipt" "$TMP_ROOT/remote-receipt.json"
+node - "$remote_receipt" <<'JS'
+const fs = require("fs");
+const file = process.argv[2];
+const value = JSON.parse(fs.readFileSync(file, "utf8"));
+value.package_digest = `sha256:${"f".repeat(64)}`;
+fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+JS
+chmod 0600 "$remote_receipt"
+expect_failure "staged package identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+cp "$TMP_ROOT/remote-receipt.json" "$remote_receipt"
+chmod 0600 "$remote_receipt"
+cp "$remote_source_root/helper.txt" "$TMP_ROOT/remote-helper.txt"
+printf 'drifted staged bytes\n' > "$remote_source_root/helper.txt"
+expect_failure "staged package identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+cp "$TMP_ROOT/remote-helper.txt" "$remote_source_root/helper.txt"
+chmod 0644 "$remote_source_root/helper.txt"
+remote_version_root=${remote_stage_root%/*}
+remote_wrong_version="${remote_version_root%/*}/9.9.9"
+mv "$remote_version_root" "$remote_wrong_version"
+expect_failure "version directory" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+mv "$remote_wrong_version" "$remote_version_root"
+P_REMOTE_OTHER="$PACKAGES/remote-other"
+make_package "$P_REMOTE_OTHER" org.example.remote-other ext-remote-other
+remote_other_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE_OTHER" --adapter ext-remote-other --trust-same-user-code)
+remote_other_transfer=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^transfer-digest: //p')
+remote_other_binding=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^binding-digest: //p')
+remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest" >/dev/null
 assert_absent "$H_REMOTE/data/extensions/staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}" "remote staged package was not retired"
 assert_present "$H_REMOTE/data/extensions/retired-staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}/package" "remote staged package retirement was not reversible"
+assert_present "$H_REMOTE/data/extensions/retired-staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}/binding.json" "remote enabled binding was not retained with its exact transfer"
+assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "remote enabled binding remained discoverable after retirement"
+expect_failure "no home-local extension binding" remote_on fm-extension.sh resolve-process-event ext-remote
+assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote-other" "retirement changed an unrelated remote binding"
+remote_on fm-extension.sh verify org.example.remote-other >/dev/null
+remote_on fm-extension.sh retire-transfer org.example.remote-other \
+  --if-transfer-digest "$remote_other_transfer" --if-binding-digest "$remote_other_binding" >/dev/null
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
-[ "$(cat "$REMOTE_SSH_COUNT")" -ge 14 ] || fail "remote-home coverage bypassed the fm-on transport"
-pass "serialized remote binding, discovery, invocation, result return, and retirement cross fm-on"
+[ "$(cat "$REMOTE_SSH_COUNT")" -ge 24 ] || fail "remote-home coverage bypassed the fm-on transport"
+pass "serialized remote binding, invocation, exact retirement, and refusal boundaries cross fm-on"
 
 # --- shipped runnable example ------------------------------------------------
 P_EXAMPLE="$PACKAGES/file-signal-example"

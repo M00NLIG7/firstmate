@@ -91,6 +91,10 @@ The mode-`0600` document has schema `firstmate.extension-binding.v1` and exactly
 The host supports at most 128 binding records and refuses malformed, unsafe, duplicate-id, or duplicate-adapter registries rather than selecting around them.
 Binding publication is atomic and does not replace a concurrent file.
 `list`, `inspect`, and `verify` expose the resulting identity and live compatibility without creating state when no registry exists.
+Binding publication prints the binding digest used as its conditional retirement identity.
+`retire-binding` fully validates the current binding and installed package, refuses a stale digest or a transferred source, and atomically moves only that exact local binding into `data/extensions/retired-bindings`.
+Before either retirement form, the process-event owner refuses while an exact registration or unhandled captured result still depends on the binding.
+Retirement disables discovery and invocation without deleting the content-addressed installed package, and retained binding state can be restored deliberately.
 
 ## Executable protocol
 
@@ -209,7 +213,11 @@ The result reaches every supported primary through the existing bounded `check` 
 The tmux, Herdr, Zellij, Orca, and cmux session providers are not consulted because a process-event source has no task endpoint.
 Remote and local secondmate homes bind and install independently, and the primary never executes a missing remote-home package locally. `remote-bind` carries one canonical `firstmate.extension-package-transfer.v1` JSON envelope over the existing bounded `fm-on` stdin/stdout job. Its hashed manifest pins the extension id, version, complete package-tree digest, entry count, total bytes, and byte-sorted entries. Entries are limited to normalized relative directories at mode 0755 and single regular files at mode 0644 or 0755, each with an exact size and SHA-256 payload digest. The receiver accepts at most 128 entries, 256 KiB per file, 512 KiB of package bytes, and 900,000 serialized bytes; it rejects malformed or truncated JSON, duplicate keys or paths, collisions, absolute or traversing names, links and special files, noncanonical modes, hash or size mismatches, and duplicate transfer identities.
 
-The receiver creates the package in a private temporary directory below `data/extensions/staging`, validates ownership, permissions, the package manifest, executable, and complete reconstructed tree, then atomically publishes the transfer before the normal bind handshake and binding publication. A failed bind moves the exact transfer identity into `data/extensions/retired-staging` without enabling it. `retire-transfer <extension-id> --if-transfer-digest <digest>` likewise moves only the matching staged identity into that retained area, so a stale or mismatched identity cannot retire another transfer. The transfer contains package bytes and declarative metadata only: it carries no environment, credentials, cookies, tokens, destinations, or caller-selected command text and creates no generic file-transfer surface.
+The receiver creates the package in a private temporary directory below `data/extensions/staging`, validates ownership, permissions, the package manifest, executable, and complete reconstructed tree, then atomically publishes the transfer before the normal bind handshake and binding publication.
+A failed bind moves the exact transfer identity into `data/extensions/retired-staging` without enabling it.
+`retire-transfer` requires both transfer and binding digests, then revalidates the receipt, version directory, staged manifest identity, staged complete-tree digest, installed package, enabled binding, and binding source path as one identity.
+It refuses missing, ambiguous, drifted, mismatched, partial, in-use, or unrelated state before moving the enabled binding into the staged identity and reversibly moving that exact unit into `data/extensions/retired-staging`.
+The transfer contains package bytes and declarative metadata only: it carries no environment, credentials, cookies, tokens, destinations, or caller-selected command text and creates no generic file-transfer surface.
 Bindings and credentials are deliberately absent from the inherited secondmate configuration allowlist.
 
 ## Runnable example
