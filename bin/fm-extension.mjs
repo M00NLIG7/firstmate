@@ -961,7 +961,6 @@ async function handleSignal(signal) {
     await sleep(TERMINATE_GRACE_MS);
     signalGroup(activeChild, "SIGKILL");
   }
-  if (activeLifecycleLock) await releaseLifecycleLock().catch(() => {});
   process.exit(signal === "SIGTERM" ? 143 : 130);
 }
 
@@ -1705,6 +1704,7 @@ async function runInheritedLifecycleRetirement(args) {
 async function bindingRetirementPreflight(home, bindingDigest) {
   const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
   const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
+  if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
   const child = spawn(command, ["binding-retirement-preflight", bindingDigest], {

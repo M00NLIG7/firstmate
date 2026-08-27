@@ -21,6 +21,11 @@ race_release=
 owner_retire_pid=
 owner_worker_pid=
 owner_register_pid=
+signal_retire_pid=
+signal_worker_pid=
+active_runner_pid=
+active_runner_release=
+remote_active_release=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
@@ -30,6 +35,12 @@ extension_test_cleanup() {
   [ -z "$owner_worker_pid" ] || kill -CONT "$owner_worker_pid" 2>/dev/null || true
   [ -z "$owner_worker_pid" ] || kill -KILL "$owner_worker_pid" 2>/dev/null || true
   [ -z "$owner_register_pid" ] || kill -TERM "$owner_register_pid" 2>/dev/null || true
+  [ -z "$signal_worker_pid" ] || kill -CONT "$signal_worker_pid" 2>/dev/null || true
+  [ -z "$signal_worker_pid" ] || kill -KILL "$signal_worker_pid" 2>/dev/null || true
+  [ -z "$signal_retire_pid" ] || kill -TERM "$signal_retire_pid" 2>/dev/null || true
+  [ -z "$active_runner_release" ] || touch "$active_runner_release" 2>/dev/null || true
+  [ -z "$active_runner_pid" ] || kill -TERM "$active_runner_pid" 2>/dev/null || true
+  [ -z "$remote_active_release" ] || touch "$remote_active_release" 2>/dev/null || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
   fi
@@ -205,6 +216,11 @@ else if (mode === "control") {
   }
   if (mode === "replay-no-result") raw(success({ status: "no-result", output: "" }));
   else raw(success({ status: "result", output: `replay ${request.request_id}\n` }));
+} else if (mode.startsWith("active-block|")) {
+  const [, marker, release] = mode.split("|");
+  writeFileSync(marker, `${process.pid}\n`, { flag: "wx" });
+  while (!existsSync(release)) await new Promise((resolve) => setTimeout(resolve, 10));
+  raw(success({ status: "result", output: "active runner completed\n" }));
 } else if (request.operation === "source.poll") {
   raw(success({ status: mode === "no-result" ? "no-result" : "result", output: mode === "no-result" ? "" : `external evidence: ${mode}\n` }));
 } else if (request.operation === "result.classify") {
@@ -726,6 +742,64 @@ FM_HOME="$H_LOCK_OWNER" "$PROCEVENT" retire owner-source --if-owner "$owner_toke
 FM_HOME="$H_LOCK_OWNER" "$HOST" retire-binding org.example.lock-owner --if-binding-digest "$owner_binding_digest" >/dev/null
 pass "retirement worker ownership survives wrapper death and recovers exactly"
 
+P_SIGNAL_LOCK="$PACKAGES/signal-lock"
+make_package "$P_SIGNAL_LOCK" org.example.signal-lock ext-signal-lock
+H_SIGNAL_LOCK="$HOMES/signal-lock"; new_home "$H_SIGNAL_LOCK"
+signal_bind=$(bind_package "$H_SIGNAL_LOCK" "$P_SIGNAL_LOCK" ext-signal-lock)
+signal_binding_digest=$(printf '%s\n' "$signal_bind" | sed -n 's/^binding-digest: //p')
+signal_lock="$H_SIGNAL_LOCK/state/procevent/.extension-binding-lifecycle.lock"
+FM_HOME="$H_SIGNAL_LOCK" "$HOST" retire-binding org.example.signal-lock --if-binding-digest "$signal_binding_digest" > "$TMP_ROOT/signal-lock-retire.out" 2>&1 &
+signal_retire_pid=$!
+signal_worker_pid=
+for _ in $(seq 1 400); do
+  if [ -e "$signal_lock/pid" ]; then
+    candidate=$(cat "$signal_lock/pid" 2>/dev/null || true)
+    if [ -n "$candidate" ] && kill -STOP "$candidate" 2>/dev/null; then
+      signal_worker_pid=$candidate
+      break
+    fi
+  fi
+  sleep 0.005
+done
+[ -n "$signal_worker_pid" ] || fail "signal retirement worker never acquired its lifecycle lock"
+kill -TERM "$signal_worker_pid" 2>/dev/null || fail "cannot signal retirement worker"
+kill -CONT "$signal_worker_pid" 2>/dev/null || fail "cannot resume signalled retirement worker"
+for _ in $(seq 1 400); do
+  kill -0 "$signal_worker_pid" 2>/dev/null || break
+  sleep 0.005
+done
+kill -0 "$signal_worker_pid" 2>/dev/null && fail "signalled retirement worker did not exit"
+signal_worker_pid=
+wait "$signal_retire_pid" 2>/dev/null || true
+signal_retire_pid=
+[ -L "$signal_lock" ] || fail "signalled retirement worker released its lifecycle lock before exit recovery"
+signal_registration=$(FM_HOME="$H_SIGNAL_LOCK" "$PROCEVENT" register-extension ext-signal-lock signal-source --config-ref good)
+signal_owner=$(printf '%s\n' "$signal_registration" | sed -n 's/^owner-token: //p')
+assert_absent "$signal_lock" "registration left a recovered lifecycle lock behind"
+FM_HOME="$H_SIGNAL_LOCK" "$PROCEVENT" retire signal-source --if-owner "$signal_owner" >/dev/null
+FM_HOME="$H_SIGNAL_LOCK" "$HOST" retire-binding org.example.signal-lock --if-binding-digest "$signal_binding_digest" >/dev/null
+pass "signal interruption leaves lifecycle lock recovery to the next owner"
+
+H_ACTIVE_RUNNER="$HOMES/active-runner"; new_home "$H_ACTIVE_RUNNER"
+bind_package "$H_ACTIVE_RUNNER" "$P_FLOW" ext-flow >/dev/null
+active_runner_marker="$TMP_ROOT/active-runner.marker"
+active_runner_release="$TMP_ROOT/active-runner.release"
+active_config="active-block|$active_runner_marker|$active_runner_release"
+FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension ext-flow active-source --config-ref "$active_config" >/dev/null
+FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" start active-source > "$TMP_ROOT/active-runner.out" 2>&1 &
+active_runner_pid=$!
+wait_for_file "$active_runner_marker" || fail "active extension runner never entered its poll"
+expect_failure "prior runner remains active" env FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension ext-flow active-source --config-ref replacement
+touch "$active_runner_release"
+active_runner_release=
+wait "$active_runner_pid" || fail "active extension runner did not complete"
+active_runner_pid=
+assert_absent "$H_ACTIVE_RUNNER/state/procevent/active-source.source" "terminal extension runner retained its registration"
+active_replacement=$(FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension ext-flow active-source --config-ref replacement)
+active_replacement_owner=$(printf '%s\n' "$active_replacement" | sed -n 's/^owner-token: //p')
+FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" retire active-source --if-owner "$active_replacement_owner" >/dev/null
+pass "extension replacement waits for the prior runner generation to finish"
+
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null
 first=$(FM_HOME="$H_OWNER_SAFE" "$PROCEVENT" register-extension ext-flow replace-source --config-ref first)
@@ -739,6 +813,18 @@ assert_present "$H_OWNER_SAFE/state/procevent/replace-source.source" "stale owne
 FM_HOME="$H_OWNER_SAFE" "$PROCEVENT" retire replace-source --if-owner "$second_token" >/dev/null
 assert_absent "$H_OWNER_SAFE/state/procevent/replace-source.source" "current owner could not retire its own registration"
 pass "owner-matched retirement refuses a stale generation and accepts the current one"
+
+H_STATE_OVERRIDE="$HOMES/state-override"; new_home "$H_STATE_OVERRIDE"
+STATE_OVERRIDE="$TMP_ROOT/overridden-state"
+override_bind=$(bind_package "$H_STATE_OVERRIDE" "$P_FLOW" ext-flow)
+override_bind_digest=$(printf '%s\n' "$override_bind" | sed -n 's/^binding-digest: //p')
+override_registration=$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" register-extension ext-flow override-source --config-ref good)
+override_owner=$(printf '%s\n' "$override_registration" | sed -n 's/^owner-token: //p')
+expect_failure "still owns process-event registration" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" retire-binding org.example.flow --if-binding-digest "$override_bind_digest"
+assert_present "$H_STATE_OVERRIDE/config/extensions.d/org.example.flow.json" "overridden-state dependency did not preserve its binding"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" retire override-source --if-owner "$override_owner" >/dev/null
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" retire-binding org.example.flow --if-binding-digest "$override_bind_digest" >/dev/null
+pass "binding retirement preflight honors the exact overridden state root"
 
 H_SWEEP="$HOMES/sweep"; new_home "$H_SWEEP"
 bind_package "$H_SWEEP" "$P_FLOW" ext-flow >/dev/null
@@ -902,6 +988,25 @@ case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fai
 remote_source_root=$(binding_value "$H_REMOTE" org.example.remote source.path)
 case "$remote_source_root" in "$H_REMOTE"/data/extensions/staging/*/package) ;; *) fail "remote binding reused a controller-local pathname: $remote_source_root" ;; esac
 [ "$remote_source_root" != "$P_REMOTE" ] || fail "remote binding did not cross the serialized path boundary"
+remote_active_marker="$TMP_ROOT/remote-active.marker"
+remote_active_release="$TMP_ROOT/remote-active.release"
+remote_active_config="active-block|$remote_active_marker|$remote_active_release"
+remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref "$remote_active_config" >/dev/null
+remote_on fm-procevent.sh reconcile >/dev/null
+wait_for_file "$remote_active_marker" || fail "remote active runner never crossed the transport into its poll"
+expect_failure "prior runner remains active" remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+touch "$remote_active_release"
+remote_active_release=
+for _ in $(seq 1 400); do
+  [ ! -e "$H_REMOTE/state/procevent/remote-active-source.source" ] && break
+  sleep 0.01
+done
+assert_absent "$H_REMOTE/state/procevent/remote-active-source.source" "remote terminal runner retained its registration"
+remote_on fm-procevent.sh handled remote-active-source 1 >/dev/null
+remote_active_replacement=$(remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement)
+remote_active_owner=$(printf '%s\n' "$remote_active_replacement" | sed -n 's/^owner-token: //p')
+remote_on fm-procevent.sh retire remote-active-source --if-owner "$remote_active_owner" >/dev/null
+pass "remote extension replacement observes the active runner lifecycle boundary"
 remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
 expect_failure "still owns process-event registration" remote_on fm-extension.sh retire-transfer org.example.remote \
