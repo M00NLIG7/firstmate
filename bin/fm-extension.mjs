@@ -859,8 +859,8 @@ let activeLifecycleLock = null;
 function readProcessTable(invocationMarker = "") {
   if (process.platform === "win32") return new Map();
   const args = invocationMarker
-    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,state=,lstart=,command="]
-    : ["-A", "-o", "pid=,ppid=,state=,lstart="];
+    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,uid=,state=,lstart=,command="]
+    : ["-A", "-o", "pid=,ppid=,uid=,state=,lstart="];
   const result = spawnSync("/bin/ps", args, {
     encoding: "utf8",
     env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
@@ -870,12 +870,16 @@ function readProcessTable(invocationMarker = "") {
   if (result.status !== 0 || result.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
   const table = new Map();
   for (const line of result.stdout.split("\n")) {
-    const match = /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
+    const match = /^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
     if (!match) continue;
-    const [, pid, ppid, state, started, command = ""] = match;
+    const [, pid, ppid, uid, state, started, command = ""] = match;
+    const startedAt = Date.parse(started);
+    if (!Number.isFinite(startedAt)) fail("process-tracking-unavailable", "cannot inspect extension process start times");
     table.set(Number(pid), {
       ppid: Number(ppid),
+      uid: Number(uid),
       state,
+      startedAt,
       identity: `${pid}:${started}`,
       invocation: invocationMarker !== "" && command.includes(`FIRSTMATE_EXTENSION_INVOCATION=${invocationMarker}`),
     });
@@ -934,9 +938,12 @@ function refreshProcessTracker(tracker) {
       const untrackedInvocationProcess = pid !== tracker.rootPid && !alreadyTracked && !entry.invocation
         && !parents.has(entry.ppid) && tracker.baseline.get(pid) !== entry.identity;
       const reparentedInvocationProcess = untrackedInvocationProcess && entry.ppid === 1;
+      const sameUserInvocationOrphan = reparentedInvocationProcess
+        && entry.uid === tracker.uid && entry.startedAt >= tracker.startedAt - 1000;
       const detachedChild = untrackedInvocationProcess
         && (processWorkingDirectory(pid) === tracker.packageRoot
-          || (reparentedInvocationProcess && processExecutable(pid) === tracker.rootExecutable));
+          || (reparentedInvocationProcess && processExecutable(pid) === tracker.rootExecutable)
+          || sameUserInvocationOrphan);
       if (pid !== tracker.rootPid && (entry.invocation || parents.has(entry.ppid) || detachedChild) && !alreadyTracked) {
         tracker.descendants.set(pid, entry.identity);
         parents.add(pid);
@@ -951,6 +958,8 @@ function startProcessTracker(packageRoot, invocationMarker) {
   const table = readProcessTable();
   return {
     rootPid: 0,
+    uid: currentUid(),
+    startedAt: Date.now(),
     packageRoot,
     invocationMarker,
     rootExecutable: "",

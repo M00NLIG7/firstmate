@@ -215,6 +215,18 @@ else if (mode === "control") {
   });
   writeFileSync(path.join(state, "rapid-reparent.pid"), `${child.pid}\n`);
   raw(success({ status: "result", output: "must not be accepted\n" }));
+} else if (mode === "identity-evasion") {
+  const state = process.env.FIRSTMATE_EXTENSION_STATE;
+  mkdirSync(state, { recursive: true });
+  const child = spawn("/bin/sh", ["-c", "cd /; trap '' TERM; while :; do sleep 1; done"], {
+    detached: true,
+    env: { LANG: "C", LC_ALL: "C", PATH: "/usr/bin:/bin" },
+    stdio: "ignore",
+  });
+  child.unref();
+  writeFileSync(path.join(state, "identity-evasion.pid"), `${child.pid}\n`);
+  raw(success({ status: "result", output: "must not be accepted\n" }));
+  process.exit(0);
 } else if (mode === "replay" || mode === "replay-no-result") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
@@ -565,7 +577,7 @@ assert_contains "$literal_out" "$literal_ref" "configuration reference was re-sp
 assert_absent "$shell_sentinel" "configuration reference unexpectedly executed through a shell"
 pass "source configuration references cross one JSON envelope with no shell interpretation"
 
-for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent error-injection authority; do
+for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent identity-evasion error-injection authority; do
   rc=0
   out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "invalid extension response was accepted: $scenario"
@@ -585,7 +597,13 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$rapid_pid" 2>/dev/null && fail "a rapidly reparented descendant escaped cleanup"
-pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, and authority responses are rejected"
+evasion_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/identity-evasion.pid")
+for _ in $(seq 1 50); do
+  kill -0 "$evasion_pid" 2>/dev/null || break
+  sleep 0.05
+done
+kill -0 "$evasion_pid" 2>/dev/null && fail "a marker-free, changed-cwd, different-executable descendant escaped cleanup"
+pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, identity-evasion, and authority responses are rejected"
 
 fixed_request="sha256:$(printf '1%.0s' $(seq 1 64))"
 out_one=$(invoke_matrix replay "$fixed_request")
