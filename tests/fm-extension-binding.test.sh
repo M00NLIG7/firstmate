@@ -235,7 +235,7 @@ expect_failure() {  # <needle> <command...>
 }
 
 run_owner_check() {
-  local package="$PACKAGES/owner" home="$HOMES/owner" foreign_uid=0
+  local package="$PACKAGES/owner" home="$HOMES/owner" foreign_uid=0 transfer
   make_package "$package" org.example.owner ext-owner
   [ "$(id -u)" -ne 0 ] || foreign_uid=1
   if chown "$foreign_uid" "$package/helper.txt" 2>/dev/null; then
@@ -243,6 +243,17 @@ run_owner_check() {
     expect_failure "not owned by the active user" bind_package "$home" "$package" ext-owner
     chown "$(id -u)" "$package/helper.txt"
     pass "foreign-owned package code is rejected"
+    transfer="$TMP_ROOT/owner-transfer.json"
+    FM_HOME="$home" "$HOST" pack-transfer "$package" > "$transfer"
+    mkdir -p "$home/data/extensions/staging"
+    chmod 0700 "$home/data" "$home/data/extensions" "$home/data/extensions/staging"
+    chown "$foreign_uid" "$home/data/extensions/staging"
+    expect_failure "not owned by the active user" sh -c \
+      'FM_HOME="$1" "$2" receive-transfer-bind --adapter ext-owner --trust-same-user-code < "$3"' \
+      sh "$home" "$HOST" "$transfer"
+    chown "$(id -u)" "$home/data/extensions/staging"
+    assert_absent "$home/config/extensions.d/org.example.owner.json" "foreign-owned transfer staging activated a binding"
+    pass "foreign-owned remote staging is rejected before adapter execution"
   elif [ "${FM_TEST_REQUIRE_FOREIGN_OWNER:-0}" = 1 ]; then
     fail "required foreign-owner rejection assertion did not execute"
   else
@@ -643,6 +654,10 @@ pass "legacy built-in registrations retain behavior and gain exact conditional r
 # --- independent local and remote-home transport paths ----------------------
 P_REMOTE="$PACKAGES/remote-transport"
 make_package "$P_REMOTE" org.example.remote ext-remote
+mkdir "$P_REMOTE/nested"
+printf 'nested transfer evidence\n' > "$P_REMOTE/nested/evidence.txt"
+chmod 0755 "$P_REMOTE/nested"
+chmod 0644 "$P_REMOTE/nested/evidence.txt"
 H_REMOTE_CONTROL="$HOMES/remote-control"
 H_REMOTE="$HOMES/remote-home"
 REMOTE_ROOT="$TMP_ROOT/remote-root"
@@ -690,11 +705,97 @@ remote_on() {
   FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
   "$ROOT/bin/fm-on.sh" ios "$@"
 }
-remote_bind=$(remote_on fm-extension.sh bind "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
+remote_controller() {
+  FM_HOME="$H_REMOTE_CONTROL" \
+  FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
+  FM_SSH_BIN="$REMOTE_FAKEBIN/fake-ssh" \
+  FM_FAKE_SSH_COUNT="$REMOTE_SSH_COUNT" \
+  FM_FAKE_REMOTE_ENTRYPOINT="$REMOTE_ROOT/bin/fm-remote-entrypoint.sh" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
+  FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
+  "$@"
+}
+remote_receive_file() {
+  local file=$1 adapter=$2
+  remote_on fm-extension.sh receive-transfer-bind \
+    --adapter "$adapter" --trust-same-user-code < "$file"
+}
+
+REMOTE_TRANSFER="$TMP_ROOT/remote-transfer.json"
+FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE" > "$REMOTE_TRANSFER"
+mutate_transfer() {
+  node - "$REMOTE_TRANSFER" "$1" "$2" <<'JS'
+const fs = require("fs");
+const crypto = require("crypto");
+const value = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const scenario = process.argv[3];
+if (scenario === "traversal") value.manifest.entries[0].path = "../escape";
+if (scenario === "symlink") value.manifest.entries[0].type = "symlink";
+if (scenario === "hash") value.payloads[value.payloads.findIndex((entry) => typeof entry === "string")] = "eA==";
+if (scenario === "size") value.manifest.entries.find((entry) => entry.type === "file").size = 262145;
+if (scenario === "duplicate") value.manifest.entries[1].path = value.manifest.entries[0].path;
+if (scenario === "unexpected") {
+  const index = value.manifest.entries.findIndex((entry) => entry.type === "directory");
+  value.manifest.entries.splice(index, 1);
+  value.payloads.splice(index, 1);
+  value.manifest.entry_count -= 1;
+}
+if (scenario !== "hash") {
+  const canonical = (entry) => Array.isArray(entry)
+    ? `[${entry.map(canonical).join(",")}]`
+    : entry && typeof entry === "object"
+      ? `{${Object.keys(entry).sort().map((key) => `${JSON.stringify(key)}:${canonical(entry[key])}`).join(",")}}`
+      : JSON.stringify(entry);
+  value.manifest_sha256 = `sha256:${crypto.createHash("sha256").update(canonical(value.manifest)).digest("hex")}`;
+}
+fs.writeFileSync(process.argv[4], JSON.stringify(value));
+JS
+}
+for transfer_case in traversal symlink hash size duplicate unexpected; do
+  bad_transfer="$TMP_ROOT/remote-transfer-$transfer_case.json"
+  mutate_transfer "$transfer_case" "$bad_transfer"
+  case "$transfer_case" in
+    traversal) transfer_error=path-unsafe ;;
+    symlink) transfer_error=package-invalid ;;
+    hash) transfer_error=integrity-mismatch ;;
+    size|duplicate) transfer_error=schema-invalid ;;
+    unexpected) transfer_error=package-invalid ;;
+  esac
+  expect_failure "$transfer_error" remote_receive_file "$bad_transfer" ext-remote
+done
+printf '{broken' > "$TMP_ROOT/remote-transfer-malformed.json"
+head -c 80 "$REMOTE_TRANSFER" > "$TMP_ROOT/remote-transfer-truncated.json"
+for bad_transfer in "$TMP_ROOT/remote-transfer-malformed.json" "$TMP_ROOT/remote-transfer-truncated.json"; do
+  expect_failure "json-invalid" remote_receive_file "$bad_transfer" ext-remote
+done
+assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "invalid transfer published a remote binding"
+if find "$H_REMOTE/data/extensions/staging" -name '.receive-*' -print 2>/dev/null | grep -q .; then
+  fail "invalid transfer left a partial receive directory"
+fi
+pass "remote receiver rejects malformed, truncated, traversal, link, hash, size, duplicate, and incomplete envelopes"
+
+P_REMOTE_PARTIAL="$PACKAGES/remote-partial"
+make_package "$P_REMOTE_PARTIAL" org.example.remote-partial ext-remote-partial handshake-malformed
+FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE_PARTIAL" > "$TMP_ROOT/remote-partial.json"
+expect_failure "error[" remote_receive_file "$TMP_ROOT/remote-partial.json" ext-remote-partial
+assert_absent "$H_REMOTE/config/extensions.d/org.example.remote-partial.json" "failed remote activation published a binding"
+if find "$H_REMOTE/data/extensions/staging/org.example.remote-partial" -mindepth 2 -maxdepth 2 -type d -print 2>/dev/null | grep -q .; then
+  fail "failed remote activation left a published staging package"
+fi
+find "$H_REMOTE/data/extensions/retired-staging/org.example.remote-partial" -mindepth 2 -maxdepth 2 -type d -print 2>/dev/null | grep -q . \
+  || fail "failed remote activation was not retained reversibly"
+pass "failed activation cannot partially publish and retains exact transfer evidence"
+
+remote_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
 assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
+remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
+case "$remote_transfer_digest" in sha256:*) ;; *) fail "remote bind returned no transfer identity" ;; esac
 assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote" "remote transport did not discover the binding"
 remote_package_root=$(binding_value "$H_REMOTE" org.example.remote package_root)
 case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fail "remote package escaped its addressed home: $remote_package_root" ;; esac
+remote_source_root=$(binding_value "$H_REMOTE" org.example.remote source.path)
+case "$remote_source_root" in "$H_REMOTE"/data/extensions/staging/*/package) ;; *) fail "remote binding reused a controller-local pathname: $remote_source_root" ;; esac
+[ "$remote_source_root" != "$P_REMOTE" ] || fail "remote binding did not cross the serialized path boundary"
 remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
 remote_resolution=$(remote_on fm-extension.sh resolve-process-event ext-remote)
@@ -712,9 +813,12 @@ remote_result=$(remote_on fm-extension.sh process-event ext-remote source.poll \
 assert_contains "$remote_result" "external evidence: remote-result" "remote invocation result did not cross back through the transport"
 remote_on fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
 assert_absent "$H_REMOTE/state/procevent/remote-source.source" "remote owner-matched retirement left its registration"
+remote_on fm-extension.sh retire-transfer org.example.remote --if-transfer-digest "$remote_transfer_digest" >/dev/null
+assert_absent "$H_REMOTE/data/extensions/staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}" "remote staged package was not retired"
+assert_present "$H_REMOTE/data/extensions/retired-staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}/package" "remote staged package retirement was not reversible"
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
-[ "$(cat "$REMOTE_SSH_COUNT")" -ge 6 ] || fail "remote-home coverage bypassed the fm-on transport"
-pass "remote binding, discovery, invocation, result return, and retirement cross the fm-on boundary"
+[ "$(cat "$REMOTE_SSH_COUNT")" -ge 14 ] || fail "remote-home coverage bypassed the fm-on transport"
+pass "serialized remote binding, discovery, invocation, result return, and retirement cross fm-on"
 
 # --- shipped runnable example ------------------------------------------------
 P_EXAMPLE="$PACKAGES/file-signal-example"

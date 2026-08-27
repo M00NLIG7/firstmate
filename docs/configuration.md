@@ -603,7 +603,17 @@ bin/fm-extension.sh verify org.firstmate.example.file-signal
 
 Use an absent destination for the copy so the source identity remains inspectable and reproducible.
 For a non-default home, set `FM_HOME=<that-home>` on every command; local and remote secondmate homes bind the package independently, and bindings are not inherited.
-For a configured remote secondmate, place the package outside that remote home and its Git projects, then run the same command through `bin/fm-on.sh <secondmate-id> fm-extension.sh ...`; registration and retirement use `fm-procevent.sh` through the same route.
+For a configured remote secondmate, keep the package at the controller and transfer it through the authenticated `fm-on` route:
+
+```sh
+bin/fm-extension.sh remote-bind <secondmate-id> \
+  /absolute/controller/path/to/file-signal \
+  --adapter file-signal \
+  --trust-same-user-code \
+  --consent artifact-references
+```
+
+The command serializes only the validated extension package, stages it below the addressed remote home's fixed extension staging root, binds it there, and prints its transfer digest. Registration uses `bin/fm-on.sh <secondmate-id> fm-procevent.sh ...`. Retire the registration with its printed owner token, then reversibly retire the transferred staging copy with `bin/fm-on.sh <secondmate-id> fm-extension.sh retire-transfer <extension-id> --if-transfer-digest <digest>`. Retiring the staging copy does not remove the validated content-addressed installed package or enabled binding.
 
 Register one file completion source with a path-safe source id and an explicit non-secret source configuration reference.
 Credential values never belong in that reference, command argv, or a process-event result:
