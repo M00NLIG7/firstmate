@@ -2,7 +2,7 @@
 
 This document is the maintainer-architecture owner for the package manifest, enabled binding, handshake, invocation envelope, trust boundary, and `process-event-adapter/1` capability.
 [`configuration.md`](configuration.md#trusted-external-process-event-adapters-configextensionsd) owns operator setup and the home-local layout.
-`bin/fm-extension.mjs --help` and `bin/fm-procevent.sh --help` own command mechanics.
+`bin/fm-extension.sh --help` and `bin/fm-procevent.sh --help` own command mechanics.
 
 ## Scope and design
 
