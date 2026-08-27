@@ -365,6 +365,7 @@ next_result_sequence() {  # <source-id>
 cmd_register_extension() {
   local adapter=${1-} id=${2-} option=${3-} config_ref=${4-} resolution schema extension_id
   local extension_version capability_version package_digest binding_digest extra registration_token
+  local existing_owner_state claim_state
   [ "$#" -eq 4 ] || usage
   fm_procevent_adapter_valid "$adapter" || die "adapter name must be lowercase alphanumeric or dash: $adapter"
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe and at most 64 characters: $id"
@@ -404,6 +405,21 @@ cmd_register_extension() {
   if ! fm_procevent_source_lock_acquire "$id"; then
     extension_lifecycle_lock_release
     die "cannot lock the source"
+  fi
+  if [ -e "$(source_file "$id")" ] || [ -L "$(source_file "$id")" ]; then
+    fm_procevent_extension_registration_load_locked "$STATE" "$id"
+    existing_owner_state=$?
+    if [ "$existing_owner_state" -eq 0 ]; then
+      fm_procevent_claim_state_locked "$id"
+      claim_state=$?
+      case "$claim_state" in
+        0|2|3|4)
+          fm_procevent_source_lock_release "$id"
+          extension_lifecycle_lock_release
+          die "cannot replace extension registration while its prior runner remains active: $id"
+          ;;
+      esac
+    fi
   fi
   if ! fm_procevent_extension_registration_publish_locked "$STATE" "$adapter" "$id" \
       "$extension_id" "$extension_version" "$capability_version" "$package_digest" \
