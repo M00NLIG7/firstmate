@@ -204,6 +204,15 @@ else if (mode === "control") {
   writeFileSync(path.join(state, "leaked.pid"), `${child.pid}\n`);
   await new Promise((resolve) => setTimeout(resolve, 100));
   raw(success({ status: "result", output: "must not be accepted\n" }));
+} else if (mode === "rapid-reparent") {
+  const state = process.env.FIRSTMATE_EXTENSION_STATE;
+  mkdirSync(state, { recursive: true });
+  const child = spawn(process.execPath, ["-e", "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+    detached: true,
+    stdio: "ignore",
+  });
+  writeFileSync(path.join(state, "rapid-reparent.pid"), `${child.pid}\n`);
+  raw(success({ status: "result", output: "must not be accepted\n" }));
 } else if (mode === "replay" || mode === "replay-no-result") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
@@ -554,7 +563,7 @@ assert_contains "$literal_out" "$literal_ref" "configuration reference was re-sp
 assert_absent "$shell_sentinel" "configuration reference unexpectedly executed through a shell"
 pass "source configuration references cross one JSON envelope with no shell interpretation"
 
-for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak error-injection authority; do
+for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent error-injection authority; do
   rc=0
   out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "invalid extension response was accepted: $scenario"
@@ -568,7 +577,13 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$leaked_pid" 2>/dev/null && fail "a successful response left its background descendant alive"
-pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, and authority responses are rejected"
+rapid_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/rapid-reparent.pid")
+for _ in $(seq 1 50); do
+  kill -0 "$rapid_pid" 2>/dev/null || break
+  sleep 0.05
+done
+kill -0 "$rapid_pid" 2>/dev/null && fail "a rapidly reparented descendant escaped cleanup"
+pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, and authority responses are rejected"
 
 fixed_request="sha256:$(printf '1%.0s' $(seq 1 64))"
 out_one=$(invoke_matrix replay "$fixed_request")

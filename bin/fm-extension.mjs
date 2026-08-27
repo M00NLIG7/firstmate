@@ -833,7 +833,7 @@ async function ensureExtensionState(home, binding) {
   return statePath;
 }
 
-function childEnvironment(binding, statePath = "") {
+function childEnvironment(binding, statePath = "", invocationMarker = "") {
   const env = {
     PATH: sanitizedPath(),
     LANG: "C",
@@ -842,6 +842,7 @@ function childEnvironment(binding, statePath = "") {
     FIRSTMATE_EXTENSION_VERSION: binding.extension_version,
   };
   if (statePath) env.FIRSTMATE_EXTENSION_STATE = statePath;
+  if (invocationMarker) env.FIRSTMATE_EXTENSION_INVOCATION = invocationMarker;
   if (binding.consents.credential_store) {
     for (const name of ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "SSH_AUTH_SOCK"]) {
       if (process.env[name]) env[name] = process.env[name];
@@ -855,9 +856,12 @@ let activeProcessTracker = null;
 let terminatingForSignal = false;
 let activeLifecycleLock = null;
 
-function readProcessTable() {
+function readProcessTable(invocationMarker = "") {
   if (process.platform === "win32") return new Map();
-  const result = spawnSync("/bin/ps", ["-A", "-o", "pid=,ppid=,state=,lstart="], {
+  const args = invocationMarker
+    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,state=,lstart=,command="]
+    : ["-A", "-o", "pid=,ppid=,state=,lstart="];
+  const result = spawnSync("/bin/ps", args, {
     encoding: "utf8",
     env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
     maxBuffer: 4 * 1024 * 1024,
@@ -866,13 +870,14 @@ function readProcessTable() {
   if (result.status !== 0 || result.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
   const table = new Map();
   for (const line of result.stdout.split("\n")) {
-    const match = /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+(.+?)\s*$/.exec(line);
+    const match = /^\s*([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
     if (!match) continue;
-    const [, pid, ppid, state, started] = match;
+    const [, pid, ppid, state, started, command = ""] = match;
     table.set(Number(pid), {
       ppid: Number(ppid),
       state,
       identity: `${pid}:${started}`,
+      invocation: invocationMarker !== "" && command.includes(`FIRSTMATE_EXTENSION_INVOCATION=${invocationMarker}`),
     });
   }
   return table;
@@ -880,7 +885,7 @@ function readProcessTable() {
 
 function refreshProcessTracker(tracker) {
   if (!tracker || process.platform === "win32") return;
-  const table = readProcessTable();
+  const table = readProcessTable(tracker.invocationMarker);
   const parents = new Set([tracker.rootPid]);
   for (const [pid, identity] of tracker.descendants) {
     if (table.get(pid)?.identity === identity) parents.add(pid);
@@ -889,7 +894,7 @@ function refreshProcessTracker(tracker) {
   while (changed) {
     changed = false;
     for (const [pid, entry] of table) {
-      if (pid !== tracker.rootPid && parents.has(entry.ppid) && tracker.descendants.get(pid) !== entry.identity) {
+      if (pid !== tracker.rootPid && (entry.invocation || parents.has(entry.ppid)) && tracker.descendants.get(pid) !== entry.identity) {
         tracker.descendants.set(pid, entry.identity);
         parents.add(pid);
         changed = true;
@@ -899,8 +904,8 @@ function refreshProcessTracker(tracker) {
   tracker.table = table;
 }
 
-function startProcessTracker(child) {
-  const tracker = { rootPid: child.pid, descendants: new Map(), table: new Map(), timer: null, error: null };
+function startProcessTracker(child, invocationMarker) {
+  const tracker = { rootPid: child.pid, invocationMarker, descendants: new Map(), table: new Map(), timer: null, error: null };
   refreshProcessTracker(tracker);
   tracker.timer = setInterval(() => {
     try { refreshProcessTracker(tracker); } catch (error) { tracker.error = error; }
@@ -974,12 +979,13 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   }
 
   let child;
+  const invocationMarker = randomBytes(32).toString("hex");
   if (process.platform !== "win32") readProcessTable();
   try {
     child = spawn(packageInfo.entrypoint, [verb], {
       cwd: packageInfo.root,
       detached: process.platform !== "win32",
-      env: childEnvironment(binding, statePath),
+      env: childEnvironment(binding, statePath, invocationMarker),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -987,7 +993,7 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     fail("entrypoint-missing", "bound extension entrypoint could not be started");
   }
   activeChild = child;
-  const processTracker = startProcessTracker(child);
+  const processTracker = startProcessTracker(child, invocationMarker);
   activeProcessTracker = processTracker;
   let stdoutBytes = 0;
   let stderrBytes = 0;
