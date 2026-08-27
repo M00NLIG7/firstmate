@@ -1222,8 +1222,9 @@ cmd_list() {
 
 cmd_binding_retirement_preflight() {
   local digest=${1-} rec id owner_state result
-  [ "$#" -eq 1 ] && fm_procevent_digest_valid "$digest" \
-    || die "binding-retirement-preflight requires one binding digest"
+  if [ "$#" -ne 1 ] || ! fm_procevent_digest_valid "$digest"; then
+    die "binding-retirement-preflight requires one binding digest"
+  fi
   for rec in "$REG"/*.source; do
     [ -e "$rec" ] || continue
     [ -f "$rec" ] && [ ! -L "$rec" ] || die "binding retirement found unsafe registration state"
