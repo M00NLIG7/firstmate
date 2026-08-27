@@ -1,0 +1,2 @@
+ok - Pi 0.84.0: immediate and completed-before-prompt /new paths each made one first provider call with exactly one native startup context and no manual execution
+# fm-sessionstart-hook-live-e2e.test.sh: offline Pi /new race assertions passed
