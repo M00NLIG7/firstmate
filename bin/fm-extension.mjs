@@ -619,7 +619,7 @@ async function installPackage(home, sourceInfo) {
   if (existing) {
     const installed = await validatePackage(destination, { installed: true });
     if (installed.tree.digest !== sourceInfo.tree.digest) fail("integrity-mismatch", "existing content-addressed package directory has different bytes");
-    return { packageInfo: installed, created: false };
+    return { packageInfo: installed };
   }
 
   const temporary = path.join(parent, `.install-${process.pid}-${randomBytes(8).toString("hex")}`);
@@ -649,13 +649,13 @@ async function installPackage(home, sourceInfo) {
     }
     try {
       await rename(temporary, destination);
-      return { packageInfo: await validatePackage(destination, { installed: true }), created: true };
+      return { packageInfo: await validatePackage(destination, { installed: true }) };
     } catch (error) {
       if (!error || !["EEXIST", "ENOTEMPTY"].includes(error.code)) throw error;
       await removeManagedTree(temporary);
       const winner = await validatePackage(destination, { installed: true });
       if (winner.tree.digest !== sourceInfo.tree.digest) fail("integrity-mismatch", "concurrent package install produced a different tree");
-      return { packageInfo: winner, created: false };
+      return { packageInfo: winner };
     }
   } catch (error) {
     await removeManagedTree(temporary).catch(() => {});
@@ -1267,7 +1267,6 @@ async function cmdBind(args) {
         await rm(publishedBinding, { force: true }).catch(() => {});
       }
     }
-    if (installed.created) await removeManagedTree(installed.packageInfo.root).catch(() => {});
     throw error;
   }
 }

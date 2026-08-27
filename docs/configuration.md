@@ -572,7 +572,7 @@ See [verification/public-followup.md](verification/public-followup.md) for the c
 A home can explicitly enable a trusted external `process-event-adapter/1` package without adding package code to Firstmate.
 This is one narrow extension type, not a general plugin or hook system.
 [`extension-bindings.md`](extension-bindings.md) owns the manifest, binding, trust, handshake, invocation-envelope, capability, version-compatibility, and authority-boundary contracts.
-`bin/fm-extension.mjs --help` and `bin/fm-procevent.sh --help` own exact command mechanics.
+`bin/fm-extension.sh --help` and `bin/fm-procevent.sh --help` own exact command mechanics.
 
 Discovery reads only mode-`0600` bindings under this home's mode-`0700` `config/extensions.d/` directory.
 The current directory, projects, task copies, worker text, environment payloads, and Pi packages are never searched for extensions.
@@ -591,18 +591,19 @@ Copy it to a persistent directory outside every Git project or task copy, then b
 mkdir -p "$HOME/.local/share/firstmate-packages"
 cp -R docs/examples/process-event-extension \
   "$HOME/.local/share/firstmate-packages/file-signal"
-bin/fm-extension.mjs bind \
+bin/fm-extension.sh bind \
   "$HOME/.local/share/firstmate-packages/file-signal" \
   --adapter file-signal \
   --trust-same-user-code \
   --consent artifact-references
-bin/fm-extension.mjs list
-bin/fm-extension.mjs inspect org.firstmate.example.file-signal
-bin/fm-extension.mjs verify org.firstmate.example.file-signal
+bin/fm-extension.sh list
+bin/fm-extension.sh inspect org.firstmate.example.file-signal
+bin/fm-extension.sh verify org.firstmate.example.file-signal
 ```
 
 Use an absent destination for the copy so the source identity remains inspectable and reproducible.
 For a non-default home, set `FM_HOME=<that-home>` on every command; local and remote secondmate homes bind the package independently, and bindings are not inherited.
+For a configured remote secondmate, place the package outside that remote home and its Git projects, then run the same command through `bin/fm-on.sh <secondmate-id> fm-extension.sh ...`; registration and retirement use `fm-procevent.sh` through the same route.
 
 Register one file completion source with a path-safe source id and an explicit non-secret source configuration reference.
 Credential values never belong in that reference, command argv, or a process-event result:

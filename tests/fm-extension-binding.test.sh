@@ -13,7 +13,18 @@ HOST="$ROOT/bin/fm-extension.mjs"
 PROCEVENT="$ROOT/bin/fm-procevent.sh"
 TMP_ROOT_RAW=$(fm_test_tmproot fm-extension-binding)
 TMP_ROOT=$(cd "$TMP_ROOT_RAW" && pwd -P)
+first_bind_pid=
+concurrent_release=
 extension_test_cleanup() {
+  [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
+  if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
+    kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
+  fi
+  if [ -n "$first_bind_pid" ]; then
+    kill -CONT "$first_bind_pid" 2>/dev/null || true
+    kill -TERM "$first_bind_pid" 2>/dev/null || true
+    wait "$first_bind_pid" 2>/dev/null || true
+  fi
   chmod -R u+w "$TMP_ROOT_RAW" 2>/dev/null || true
   fm_test_cleanup
 }
@@ -60,7 +71,7 @@ import path from "node:path";
 
 const request = JSON.parse(readFileSync(0, "utf8"));
 const manifest = JSON.parse(readFileSync(new URL("./firstmate-extension.json", import.meta.url), "utf8"));
-const fixed = readFileSync(new URL("./scenario", import.meta.url), "utf8").trim();
+const [fixed, blockMarker, blockRelease] = readFileSync(new URL("./scenario", import.meta.url), "utf8").trim().split("\n");
 const verb = process.argv[2] || "";
 
 function raw(value) {
@@ -94,6 +105,16 @@ function success(result, extra = {}) {
 
 if (verb === "handshake") {
   if (fixed === "handshake-nonzero") process.exit(9);
+  if (fixed === "handshake-block") {
+    let ownsBlock = false;
+    try {
+      writeFileSync(blockMarker, `${process.pid}\n`, { flag: "wx" });
+      ownsBlock = true;
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+    }
+    while (ownsBlock && !existsSync(blockRelease)) await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   if (fixed === "handshake-wrong-id") raw(handshake({ request_id: `sha256:${"0".repeat(64)}` }));
   else if (fixed === "handshake-unknown") raw(handshake({ authority: "merge" }));
   else if (fixed === "handshake-duplicate") {
@@ -213,6 +234,30 @@ expect_failure() {  # <needle> <command...>
   assert_contains "$out" "$needle" "failure did not report the expected diagnostic"
 }
 
+run_owner_check() {
+  local package="$PACKAGES/owner" home="$HOMES/owner" foreign_uid=0
+  make_package "$package" org.example.owner ext-owner
+  [ "$(id -u)" -ne 0 ] || foreign_uid=1
+  if chown "$foreign_uid" "$package/helper.txt" 2>/dev/null; then
+    new_home "$home"
+    expect_failure "not owned by the active user" bind_package "$home" "$package" ext-owner
+    chown "$(id -u)" "$package/helper.txt"
+    pass "foreign-owned package code is rejected"
+  elif [ "${FM_TEST_REQUIRE_FOREIGN_OWNER:-0}" = 1 ]; then
+    fail "required foreign-owner rejection assertion did not execute"
+  else
+    printf 'not run - foreign-owner fixture requires chown privilege\n'
+  fi
+}
+
+if [ "${FM_TEST_OWNER_ONLY:-0}" = 1 ]; then
+  [ "${FM_TEST_REQUIRE_FOREIGN_OWNER:-0}" = 1 ] \
+    || fail "FM_TEST_OWNER_ONLY requires FM_TEST_REQUIRE_FOREIGN_OWNER=1"
+  run_owner_check
+  printf '\nall required owner-conformance tests passed\n'
+  exit 0
+fi
+
 wait_for_file() {
   local file=$1
   for _ in $(seq 1 100); do
@@ -264,6 +309,30 @@ case "$package_root" in "$H_GOOD"/data/extensions/packages/*) ;; *) fail "bindin
 [ "$(stat -c '%a' "$package_root" 2>/dev/null || stat -f '%Lp' "$package_root")" = 555 ] \
   || fail "managed package root is not read-only"
 pass "bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding"
+
+P_CONCURRENT="$PACKAGES/concurrent"
+concurrent_marker="$TMP_ROOT/concurrent.entered"
+concurrent_release="$TMP_ROOT/concurrent.release"
+make_package "$P_CONCURRENT" org.example.concurrent ext-concurrent "$(printf 'handshake-block\n%s\n%s' "$concurrent_marker" "$concurrent_release")"
+H_CONCURRENT="$HOMES/concurrent"; new_home "$H_CONCURRENT"
+bind_package "$H_CONCURRENT" "$P_CONCURRENT" ext-concurrent \
+  > "$TMP_ROOT/concurrent-first.out" 2>&1 &
+first_bind_pid=$!
+for _ in $(seq 1 200); do
+  [ -s "$concurrent_marker" ] && break
+  sleep 0.01
+done
+[ -s "$concurrent_marker" ] || fail "first concurrent bind never reached its pre-publication handshake"
+bind_package "$H_CONCURRENT" "$P_CONCURRENT" ext-concurrent >/dev/null
+touch "$concurrent_release"
+first_bind_rc=0
+wait "$first_bind_pid" || first_bind_rc=$?
+first_bind_pid=
+concurrent_release=
+[ "$first_bind_rc" -ne 0 ] || fail "both concurrent binds unexpectedly published one binding"
+assert_contains "$(FM_HOME="$H_CONCURRENT" "$HOST" verify org.example.concurrent)" "verified: org.example.concurrent@1.2.3" \
+  "losing concurrent bind removed the winning binding's shared package"
+pass "a losing concurrent bind preserves the winning binding's content-addressed package"
 
 P_CONSENT="$PACKAGES/consent"
 make_package "$P_CONSENT" org.example.consent ext-consent good network
@@ -411,20 +480,7 @@ chmod 0555 "$identity_root/entrypoint.mjs" "$identity_root"
 expect_failure "tree digest" env FM_HOME="$H_IDENTITY" "$HOST" verify org.example.identity
 pass "the exact executable identity cannot change underneath a binding"
 
-# Ownership is executable-interface tested when the platform permits constructing
-# a foreign-owned fixture; normal unprivileged CI cannot chown one into existence.
-P_OWNER="$PACKAGES/owner"
-make_package "$P_OWNER" org.example.owner ext-owner
-foreign_uid=0
-[ "$(id -u)" -ne 0 ] || foreign_uid=1
-if chown "$foreign_uid" "$P_OWNER/helper.txt" 2>/dev/null; then
-  H_OWNER="$HOMES/owner"; new_home "$H_OWNER"
-  expect_failure "not owned by the active user" bind_package "$H_OWNER" "$P_OWNER" ext-owner
-  chown "$(id -u)" "$P_OWNER/helper.txt"
-  pass "foreign-owned package code is rejected"
-else
-  pass "foreign-owner rejection fixture unavailable without chown privilege (owner check remains in the public bind path)"
-fi
+run_owner_check
 
 # --- strict invocation matrix, replay, timeout, and process cleanup ----------
 P_MATRIX="$PACKAGES/matrix"
@@ -584,22 +640,81 @@ assert_present "$H_LEGACY/state/procevent/legacy-source.source" "legacy conditio
 FM_HOME="$H_LEGACY" "$PROCEVENT" retire legacy-source --if-matches lavish -- /bin/echo legacy >/dev/null
 pass "legacy built-in registrations retain behavior and gain exact conditional retirement"
 
-# --- independent per-home package, binding, and state paths ------------------
-H_REMOTE_A="$HOMES/remote-a"; H_REMOTE_B="$HOMES/remote-b"
-new_home "$H_REMOTE_A"; new_home "$H_REMOTE_B"
-bind_package "$H_REMOTE_A" "$P_FLOW" ext-flow >/dev/null
-bind_package "$H_REMOTE_B" "$P_FLOW" ext-flow >/dev/null
-root_a=$(binding_value "$H_REMOTE_A" org.example.flow package_root)
-root_b=$(binding_value "$H_REMOTE_B" org.example.flow package_root)
-[ "$root_a" != "$root_b" ] || fail "two homes shared one host-local package path"
-FM_HOME="$H_REMOTE_A" "$PROCEVENT" register-extension ext-flow home-a-source --config-ref good >/dev/null
-FM_HOME="$H_REMOTE_B" "$PROCEVENT" register-extension ext-flow home-b-source --config-ref good >/dev/null
-FM_HOME="$H_REMOTE_A" "$PROCEVENT" start home-a-source >/dev/null
-FM_HOME="$H_REMOTE_B" "$PROCEVENT" start home-b-source >/dev/null
-assert_present "$H_REMOTE_A/state/procevent-inbox/home-a-source.1.result" "first home captured no local result"
-assert_present "$H_REMOTE_B/state/procevent-inbox/home-b-source.1.result" "second home captured no local result"
-assert_absent "$H_REMOTE_A/state/procevent-inbox/home-b-source.1.result" "second home's result crossed into the first home"
-pass "local and remote-style homes resolve package, binding, result, and state paths independently"
+# --- independent local and remote-home transport paths ----------------------
+P_REMOTE="$PACKAGES/remote-transport"
+make_package "$P_REMOTE" org.example.remote ext-remote
+H_REMOTE_CONTROL="$HOMES/remote-control"
+H_REMOTE="$HOMES/remote-home"
+REMOTE_ROOT="$TMP_ROOT/remote-root"
+REMOTE_FAKEBIN=$(fm_fakebin "$TMP_ROOT/remote-fakebin")
+REMOTE_SSH_COUNT="$TMP_ROOT/remote-ssh.count"
+mkdir -p "$H_REMOTE_CONTROL/data" "$H_REMOTE" "$REMOTE_ROOT/bin"
+printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
+for remote_file in \
+  fm-extension.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh \
+  fm-pr-lib.sh fm-wake-lib.sh fm-remote-entrypoint.sh fm-remote-job-lib.sh \
+  fm-remote-job-worker.sh; do
+  cp "$ROOT/bin/$remote_file" "$REMOTE_ROOT/bin/$remote_file"
+done
+chmod +x "$REMOTE_ROOT/bin"/fm-*.sh "$REMOTE_ROOT/bin/fm-extension.mjs"
+git -C "$REMOTE_ROOT" init -q -b main
+git -C "$REMOTE_ROOT" config user.email test@example.com
+git -C "$REMOTE_ROOT" config user.name Test
+git -C "$REMOTE_ROOT" add AGENTS.md bin
+git -C "$REMOTE_ROOT" commit -qm 'remote extension fixture'
+cat > "$H_REMOTE_CONTROL/data/secondmates.md" <<EOF
+- ios - remote extension home (host: remote-mac; root: $REMOTE_ROOT; home: $H_REMOTE; scope: extension test; projects: none; added 2026-08-27)
+EOF
+cat > "$REMOTE_FAKEBIN/fake-ssh" <<'SH'
+#!/usr/bin/env bash
+count=$(cat "$FM_FAKE_SSH_COUNT" 2>/dev/null || echo 0)
+printf '%s\n' "$((count + 1))" > "$FM_FAKE_SSH_COUNT"
+while [ "$#" -gt 0 ]; do
+  case "$1" in -o) shift 2 ;; --) shift; break ;; *) exit 90 ;; esac
+done
+host=$1
+entry=$2
+shift 2
+[ "$host" = remote-mac ] || exit 91
+[ "$entry" = fm-remote-entrypoint.sh ] || exit 92
+exec "$FM_FAKE_REMOTE_ENTRYPOINT" "$@"
+SH
+chmod +x "$REMOTE_FAKEBIN/fake-ssh"
+remote_on() {
+  FM_HOME="$H_REMOTE_CONTROL" \
+  FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
+  FM_SSH_BIN="$REMOTE_FAKEBIN/fake-ssh" \
+  FM_FAKE_SSH_COUNT="$REMOTE_SSH_COUNT" \
+  FM_FAKE_REMOTE_ENTRYPOINT="$REMOTE_ROOT/bin/fm-remote-entrypoint.sh" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
+  FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
+  "$ROOT/bin/fm-on.sh" ios "$@"
+}
+remote_bind=$(remote_on fm-extension.sh bind "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
+assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
+assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote" "remote transport did not discover the binding"
+remote_package_root=$(binding_value "$H_REMOTE" org.example.remote package_root)
+case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fail "remote package escaped its addressed home: $remote_package_root" ;; esac
+remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
+remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
+remote_resolution=$(remote_on fm-extension.sh resolve-process-event ext-remote)
+IFS=$'\t' read -r _remote_schema remote_id remote_version remote_capability remote_package remote_binding remote_extra <<< "$remote_resolution"
+[ -z "$remote_extra" ] || fail "remote resolution returned extra fields"
+remote_result=$(remote_on fm-extension.sh process-event ext-remote source.poll \
+  --expect-extension "$remote_id" \
+  --expect-version "$remote_version" \
+  --expect-capability-version "$remote_capability" \
+  --expect-package-digest "$remote_package" \
+  --expect-binding-digest "$remote_binding" \
+  --source-id remote-source \
+  --config-ref remote-result \
+  --request-id "sha256:$(printf '6%.0s' {1..64})")
+assert_contains "$remote_result" "external evidence: remote-result" "remote invocation result did not cross back through the transport"
+remote_on fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
+assert_absent "$H_REMOTE/state/procevent/remote-source.source" "remote owner-matched retirement left its registration"
+assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
+[ "$(cat "$REMOTE_SSH_COUNT")" -ge 6 ] || fail "remote-home coverage bypassed the fm-on transport"
+pass "remote binding, discovery, invocation, result return, and retirement cross the fm-on boundary"
 
 # --- shipped runnable example ------------------------------------------------
 P_EXAMPLE="$PACKAGES/file-signal-example"
