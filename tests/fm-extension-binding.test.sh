@@ -15,8 +15,14 @@ TMP_ROOT_RAW=$(fm_test_tmproot fm-extension-binding)
 TMP_ROOT=$(cd "$TMP_ROOT_RAW" && pwd -P)
 first_bind_pid=
 concurrent_release=
+race_register_pid=
+race_retire_pid=
+race_release=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
+  [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
+  [ -z "$race_register_pid" ] || kill -TERM "$race_register_pid" 2>/dev/null || true
+  [ -z "$race_retire_pid" ] || kill -TERM "$race_retire_pid" 2>/dev/null || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
   fi
@@ -635,6 +641,39 @@ assert_present "$H_FLOW/data/extensions/retired-bindings/org.example.flow/${flow
 expect_failure "no home-local extension binding" env FM_HOME="$H_FLOW" "$HOST" resolve-process-event ext-flow
 pass "local binding retirement requires its exact identity and disables invocation"
 
+P_RETIRE_RACE="$PACKAGES/retire-race"
+race_marker="$TMP_ROOT/retire-race.marker"
+race_release="$TMP_ROOT/retire-race.release"
+make_package "$P_RETIRE_RACE" org.example.retire-race ext-retire-race "$(printf 'handshake-block\n%s\n%s' "$race_marker" "$race_release")"
+H_RETIRE_RACE="$HOMES/retire-race"; new_home "$H_RETIRE_RACE"
+touch "$race_release"
+race_bind=$(bind_package "$H_RETIRE_RACE" "$P_RETIRE_RACE" ext-retire-race)
+race_binding_digest=$(printf '%s\n' "$race_bind" | sed -n 's/^binding-digest: //p')
+rm -f "$race_marker" "$race_release"
+FM_HOME="$H_RETIRE_RACE" "$PROCEVENT" register-extension ext-retire-race race-source --config-ref good > "$TMP_ROOT/retire-race-register.out" 2>&1 &
+race_register_pid=$!
+wait_for_file "$race_marker" || fail "registration race fixture never entered binding resolution"
+FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding org.example.retire-race --if-binding-digest "$race_binding_digest" > "$TMP_ROOT/retire-race-retire.out" 2>&1 &
+race_retire_pid=$!
+sleep 0.2
+kill -0 "$race_retire_pid" 2>/dev/null || fail "binding retirement bypassed an in-flight registration"
+touch "$race_release"
+race_register_rc=0
+wait "$race_register_pid" || race_register_rc=$?
+race_register_pid=
+[ "$race_register_rc" -eq 0 ] || fail "serialized registration did not publish its owner record"
+race_retire_rc=0
+wait "$race_retire_pid" || race_retire_rc=$?
+race_retire_pid=
+[ "$race_retire_rc" -ne 0 ] || fail "serialized retirement removed a binding with a new registration"
+assert_contains "$(cat "$TMP_ROOT/retire-race-retire.out")" "still owns process-event registration" "serialized retirement did not observe the published registration"
+assert_present "$H_RETIRE_RACE/config/extensions.d/org.example.retire-race.json" "registration race left a dangling owner record"
+race_owner=$(sed -n 's/^owner-token: //p' "$TMP_ROOT/retire-race-register.out")
+FM_HOME="$H_RETIRE_RACE" "$PROCEVENT" retire race-source --if-owner "$race_owner" >/dev/null
+FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding org.example.retire-race --if-binding-digest "$race_binding_digest" >/dev/null
+race_release=
+pass "registration publication and binding retirement share one lifecycle boundary"
+
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null
 first=$(FM_HOME="$H_OWNER_SAFE" "$PROCEVENT" register-extension ext-flow replace-source --config-ref first)
@@ -871,6 +910,19 @@ make_package "$P_REMOTE_OTHER" org.example.remote-other ext-remote-other
 remote_other_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE_OTHER" --adapter ext-remote-other --trust-same-user-code)
 remote_other_transfer=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^transfer-digest: //p')
 remote_other_binding=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^binding-digest: //p')
+remote_binding_path="$H_REMOTE/config/extensions.d/org.example.remote.json"
+remote_partial_binding="$remote_stage_root/binding.json"
+cp "$remote_binding_path" "$remote_partial_binding"
+expect_failure "enabled and partial binding state" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+rm -f "$remote_partial_binding"
+cp "$remote_binding_path" "$TMP_ROOT/remote-binding.json"
+mv "$remote_binding_path" "$remote_partial_binding"
+printf ' ' >> "$remote_partial_binding"
+expect_failure "partial binding does not match" remote_on fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+cp "$TMP_ROOT/remote-binding.json" "$remote_partial_binding"
+chmod 0600 "$remote_partial_binding"
 remote_on fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest" >/dev/null
 assert_absent "$H_REMOTE/data/extensions/staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}" "remote staged package was not retired"
@@ -880,6 +932,7 @@ assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "remote en
 expect_failure "no home-local extension binding" remote_on fm-extension.sh resolve-process-event ext-remote
 assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote-other" "retirement changed an unrelated remote binding"
 remote_on fm-extension.sh verify org.example.remote-other >/dev/null
+pass "remote retirement refuses ambiguous drift and resumes an exact crash cut"
 remote_on fm-extension.sh retire-transfer org.example.remote-other \
   --if-transfer-digest "$remote_other_transfer" --if-binding-digest "$remote_other_binding" >/dev/null
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"

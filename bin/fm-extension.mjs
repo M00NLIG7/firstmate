@@ -757,6 +757,23 @@ async function registryPath(home) {
   return path.join(home, "config", "extensions.d");
 }
 
+async function loadBindingRecord(home, file, label, { packages = true } = {}) {
+  const fileInfo = await lstat(file);
+  if (!fileInfo.isFile() || fileInfo.isSymbolicLink() || fileInfo.nlink !== 1) fail("link-unsafe", `${label} is not a single regular file`);
+  if (fileInfo.uid !== currentUid()) fail("owner-mismatch", `${label} is not owned by the active user`);
+  if (modeOf(fileInfo) !== 0o600) fail("mode-unsafe", `${label} must have mode 0600`);
+  if (fileInfo.size > MAX_JSON_BYTES) fail("binding-oversized", `${label} exceeds ${MAX_JSON_BYTES} bytes`);
+  const bytes = await readFile(file);
+  const binding = validateBinding(parseStrictJson(bytes, label), home);
+  return {
+    binding,
+    bindingDigest: digestBytes(bytes),
+    bindingPath: file,
+    packageInfo: packages ? await validateBindingPackage(binding, home) : null,
+    bytes,
+  };
+}
+
 async function loadBindings(home, { packages = true } = {}) {
   const registry = await registryPath(home);
   const info = await maybeLstat(registry);
@@ -771,21 +788,9 @@ async function loadBindings(home, { packages = true } = {}) {
     if (!name.endsWith(".json") || name.startsWith(".")) fail("registry-invalid", `unexpected file in extension binding registry: ${name}`);
     safeTreeName(name, "extension binding registry");
     const file = path.join(registry, name);
-    const fileInfo = await lstat(file);
-    if (!fileInfo.isFile() || fileInfo.isSymbolicLink() || fileInfo.nlink !== 1) fail("link-unsafe", `extension binding is not a single regular file: ${name}`);
-    if (fileInfo.uid !== currentUid()) fail("owner-mismatch", `extension binding is not owned by the active user: ${name}`);
-    if (modeOf(fileInfo) !== 0o600) fail("mode-unsafe", `extension binding must have mode 0600: ${name}`);
-    if (fileInfo.size > MAX_JSON_BYTES) fail("binding-oversized", `extension binding exceeds ${MAX_JSON_BYTES} bytes: ${name}`);
-    const bytes = await readFile(file);
-    const binding = validateBinding(parseStrictJson(bytes, `extension binding ${name}`), home);
+    const record = await loadBindingRecord(home, file, `extension binding ${name}`, { packages });
+    const { binding } = record;
     if (name !== `${binding.extension_id}.json`) fail("registry-invalid", `binding filename does not match extension id: ${name}`);
-    const record = {
-      binding,
-      bindingDigest: digestBytes(bytes),
-      bindingPath: file,
-      packageInfo: packages ? await validateBindingPackage(binding, home) : null,
-      bytes,
-    };
     for (const adapter of binding.capabilities[0].adapter_names) {
       if (adapters.has(adapter)) fail("adapter-conflict", `adapter ${adapter} is enabled by more than one binding`);
       adapters.set(adapter, binding.extension_id);
@@ -1472,7 +1477,7 @@ async function cmdReceiveTransferBind(args) {
   }
 }
 
-async function cmdRetireTransfer(args) {
+async function cmdRetireTransferLocked(args) {
   if (args.length !== 5 || args[1] !== "--if-transfer-digest" || args[3] !== "--if-binding-digest") {
     fail("usage", "retire-transfer requires <extension-id> --if-transfer-digest <sha256:digest> --if-binding-digest <sha256:digest>");
   }
@@ -1505,8 +1510,29 @@ async function cmdRetireTransfer(args) {
   const stagedPackage = await validatePackage(path.join(matches[0], "package"), { installed: false });
   if (stagedPackage.manifest.id !== receipt.extension_id || stagedPackage.manifest.version !== receipt.extension_version
       || stagedPackage.tree.digest !== receipt.package_digest) fail("integrity-mismatch", "staged package identity does not match its transfer receipt");
+  const retired = await transferRetiredDestination(home, receipt);
+  if (await maybeLstat(retired)) fail("transfer-exists", "this transfer identity is already retired");
+  const retiredBinding = path.join(matches[0], "binding.json");
+  const partialInfo = await maybeLstat(retiredBinding);
   const bindings = await loadBindings(home, { packages: true });
   const record = bindings.find((candidate) => candidate.binding.extension_id === extensionId);
+  if (partialInfo) {
+    if (record) fail("retirement-partial", "enabled and partial binding state coexist for this transfer identity");
+    const partial = await loadBindingRecord(home, retiredBinding, "partial retired binding");
+    if (partial.bindingDigest !== bindingDigest
+        || partial.binding.extension_id !== receipt.extension_id
+        || partial.binding.extension_version !== receipt.extension_version
+        || partial.binding.package_digest !== receipt.package_digest
+        || partial.binding.source.path !== path.join(matches[0], "package")) {
+      fail("owner-mismatch", "partial binding does not match the exact transfer retirement identity");
+    }
+    await bindingRetirementPreflight(home, bindingDigest);
+    await rename(matches[0], retired);
+    process.stdout.write(`retired-transfer: ${extensionId} ${transferDigest}\n`);
+    process.stdout.write(`retired-binding: ${extensionId} ${bindingDigest}\n`);
+    process.stdout.write(`retained-at: ${retired}\n`);
+    return;
+  }
   if (!record) fail("binding-missing", `no enabled binding exists for extension: ${extensionId}`);
   if (record.bindingDigest !== bindingDigest) fail("owner-mismatch", "current extension binding does not match the expected binding identity");
   if (record.binding.extension_version !== receipt.extension_version
@@ -1515,10 +1541,6 @@ async function cmdRetireTransfer(args) {
     fail("owner-mismatch", "current extension binding is not owned by this staged transfer identity");
   }
   await bindingRetirementPreflight(home, bindingDigest);
-  const retired = await transferRetiredDestination(home, receipt);
-  if (await maybeLstat(retired)) fail("transfer-exists", "this transfer identity is already retired");
-  const retiredBinding = path.join(matches[0], "binding.json");
-  if (await maybeLstat(retiredBinding)) fail("retirement-partial", "staged transfer already contains retirement state");
   let bindingMoved = false;
   try {
     await rename(record.bindingPath, retiredBinding);
@@ -1538,7 +1560,7 @@ async function cmdRetireTransfer(args) {
   process.stdout.write(`retained-at: ${retired}\n`);
 }
 
-async function cmdRetireBinding(args) {
+async function cmdRetireBindingLocked(args) {
   if (args.length !== 3 || args[1] !== "--if-binding-digest") fail("usage", "retire-binding requires <extension-id> --if-binding-digest <sha256:digest>");
   const extensionId = boundedString(args[0], 128, "extension id", ID_RE);
   const bindingDigest = args[2];
@@ -1569,6 +1591,50 @@ async function cmdRetireBinding(args) {
   }
   process.stdout.write(`retired-binding: ${extensionId} ${bindingDigest}\n`);
   process.stdout.write(`retained-at: ${destination}\n`);
+}
+
+async function runLifecycleRetirement(mode, args) {
+  const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
+  const home = await activeHome();
+  const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
+  if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
+  if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+  if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  const child = spawn(command, ["extension-retirement", mode, ...args], {
+    cwd: CODE_ROOT,
+    env,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = [];
+  const stderr = [];
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  child.stdout.on("data", (chunk) => {
+    stdoutBytes += chunk.length;
+    if (stdoutBytes <= MAX_JSON_BYTES) stdout.push(chunk);
+  });
+  child.stderr.on("data", (chunk) => {
+    stderrBytes += chunk.length;
+    if (stderrBytes <= MAX_STDERR_BYTES) stderr.push(chunk);
+  });
+  const outcome = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).catch(() => fail("retirement-failed", "extension lifecycle retirement could not start"));
+  if (stdoutBytes > MAX_JSON_BYTES || stderrBytes > MAX_STDERR_BYTES || outcome.code !== 0 || outcome.signal) {
+    const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
+    fail("retirement-failed", diagnostic || "extension lifecycle retirement failed");
+  }
+  process.stdout.write(Buffer.concat(stdout));
+}
+
+async function cmdRetireBinding(args) {
+  await runLifecycleRetirement("binding", args);
+}
+
+async function cmdRetireTransfer(args) {
+  await runLifecycleRetirement("transfer", args);
 }
 
 async function bindingRetirementPreflight(home, bindingDigest) {
@@ -1709,6 +1775,8 @@ async function main() {
     case "receive-transfer-bind": await cmdReceiveTransferBind(args); break;
     case "retire-binding": await cmdRetireBinding(args); break;
     case "retire-transfer": await cmdRetireTransfer(args); break;
+    case "retire-binding-locked": await cmdRetireBindingLocked(args); break;
+    case "retire-transfer-locked": await cmdRetireTransferLocked(args); break;
     case "list": await cmdList(args); break;
     case "inspect": await cmdInspect(args); break;
     case "verify": await cmdVerify(args); break;

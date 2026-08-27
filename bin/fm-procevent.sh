@@ -13,6 +13,7 @@
 #   fm-procevent.sh retire <source-id> [--if-absent|--if-matches <adapter> -- <argv>...|--if-owner <registration-token>]
 #   fm-procevent.sh sweep-home [--preflight]
 #   fm-procevent.sh binding-retirement-preflight <binding-digest>
+#   fm-procevent.sh extension-retirement <binding|transfer> <retirement-arguments...>
 #   fm-procevent.sh list
 #
 # register   Record a built-in source: its adapter, its canonical id, and the
@@ -68,6 +69,9 @@
 #            Refuse while an extension registration or unhandled captured result
 #            still owns the exact enabled binding digest. Called by the tracked
 #            extension host before identity-conditional binding retirement.
+# extension-retirement
+#            Serialize one tracked binding or transfer retirement against
+#            extension resolution and registration publication in this home.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
@@ -162,11 +166,22 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REG=$(fm_procevent_registry_dir "$STATE")
 MAX_OUTPUT_BYTES=${FM_PROCEVENT_MAX_OUTPUT_BYTES:-1048576}
 EXTENSION_HOST="$SCRIPT_DIR/fm-extension.mjs"
+EXTENSION_LIFECYCLE_LOCK="$REG/.extension-binding-lifecycle.lock"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,142p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
 
 adapter_script() { printf '%s/bin/fm-procevent-%s.sh\n' "$FM_ROOT" "$1"; }
+
+extension_lifecycle_lock_acquire() {
+  (umask 077; mkdir -p "$REG") || return 1
+  [ -d "$REG" ] && [ ! -L "$REG" ] || return 1
+  fm_lock_acquire_wait "$EXTENSION_LIFECYCLE_LOCK"
+}
+
+extension_lifecycle_lock_release() {
+  fm_lock_release "$EXTENSION_LIFECYCLE_LOCK"
+}
 
 # Invoke one captured result through its exact extension owner. The immutable
 # sidecar, not the current adapter name alone, supplies every expected binding
@@ -359,31 +374,46 @@ cmd_register_extension() {
   if [ ! -x "$EXTENSION_HOST" ] || [ -L "$EXTENSION_HOST" ]; then
     die "the tracked extension host is unavailable"
   fi
-  resolution=$("$EXTENSION_HOST" resolve-process-event "$adapter") \
-    || die "extension adapter verification failed: $adapter"
-  [ "$(printf '%s\n' "$resolution" | wc -l | tr -d ' ')" = 1 ] \
-    || die "extension adapter resolution was malformed: $adapter"
+  extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
+  if ! resolution=$("$EXTENSION_HOST" resolve-process-event "$adapter"); then
+    extension_lifecycle_lock_release
+    die "extension adapter verification failed: $adapter"
+  fi
+  if [ "$(printf '%s\n' "$resolution" | wc -l | tr -d ' ')" != 1 ]; then
+    extension_lifecycle_lock_release
+    die "extension adapter resolution was malformed: $adapter"
+  fi
   IFS=$'\t' read -r schema extension_id extension_version capability_version \
     package_digest binding_digest extra <<< "$resolution"
-  [ "$schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$extra" ] \
-    || die "extension adapter resolution was malformed: $adapter"
+  if [ "$schema" != fm-extension-process-event-resolution.v1 ] || [ -n "$extra" ]; then
+    extension_lifecycle_lock_release
+    die "extension adapter resolution was malformed: $adapter"
+  fi
   if ! fm_procevent_extension_id_valid "$extension_id" \
     || ! fm_procevent_extension_version_valid "$extension_version" \
     || [ "$capability_version" != 1 ] \
     || ! fm_procevent_digest_valid "$package_digest" \
     || ! fm_procevent_digest_valid "$binding_digest"; then
+    extension_lifecycle_lock_release
     die "extension adapter identity was malformed: $adapter"
   fi
-  registration_token=$(new_extension_registration_token) \
-    || die "cannot create an extension registration identity"
-  fm_procevent_source_lock_acquire "$id" || die "cannot lock the source"
+  if ! registration_token=$(new_extension_registration_token); then
+    extension_lifecycle_lock_release
+    die "cannot create an extension registration identity"
+  fi
+  if ! fm_procevent_source_lock_acquire "$id"; then
+    extension_lifecycle_lock_release
+    die "cannot lock the source"
+  fi
   if ! fm_procevent_extension_registration_publish_locked "$STATE" "$adapter" "$id" \
       "$extension_id" "$extension_version" "$capability_version" "$package_digest" \
       "$binding_digest" "$config_ref" "$registration_token"; then
     fm_procevent_source_lock_release "$id"
+    extension_lifecycle_lock_release
     die "cannot publish the extension registration"
   fi
   fm_procevent_source_lock_release "$id"
+  extension_lifecycle_lock_release
   printf 'registered: %s (%s from %s@%s)\n' "$id" "$adapter" "$extension_id" "$extension_version"
   printf 'owner-token: %s\n' "$registration_token"
   printf 'retire: bin/fm-procevent.sh retire %s --if-owner %s\n' "$id" "$registration_token"
@@ -1204,6 +1234,17 @@ cmd_binding_retirement_preflight() {
   printf 'binding retirement preflight: ready\n'
 }
 
+cmd_extension_retirement() {
+  local mode=${1-} status=0
+  [ "$#" -ge 1 ] || die "extension-retirement requires a retirement mode"
+  shift
+  case "$mode" in binding|transfer) ;; *) die "unsupported extension retirement mode: $mode" ;; esac
+  extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
+  "$EXTENSION_HOST" "retire-$mode-locked" "$@" || status=$?
+  extension_lifecycle_lock_release
+  return "$status"
+}
+
 case "${1-}" in
   register)           shift; cmd_register "$@" ;;
   register-extension) shift; cmd_register_extension "$@" ;;
@@ -1215,6 +1256,7 @@ case "${1-}" in
   retire)             shift; cmd_retire "$@" ;;
   sweep-home)         shift; cmd_sweep_home "$@" ;;
   binding-retirement-preflight) shift; cmd_binding_retirement_preflight "$@" ;;
+  extension-retirement) shift; cmd_extension_retirement "$@" ;;
   list)               shift; cmd_list "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;

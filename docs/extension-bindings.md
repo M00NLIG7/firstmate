@@ -93,6 +93,7 @@ Binding publication is atomic and does not replace a concurrent file.
 `list`, `inspect`, and `verify` expose the resulting identity and live compatibility without creating state when no registry exists.
 Binding publication prints the binding digest used as its conditional retirement identity.
 `retire-binding` fully validates the current binding and installed package, refuses a stale digest or a transferred source, and atomically moves only that exact local binding into `data/extensions/retired-bindings`.
+One home-local lifecycle lock serializes extension resolution through registration publication against dependency preflight through exact binding removal.
 Before either retirement form, the process-event owner refuses while an exact registration or unhandled captured result still depends on the binding.
 Retirement disables discovery and invocation without deleting the content-addressed installed package, and retained binding state can be restored deliberately.
 
@@ -216,7 +217,8 @@ Remote and local secondmate homes bind and install independently, and the primar
 The receiver creates the package in a private temporary directory below `data/extensions/staging`, validates ownership, permissions, the package manifest, executable, and complete reconstructed tree, then atomically publishes the transfer before the normal bind handshake and binding publication.
 A failed bind moves the exact transfer identity into `data/extensions/retired-staging` without enabling it.
 `retire-transfer` requires both transfer and binding digests, then revalidates the receipt, version directory, staged manifest identity, staged complete-tree digest, installed package, enabled binding, and binding source path as one identity.
-It refuses missing, ambiguous, drifted, mismatched, partial, in-use, or unrelated state before moving the enabled binding into the staged identity and reversibly moving that exact unit into `data/extensions/retired-staging`.
+It refuses missing, ambiguous, drifted, mismatched, in-use, or unrelated state before moving the enabled binding into the staged identity and reversibly moving that exact unit into `data/extensions/retired-staging`.
+If the process stops between those two moves, a retry resumes only when the retained binding and staged receipt, version directory, package, transfer digest, and binding digest still form that one exact retirement identity; altered or coexisting partial state is refused.
 The transfer contains package bytes and declarative metadata only: it carries no environment, credentials, cookies, tokens, destinations, or caller-selected command text and creates no generic file-transfer surface.
 Bindings and credentials are deliberately absent from the inherited secondmate configuration allowlist.
 
