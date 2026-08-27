@@ -814,8 +814,20 @@ function sanitizedPath() {
   return [...new Set(candidates)].join(path.delimiter);
 }
 
+function effectiveStateRoot(home) {
+  return path.resolve(process.env.FM_STATE_OVERRIDE || path.join(home, "state"));
+}
+
 async function ensureExtensionState(home, binding) {
-  const root = await ensureHomePrivatePath(home, ["state", "extensions"]);
+  let root;
+  if (process.env.FM_STATE_OVERRIDE) {
+    const stateRoot = effectiveStateRoot(home);
+    await assertOwnedSafeDirectory(stateRoot, "extension state root");
+    root = path.join(stateRoot, "extensions");
+    await ensureDirectory(root, 0o700, "state/extensions", true);
+  } else {
+    root = await ensureHomePrivatePath(home, ["state", "extensions"]);
+  }
   const statePath = path.join(root, binding.extension_id);
   await ensureDirectory(statePath, 0o700, `extension state ${binding.extension_id}`, true);
   return statePath;
@@ -1049,7 +1061,7 @@ function validateOperationResult(operation, result) {
 
 async function readCapturedResult(home, resultFile) {
   const absolute = path.resolve(resultFile);
-  const inbox = path.join(home, "state", "procevent-inbox");
+  const inbox = path.join(effectiveStateRoot(home), "procevent-inbox");
   if (!isInside(inbox, absolute) || path.dirname(absolute) !== inbox) fail("path-unsafe", "captured result must be directly inside this home's process-event inbox");
   const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
   if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
@@ -1445,7 +1457,7 @@ async function assertLifecycleLockOwned() {
 async function claimInheritedLifecycleLock(home) {
   const mode = process.env.FM_EXTENSION_RETIREMENT_MODE;
   if (mode !== "binding" && mode !== "transfer") fail("lifecycle-lock-invalid", "retirement mode is invalid");
-  const stateRoot = path.resolve(process.env.FM_STATE_OVERRIDE || path.join(home, "state"));
+  const stateRoot = effectiveStateRoot(home);
   const expectedLock = path.join(stateRoot, "procevent", ".extension-binding-lifecycle.lock");
   const lockPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_LOCK || "");
   const ownerPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_OWNER || "");
