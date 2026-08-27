@@ -228,7 +228,7 @@ else if (mode === "control") {
 } else if (request.operation === "result.terminal") {
   raw(success({ value: true }));
 } else if (request.operation === "result.silent") {
-  raw(success({ value: false }));
+  raw(success({ value: request.input?.content === "external evidence: silent-result\n" }));
 } else {
   process.exit(6);
 }
@@ -790,15 +790,18 @@ FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" start active-source > "$TMP_ROOT/active-
 active_runner_pid=$!
 wait_for_file "$active_runner_marker" || fail "active extension runner never entered its poll"
 expect_failure "prior runner remains active" env FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension ext-flow active-source --config-ref replacement
+expect_failure "prior runner remains active" env FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register lavish active-source -- /bin/echo built-in
 touch "$active_runner_release"
 active_runner_release=
 wait "$active_runner_pid" || fail "active extension runner did not complete"
 active_runner_pid=
 assert_absent "$H_ACTIVE_RUNNER/state/procevent/active-source.source" "terminal extension runner retained its registration"
+FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register lavish active-source -- /bin/echo built-in >/dev/null
+FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" retire active-source --if-matches lavish -- /bin/echo built-in >/dev/null
 active_replacement=$(FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension ext-flow active-source --config-ref replacement)
 active_replacement_owner=$(printf '%s\n' "$active_replacement" | sed -n 's/^owner-token: //p')
 FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" retire active-source --if-owner "$active_replacement_owner" >/dev/null
-pass "extension replacement waits for the prior runner generation to finish"
+pass "all registration owner transitions wait for the prior extension runner"
 
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null
@@ -818,13 +821,34 @@ H_STATE_OVERRIDE="$HOMES/state-override"; new_home "$H_STATE_OVERRIDE"
 STATE_OVERRIDE="$TMP_ROOT/overridden-state"
 override_bind=$(bind_package "$H_STATE_OVERRIDE" "$P_FLOW" ext-flow)
 override_bind_digest=$(printf '%s\n' "$override_bind" | sed -n 's/^binding-digest: //p')
-override_registration=$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" register-extension ext-flow override-source --config-ref good)
+override_registration=$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" register-extension ext-flow override-source --config-ref silent-result)
 override_owner=$(printf '%s\n' "$override_registration" | sed -n 's/^owner-token: //p')
 expect_failure "still owns process-event registration" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" retire-binding org.example.flow --if-binding-digest "$override_bind_digest"
 assert_present "$H_STATE_OVERRIDE/config/extensions.d/org.example.flow.json" "overridden-state dependency did not preserve its binding"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" start override-source >/dev/null
+override_result="$STATE_OVERRIDE/procevent-inbox/override-source.1.result"
+assert_present "$override_result" "overridden-state runner did not capture its result"
+assert_present "$STATE_OVERRIDE/procevent-inbox/override-source.1.handled" "overridden-state silent verdict was not recorded"
+assert_absent "$STATE_OVERRIDE/procevent/override-source.source" "overridden-state terminal verdict did not retire its registration"
+assert_contains "$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" classify "$override_result")" "external-ready" \
+  "overridden-state result could not be classified"
+mkdir "$TMP_ROOT/override-outside"
+cp "$override_result" "$TMP_ROOT/override-outside/override-source.1.result"
+cp "$STATE_OVERRIDE/procevent-inbox/override-source.1.adapter" "$TMP_ROOT/override-outside/override-source.1.adapter"
+cp "$STATE_OVERRIDE/procevent-inbox/override-source.1.extension" "$TMP_ROOT/override-outside/override-source.1.extension"
+chmod 0600 "$TMP_ROOT/override-outside/override-source.1.result"
+chmod 0600 "$TMP_ROOT/override-outside/override-source.1.adapter" "$TMP_ROOT/override-outside/override-source.1.extension"
+expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" classify "$TMP_ROOT/override-outside/override-source.1.result"
+mv "$STATE_OVERRIDE/procevent-inbox" "$TMP_ROOT/override-real-inbox"
+ln -s "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
+expect_failure "traverses a symbolic link" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" classify "$STATE_OVERRIDE/procevent-inbox/override-source.1.result"
+rm "$STATE_OVERRIDE/procevent-inbox"
+mv "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" retire override-source --if-owner "$override_owner" >/dev/null
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" retire-binding org.example.flow --if-binding-digest "$override_bind_digest" >/dev/null
-pass "binding retirement preflight honors the exact overridden state root"
+pass "overridden state confines extension work and captured-result operations"
 
 H_SWEEP="$HOMES/sweep"; new_home "$H_SWEEP"
 bind_package "$H_SWEEP" "$P_FLOW" ext-flow >/dev/null
@@ -856,7 +880,7 @@ REMOTE_SSH_COUNT="$TMP_ROOT/remote-ssh.count"
 mkdir -p "$H_REMOTE_CONTROL/data" "$H_REMOTE" "$REMOTE_ROOT/bin"
 printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 for remote_file in \
-  fm-extension.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh \
+  fm-extension.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh fm-procevent-lavish.sh \
   fm-pr-lib.sh fm-wake-lib.sh fm-remote-entrypoint.sh fm-remote-job-lib.sh \
   fm-remote-job-worker.sh; do
   cp "$ROOT/bin/$remote_file" "$REMOTE_ROOT/bin/$remote_file"
@@ -995,6 +1019,7 @@ remote_on fm-procevent.sh register-extension ext-remote remote-active-source --c
 remote_on fm-procevent.sh reconcile >/dev/null
 wait_for_file "$remote_active_marker" || fail "remote active runner never crossed the transport into its poll"
 expect_failure "prior runner remains active" remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+expect_failure "prior runner remains active" remote_on fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in
 touch "$remote_active_release"
 remote_active_release=
 for _ in $(seq 1 400); do
@@ -1003,10 +1028,12 @@ for _ in $(seq 1 400); do
 done
 assert_absent "$H_REMOTE/state/procevent/remote-active-source.source" "remote terminal runner retained its registration"
 remote_on fm-procevent.sh handled remote-active-source 1 >/dev/null
+remote_on fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in >/dev/null
+remote_on fm-procevent.sh retire remote-active-source --if-matches lavish -- /bin/echo remote-built-in >/dev/null
 remote_active_replacement=$(remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement)
 remote_active_owner=$(printf '%s\n' "$remote_active_replacement" | sed -n 's/^owner-token: //p')
 remote_on fm-procevent.sh retire remote-active-source --if-owner "$remote_active_owner" >/dev/null
-pass "remote extension replacement observes the active runner lifecycle boundary"
+pass "remote registration owner transitions observe the active runner boundary"
 remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
 expect_failure "still owns process-event registration" remote_on fm-extension.sh retire-transfer org.example.remote \
