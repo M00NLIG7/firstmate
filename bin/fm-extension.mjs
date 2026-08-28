@@ -1514,10 +1514,11 @@ async function cmdBindFrom(args, stagedRoot) {
     timeout_ms: parsed.timeoutMs,
   };
   const record = { binding, packageInfo: installed.packageInfo };
+  const statePath = await ensureExtensionState(home, binding);
   let publishedBinding = "";
   let publishedBytes = null;
   try {
-    await handshake(record);
+    await handshake(record, statePath);
     const registry = await ensureHomePrivatePath(home, ["config", "extensions.d"]);
     const destination = path.join(registry, `${binding.extension_id}.json`);
     if (await maybeLstat(destination)) fail("binding-exists", `binding already exists for extension: ${binding.extension_id}`);
@@ -1527,7 +1528,7 @@ async function cmdBindFrom(args, stagedRoot) {
     publishedBytes = bytes;
     const loaded = (await loadBindings(home, { packages: true })).find((candidate) => candidate.binding.extension_id === binding.extension_id);
     if (!loaded) fail("binding-write-failed", "binding was not readable after publication");
-    await handshake(loaded);
+    await handshake(loaded, statePath);
     process.stdout.write(`bound: ${binding.extension_id}@${binding.extension_version}\n`);
     process.stdout.write(`binding: ${destination}\n`);
     process.stdout.write(`binding-digest: ${loaded.bindingDigest}\n`);
@@ -2057,7 +2058,8 @@ async function cmdVerify(args) {
     return;
   }
   for (const record of bindings) {
-    await handshake(record);
+    const statePath = await ensureExtensionState(home, record.binding);
+    await handshake(record, statePath);
     process.stdout.write(`verified: ${record.binding.extension_id}@${record.binding.extension_version} ${record.binding.package_digest}\n`);
   }
 }
@@ -2068,7 +2070,8 @@ async function cmdResolveProcessEvent(args) {
   const home = await activeHome();
   const bindings = await loadBindings(home, { packages: true });
   const record = selectAdapter(bindings, adapter);
-  await handshake(record);
+  const statePath = await ensureExtensionState(home, record.binding);
+  await handshake(record, statePath);
   const fields = [
     RESOLUTION_SCHEMA,
     record.binding.extension_id,
