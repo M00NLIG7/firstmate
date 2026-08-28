@@ -1031,6 +1031,11 @@ function armProcessTracker(tracker, child, onError) {
     onError();
     return;
   }
+  // Processes present before the extension child is observed cannot be
+  // attributed to that invocation.  The pre-spawn snapshot alone leaves a
+  // small setup gap in which an unrelated same-user orphan can be mistaken
+  // for an extension descendant.
+  for (const [pid, entry] of tracker.table) tracker.baseline.set(pid, entry.identity);
   tracker.timer = setInterval(() => {
     try {
       refreshProcessTracker(tracker);
