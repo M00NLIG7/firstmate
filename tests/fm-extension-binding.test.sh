@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn) ;;
+  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -508,8 +508,8 @@ if [ "$extension_segment" = all ]; then
     fail "the coordinator left its deadline child alive"
   fi
   pass "the section coordinator propagates ordered failures and bounded cleanup"
-  run_extension_section_lanes matrix example early-bind early-integrity \
-    remote-envelope remote-lifecycle remote-retirement lifecycle-state \
+  run_extension_section_lanes remote-lifecycle matrix remote-activation lifecycle-flow \
+    early-bind early-integrity remote-envelope remote-retirement lifecycle-state \
     lifecycle-flow lifecycle-lock \
     || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
@@ -1153,7 +1153,7 @@ pass "legacy built-in registrations retain behavior and gain exact conditional r
 fi
 
 # --- independent remote envelope, lifecycle, and retirement paths -----------
-if section_enabled remote-envelope remote-lifecycle remote-retirement; then
+if section_enabled remote-envelope remote-activation remote-lifecycle remote-retirement; then
 wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 P_REMOTE="$PACKAGES/remote-transport"
 make_package "$P_REMOTE" org.example.remote ext-remote
@@ -1304,7 +1304,7 @@ pass "failed activation cannot partially publish and retains exact transfer evid
 [ "$(cat "$REMOTE_SSH_COUNT")" -eq 1 ] || fail "remote malformed-envelope transport crossing was not retained"
 fi
 
-if section_enabled remote-lifecycle; then
+if section_enabled remote-activation; then
 remote_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
 assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
 remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
@@ -1339,6 +1339,21 @@ remote_active_replacement=$(remote_direct fm-procevent.sh register-extension ext
 remote_active_owner=$(printf '%s\n' "$remote_active_replacement" | sed -n 's/^owner-token: //p')
 remote_direct fm-procevent.sh retire remote-active-source --if-owner "$remote_active_owner" >/dev/null
 pass "remote registration owner transitions observe the active runner boundary"
+fi
+
+if section_enabled remote-lifecycle; then
+remote_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
+assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
+remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
+case "$remote_transfer_digest" in sha256:*) ;; *) fail "remote bind returned no transfer identity" ;; esac
+remote_binding_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^binding-digest: //p')
+case "$remote_binding_digest" in sha256:*) ;; *) fail "remote bind returned no binding retirement identity" ;; esac
+assert_contains "$(remote_direct fm-extension.sh list)" "org.example.remote" "addressed remote home did not discover the transferred binding"
+remote_package_root=$(binding_value "$H_REMOTE" org.example.remote package_root)
+case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fail "remote package escaped its addressed home: $remote_package_root" ;; esac
+remote_source_root=$(binding_value "$H_REMOTE" org.example.remote source.path)
+case "$remote_source_root" in "$H_REMOTE"/data/extensions/staging/*/package) ;; *) fail "remote binding reused a controller-local pathname: $remote_source_root" ;; esac
+[ "$remote_source_root" != "$P_REMOTE" ] || fail "remote binding did not cross the serialized path boundary"
 remote_registration=$(remote_direct fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
 expect_failure "still owns process-event registration" remote_direct fm-extension.sh retire-transfer org.example.remote \
