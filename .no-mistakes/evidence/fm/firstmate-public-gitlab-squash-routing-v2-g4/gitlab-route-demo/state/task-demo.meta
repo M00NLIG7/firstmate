@@ -1,0 +1,8 @@
+window=fm-task-demo
+worktree=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1387JJ60ARWD0H77VF7AHH2/gitlab-route-demo/wt
+project=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1387JJ60ARWD0H77VF7AHH2/gitlab-route-demo/project
+kind=ship
+mode=no-mistakes
+pr=https://gl.self-hosted.example/deep/group/subgroup/project/-/merge_requests/31
+pr_head=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+gitlab_guarded_squash_receipt=v1|task-demo|https://gl.self-hosted.example/deep/group/subgroup/project/-/merge_requests/31|captain-explicit|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|fm/task-demo|main|cccccccccccccccccccccccccccccccccccccccc|dddddddddddddddddddddddddddddddddddddddd

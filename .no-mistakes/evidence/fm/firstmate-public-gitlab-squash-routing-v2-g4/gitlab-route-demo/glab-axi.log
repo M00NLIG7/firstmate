@@ -1,0 +1,3 @@
+mr view 31 --hostname gl.self-hosted.example --repo deep/group/subgroup/project --format json
+mr view 31 --hostname gl.self-hosted.example --repo deep/group/subgroup/project --format json
+mr merge 31 --repo deep/group/subgroup/project --hostname gl.self-hosted.example --expected-url https://gl.self-hosted.example/deep/group/subgroup/project/-/merge_requests/31 --expected-head aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --expected-source fm/task-demo --expected-target main --authority captain-explicit --squash --format json

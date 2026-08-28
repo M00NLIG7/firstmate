@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+if [ "${1:-} ${2:-} ${3:-}" = "mr merge --help" ]; then
+  printf '%s\n' '      --expected-head string' '      --expected-source string' '      --expected-target string'
+  exit 0
+fi
+printf '%s\n' "$*" >> "$DEMO_GLAB_AXI_LOG"
+case "${1:-} ${2:-}" in
+  "mr view") cat "$DEMO_VIEW_JSON" ;;
+  "mr merge") cat "$DEMO_MERGE_JSON" ;;
+  *) exit 98 ;;
+esac

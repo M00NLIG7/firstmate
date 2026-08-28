@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$DEMO_GLAB_LOG"
+exit 97
