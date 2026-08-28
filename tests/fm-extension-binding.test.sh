@@ -6,6 +6,13 @@
 # records those commands publish. It never asserts implementation-source bytes.
 set -u
 
+# The aggregate runner reaps stale fixtures before launching its isolated
+# section children.  Repeating that global scan in each child can consume the
+# coordinator's bounded startup window before a child publishes readiness.
+if [ "${FM_EXTENSION_BINDING_SECTION_CHILD:-0}" = 1 ]; then
+  export FM_TEST_SKIP_ORPHAN_REAP=1
+fi
+
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -327,7 +334,8 @@ run_extension_section_lane() {
   shift
   trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
   for section in "$@"; do
-    FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
+    FM_EXTENSION_BINDING_SECTION_CHILD=1 \
+      FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
     current_section_pid=$!
     wait "$current_section_pid" || section_rc=$?
     current_section_pid=

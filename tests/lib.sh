@@ -142,7 +142,12 @@ fm_test_reap_orphans() {
   done
 }
 
-fm_test_reap_orphans
+# A parent coordinator can reap once before it starts isolated child sections.
+# Those children use their own EXIT cleanup and must not spend their bounded
+# execution window repeating the same global stale-fixture scan.
+if [ "${FM_TEST_SKIP_ORPHAN_REAP:-0}" != 1 ]; then
+  fm_test_reap_orphans
+fi
 
 # --- fakebin / PATH shims ---------------------------------------------------
 #
