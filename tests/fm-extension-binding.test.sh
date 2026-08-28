@@ -303,41 +303,97 @@ section_enabled() {
   done
   return 1
 }
-wait_for_section_children() {
-  local section_pid failed=0
-  for section_pid in "$@"; do
-    if ! wait "$section_pid"; then
-      failed=1
-      for section_pid in "$@"; do
-        kill -TERM "$section_pid" 2>/dev/null || true
-      done
-    fi
+publish_section_lane_result() {
+  local result_file=$1 result=$2 temporary_file
+  temporary_file="${result_file}.$$.tmp"
+  printf '%s\n' "$result" > "$temporary_file"
+  mv "$temporary_file" "$result_file"
+}
+
+terminate_section_lanes() {
+  local index section_pid
+  for index in "${!section_pids[@]}"; do
+    [ -n "${section_complete[$index]:-}" ] && continue
+    section_pid=${section_pids[$index]}
+    kill -TERM "$section_pid" 2>/dev/null || true
   done
-  return "$failed"
+  for section_pid in "${section_pids[@]}"; do
+    wait "$section_pid" 2>/dev/null || true
+  done
 }
 
 run_extension_section_lane() {
-  local section current_section_pid= section_rc=0
-  trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; exit 143' TERM
+  local result_file=$1 section current_section_pid= section_rc=0
+  shift
+  trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
   for section in "$@"; do
     FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
     current_section_pid=$!
     wait "$current_section_pid" || section_rc=$?
     current_section_pid=
-    [ "$section_rc" -eq 0 ] || return "$section_rc"
+    if [ "$section_rc" -ne 0 ]; then
+      publish_section_lane_result "$result_file" "$section_rc"
+      return "$section_rc"
+    fi
   done
+  publish_section_lane_result "$result_file" "$section_rc"
+  return "$section_rc"
 }
 
 run_extension_section_lanes() {
-  local lane section_pid
+  local lane section_pid result_file section_rc timeout_seconds deadline index remaining
   local -a section_pids=()
+  local -a section_results=()
+  local -a section_complete=()
+  local section_result_root
+  timeout_seconds=${FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS:-30}
+  case "$timeout_seconds" in
+    ''|*[!0-9]*) return 64 ;;
+  esac
+  [ "$timeout_seconds" -gt 0 ] && [ "$timeout_seconds" -lt 35 ] || return 64
+  section_result_root=$(mktemp -d "$TMP_ROOT/section-lanes.XXXXXX") || return 1
   for lane in "$@"; do
+    result_file="$section_result_root/${#section_pids[@]}.result"
     # Lane contents are fixed below, so its word split is not user input.
     # shellcheck disable=SC2086
-    run_extension_section_lane $lane &
+    run_extension_section_lane "$result_file" $lane &
     section_pids+=("$!")
+    section_results+=("$result_file")
+    section_complete+=("")
   done
-  wait_for_section_children "${section_pids[@]}"
+  deadline=$((SECONDS + timeout_seconds))
+  remaining=${#section_pids[@]}
+  while [ "$remaining" -gt 0 ]; do
+    for index in "${!section_pids[@]}"; do
+      [ -n "${section_complete[$index]:-}" ] && continue
+      result_file=${section_results[$index]}
+      [ -f "$result_file" ] || continue
+      section_rc=$(cat "$result_file")
+      case "$section_rc" in
+        0)
+          section_complete[$index]=1
+          remaining=$((remaining - 1))
+          ;;
+        ''|*[!0-9]*)
+          terminate_section_lanes
+          return 125
+          ;;
+        *)
+          terminate_section_lanes
+          return "$section_rc"
+          ;;
+      esac
+    done
+    [ "$remaining" -eq 0 ] && break
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      terminate_section_lanes
+      return 124
+    fi
+    sleep 0.05
+  done
+  for section_pid in "${section_pids[@]}"; do
+    wait "$section_pid" || return $?
+  done
 }
 
 if section_enabled coordinator-fail; then
@@ -347,6 +403,7 @@ fi
 
 if section_enabled coordinator-wait; then
   trap 'touch "${FM_EXTENSION_BINDING_COORDINATOR_CLEANUP:?}"; exit 0' TERM
+  printf '%s\n' "$$" > "${FM_EXTENSION_BINDING_COORDINATOR_PID:?}"
   touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
   while :; do sleep 0.05; done
 fi
@@ -360,14 +417,44 @@ if [ "$extension_segment" = all ]; then
   mkdir -p "$coordinator_probe"
   coordinator_ready="$coordinator_probe/ready"
   coordinator_cleanup="$coordinator_probe/cleanup"
+  coordinator_pid="$coordinator_probe/pid"
   if FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
     FM_EXTENSION_BINDING_COORDINATOR_CLEANUP="$coordinator_cleanup" \
+    FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
     run_extension_section_lanes "coordinator-fail" "coordinator-wait"; then
     fail "the section coordinator accepted a failing child"
   fi
   assert_present "$coordinator_ready" "the coordinator probe did not start its waiting child"
   assert_present "$coordinator_cleanup" "the coordinator did not terminate and reap its waiting child"
-  pass "the section coordinator propagates child failure and cleans up waiting children"
+  if kill -0 "$(cat "$coordinator_pid")" 2>/dev/null; then
+    fail "the coordinator left its waiting child alive after a first-lane failure"
+  fi
+  rm -f "$coordinator_ready" "$coordinator_cleanup" "$coordinator_pid"
+  if FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
+    FM_EXTENSION_BINDING_COORDINATOR_CLEANUP="$coordinator_cleanup" \
+    FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
+    run_extension_section_lanes "coordinator-wait" "coordinator-fail"; then
+    fail "the section coordinator accepted a later-lane failure"
+  fi
+  assert_present "$coordinator_ready" "the coordinator probe did not start its stalled earlier child"
+  assert_present "$coordinator_cleanup" "the coordinator did not terminate its stalled earlier child"
+  if kill -0 "$(cat "$coordinator_pid")" 2>/dev/null; then
+    fail "the coordinator left its stalled earlier child alive after a later-lane failure"
+  fi
+  rm -f "$coordinator_ready" "$coordinator_cleanup" "$coordinator_pid"
+  if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=1 \
+    FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
+    FM_EXTENSION_BINDING_COORDINATOR_CLEANUP="$coordinator_cleanup" \
+    FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
+    run_extension_section_lanes "coordinator-wait"; then
+    fail "the section coordinator accepted a stalled child past its deadline"
+  fi
+  assert_present "$coordinator_ready" "the deadline probe did not start its stalled child"
+  assert_present "$coordinator_cleanup" "the deadline did not terminate its stalled child"
+  if kill -0 "$(cat "$coordinator_pid")" 2>/dev/null; then
+    fail "the coordinator left its deadline child alive"
+  fi
+  pass "the section coordinator propagates ordered failures and bounded cleanup"
   run_extension_section_lanes "matrix example" "early-bind early-integrity" \
     "remote-envelope remote-lifecycle" \
     "remote-retirement lifecycle-state lifecycle-flow lifecycle-lock" \
