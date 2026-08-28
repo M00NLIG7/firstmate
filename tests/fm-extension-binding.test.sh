@@ -292,17 +292,70 @@ first_result() {
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 section_enabled() { [ "$extension_segment" = "$1" ]; }
+wait_for_section_children() {
+  local section_pid failed=0
+  for section_pid in "$@"; do
+    if ! wait "$section_pid"; then
+      failed=1
+      for section_pid in "$@"; do
+        kill -TERM "$section_pid" 2>/dev/null || true
+      done
+    fi
+  done
+  return "$failed"
+}
+
+run_extension_section_lane() {
+  local section current_section_pid= section_rc=0
+  trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; exit 143' TERM
+  for section in "$@"; do
+    FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
+    current_section_pid=$!
+    wait "$current_section_pid" || section_rc=$?
+    current_section_pid=
+    [ "$section_rc" -eq 0 ] || return "$section_rc"
+  done
+}
+
+run_extension_section_lanes() {
+  local lane section_pid
+  local -a section_pids=()
+  for lane in "$@"; do
+    # Lane contents are fixed below, so its word split is not user input.
+    # shellcheck disable=SC2086
+    run_extension_section_lane $lane &
+    section_pids+=("$!")
+  done
+  wait_for_section_children "${section_pids[@]}"
+}
+
+if section_enabled coordinator-fail; then
+  wait_for_file "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}" || exit 89
+  exit 91
+fi
+
+if section_enabled coordinator-wait; then
+  trap 'touch "${FM_EXTENSION_BINDING_COORDINATOR_CLEANUP:?}"; exit 0' TERM
+  touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
+  while :; do sleep 0.05; done
+fi
+
 if [ "$extension_segment" = all ]; then
-  extension_section_pids=()
-  for extension_section in early matrix lifecycle remote example; do
-    FM_EXTENSION_BINDING_SEGMENT="$extension_section" bash "$0" &
-    extension_section_pids+=("$!")
-  done
-  extension_section_failed=0
-  for extension_section_pid in "${extension_section_pids[@]}"; do
-    wait "$extension_section_pid" || extension_section_failed=1
-  done
-  [ "$extension_section_failed" -eq 0 ] || fail "an isolated extension conformance section failed"
+  coordinator_probe="$TMP_ROOT/coordinator-probe"
+  mkdir -p "$coordinator_probe"
+  coordinator_ready="$coordinator_probe/ready"
+  coordinator_cleanup="$coordinator_probe/cleanup"
+  if FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
+    FM_EXTENSION_BINDING_COORDINATOR_CLEANUP="$coordinator_cleanup" \
+    run_extension_section_lanes "coordinator-fail" "coordinator-wait"; then
+    fail "the section coordinator accepted a failing child"
+  fi
+  assert_present "$coordinator_ready" "the coordinator probe did not start its waiting child"
+  assert_present "$coordinator_cleanup" "the coordinator did not terminate and reap its waiting child"
+  pass "the section coordinator propagates child failure and cleans up waiting children"
+  run_extension_section_lanes "remote" "early example" "lifecycle-state lifecycle-flow" \
+    "lifecycle-lock" "matrix" \
+    || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
   printf '\nall extension-binding tests passed\n'
   exit 0
@@ -673,8 +726,8 @@ assert_contains "$resolution_missing" "manifest entrypoint is missing" "missing 
 pass "a missing package executable refuses instead of falling back"
 fi
 
-# --- registration, invocation, unhandled capture, and owner-safe retirement -
-if section_enabled lifecycle; then
+# --- registration, invocation, unhandled capture, and binding retirement -----
+if section_enabled lifecycle-flow; then
 P_FLOW="$PACKAGES/flow"
 make_package "$P_FLOW" org.example.flow ext-flow
 H_FLOW="$HOMES/flow"; new_home "$H_FLOW"
@@ -721,7 +774,13 @@ assert_absent "$H_FLOW/config/extensions.d/org.example.flow.json" "exact local b
 assert_present "$H_FLOW/data/extensions/retired-bindings/org.example.flow/${flow_binding_digest#sha256:}.json" "local binding retirement was not reversible"
 expect_failure "no home-local extension binding" env FM_HOME="$H_FLOW" "$HOST" resolve-process-event ext-flow
 pass "local binding retirement requires its exact identity and disables invocation"
+fi
 
+# --- registration and retirement serialization plus lock recovery -------------
+if section_enabled lifecycle-lock; then
+P_FLOW="$PACKAGES/flow"
+make_package "$P_FLOW" org.example.flow ext-flow
+wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 P_RETIRE_RACE="$PACKAGES/retire-race"
 race_marker="$TMP_ROOT/retire-race.marker"
 race_release="$TMP_ROOT/retire-race.release"
@@ -860,7 +919,12 @@ active_replacement=$(FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" register-extension 
 active_replacement_owner=$(printf '%s\n' "$active_replacement" | sed -n 's/^owner-token: //p')
 FM_HOME="$H_ACTIVE_RUNNER" "$PROCEVENT" retire active-source --if-owner "$active_replacement_owner" >/dev/null
 pass "all registration owner transitions wait for the prior extension runner"
+fi
 
+# --- owner tokens, overridden state, sweep, and legacy compatibility --------
+if section_enabled lifecycle-state; then
+P_FLOW="$PACKAGES/flow"
+make_package "$P_FLOW" org.example.flow ext-flow
 H_OWNER_SAFE="$HOMES/owner-safe"; new_home "$H_OWNER_SAFE"
 bind_package "$H_OWNER_SAFE" "$P_FLOW" ext-flow >/dev/null
 first=$(FM_HOME="$H_OWNER_SAFE" "$PROCEVENT" register-extension ext-flow replace-source --config-ref first)
