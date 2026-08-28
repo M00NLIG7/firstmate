@@ -211,14 +211,16 @@ No armed watch is lost by upgrading.
 ## Guarded merge routing and squash cleanup
 
 `bin/fm-pr-merge.sh` accepts a canonical GitLab MR URL only with one explicit `captain-explicit` or `standing-yolo-green` authority class.
-It rejects every caller behavior except optional explicit squash before provider access, records one exact source head through bounded `glab-axi mr view --format json`, revalidates that same URL and head, and invokes the guarded `glab-axi mr merge` primitive exactly once.
-The provider argv binds the URL-derived host, complete nested project path, IID, canonical URL, durable expected head, authority, immediate squash, and JSON output.
+It rejects every caller behavior except optional explicit squash before provider access, records one exact source head through bounded `glab-axi mr view --format json`, revalidates that same URL, head, and branch pair, and invokes the guarded `glab-axi mr merge` primitive exactly once.
+The provider argv binds the URL-derived host, complete nested project path, IID, canonical URL, durable expected head, exact source and target branches, authority, immediate squash, and JSON output.
+Because the 0.2.0 semantic floor predates the branch flags, the merge wrapper also refuses task-scoped use unless executable `glab-axi mr merge --help` exposes both branch guards.
 The wrapper never invokes plain glab for mutation, retries a merge, forwards source-deletion or auto-merge behavior, or falls back to a generic API.
 
 A zero exit is not sufficient.
 Firstmate accepts only one complete `glab-axi/ux-v1` result whose success action, MR identity, source and target branches, expected source head, successful head pipeline, authority, squash commit, and resulting target commit all match.
 The accepted actions are `merged`, `already_merged`, and `reconciled_merged`, which lets the provider reconcile a prior exact mutation without Firstmate issuing a second mutation.
 A validated result persists one `gitlab_guarded_squash_receipt=v1|task|url|authority|head|source|target|squash|result` field in the task record.
+Re-recording the same task, canonical URL, and head preserves an existing valid receipt until a validated replacement is atomically persisted, while an identity or head change invalidates it.
 Provider refusal, malformed output, duplicate output, identity drift, or any ambiguous result leaves the poll armed and records no landed outcome or cleanup receipt.
 
 GitLab cleanup requires one canonical `pr=`, one exact `pr_head=`, and one valid task-bound guarded-squash receipt.

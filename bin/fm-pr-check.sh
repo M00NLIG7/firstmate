@@ -98,6 +98,7 @@ fi
 META_TMP=
 META_LOCK=
 META_LOCK_HELD=0
+PRESERVED_GITLAB_RECEIPT=
 pr_check_cleanup() {
   fm_pr_poll_cleanup
   [ -z "$META_TMP" ] || rm -f -- "$META_TMP"
@@ -119,6 +120,14 @@ META_LOCK_HELD=1
 META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
+RECEIPT_COUNT=$(grep -c '^gitlab_guarded_squash_receipt=' "$META" || true)
+if [ "$RECEIPT_COUNT" -eq 1 ]; then
+  EXISTING_RECEIPT=$(grep '^gitlab_guarded_squash_receipt=' "$META" | cut -d= -f2-)
+  if fm_pr_gitlab_guarded_squash_receipt_matches \
+    "$EXISTING_RECEIPT" "$ID" "$URL" "$PR_HEAD"; then
+    PRESERVED_GITLAB_RECEIPT=$EXISTING_RECEIPT
+  fi
+fi
 META_TMP=$(mktemp "$STATE/.fm-pr-meta.XXXXXX") || exit 1
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
@@ -128,6 +137,9 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$META"
 printf 'pr=%s\n' "$URL" >> "$META_TMP" || exit 1
 [ -z "$PR_HEAD" ] || printf 'pr_head=%s\n' "$PR_HEAD" >> "$META_TMP" || exit 1
+[ -z "$PRESERVED_GITLAB_RECEIPT" ] \
+  || printf 'gitlab_guarded_squash_receipt=%s\n' "$PRESERVED_GITLAB_RECEIPT" >> "$META_TMP" \
+  || exit 1
 chmod 0600 "$META_TMP" || exit 1
 fm_pr_private_file_valid "$META_TMP" 600 "$STATE_DEVICE" || exit 1
 fm_pr_metadata_identity_parse "$META_TMP" || exit 1

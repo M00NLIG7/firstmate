@@ -47,7 +47,7 @@
 # The wrapper records the exact source head from one bounded glab-axi MR view,
 # re-resolves that URL/head/source/target immediately before mutation, and calls
 # exactly one guarded glab-axi mr merge with URL-derived identity, durable head,
-# explicit authority, immediate squash, and JSON output. It never invokes plain
+# exact branches, explicit authority, immediate squash, and JSON output. It never invokes plain
 # glab, retries a merge, or falls back to another mutation path. A zero-exit
 # result is accepted only as one strict glab-axi/ux-v1 JSON document whose
 # action, identity, head, branches, successful pipeline, authority, and result
@@ -228,6 +228,15 @@ validate_gitlab_args() {
   fi
 }
 
+gitlab_branch_guards_available() {
+  local merge_help option
+  merge_help=$(glab-axi mr merge --help 2>&1) || return 1
+  for option in --expected-source --expected-target; do
+    printf '%s\n' "$merge_help" \
+      | grep -Eq -- "(^|[[:space:],])$option([=[:space:],]|$)" || return 1
+  done
+}
+
 reject_repo_overrides "$@" || exit 1
 reject_authority_overrides "$@" || exit 1
 [ "$PROVIDER" != gitlab ] || validate_gitlab_args "$@" || exit 1
@@ -237,6 +246,11 @@ META="$STATE/$ID.meta"
 if [ ! -f "$META" ] || [ -L "$META" ] \
   || [ "$(fm_pr_file_link_count "$META")" != 1 ]; then
   echo "error: task metadata is unavailable" >&2
+  exit 1
+fi
+if [ "$PROVIDER" = gitlab ] && command -v glab-axi >/dev/null 2>&1 \
+  && ! gitlab_branch_guards_available; then
+  echo "error: guarded GitLab merge requires glab-axi support for --expected-source and --expected-target" >&2
   exit 1
 fi
 
@@ -733,6 +747,8 @@ case "$PROVIDER" in
       --hostname "$HOST" \
       --expected-url "$URL" \
       --expected-head "$EXPECTED_HEAD" \
+      --expected-source "$EXPECTED_SOURCE" \
+      --expected-target "$EXPECTED_TARGET" \
       --authority "$AUTHORITY" \
       --squash \
       --format json) || MERGE_RC=$?

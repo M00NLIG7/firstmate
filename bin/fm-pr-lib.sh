@@ -392,6 +392,17 @@ EOF
   git check-ref-format --branch "$target" >/dev/null 2>&1 || return 1
 )
 
+fm_pr_gitlab_guarded_squash_receipt_matches() (
+  local receipt=$1 expected_id=$2 expected_url=$3 expected_head=$4
+  local version id url authority head source target squash result
+  fm_pr_gitlab_guarded_squash_receipt_valid "$receipt" || return 1
+  IFS='|' read -r version id url authority head source target squash result <<EOF
+$receipt
+EOF
+  [ "$id" = "$expected_id" ] && [ "$url" = "$expected_url" ] \
+    && [ "$head" = "$expected_head" ]
+)
+
 fm_pr_metadata_identity_parse() {
   local file=$1 line value pr_count=0 seen_pr=0 post_pr_invalid=0
   FM_PR_META_PROVIDER=

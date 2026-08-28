@@ -12,10 +12,10 @@
 #
 # The GitLab matrix proves canonical nested URL routing, both authority classes,
 # strict glab-axi view/result JSON, durable expected-head and guarded-squash
-# receipt recording, stale-head refusal, exact one-shot guarded merge argv, no
+# receipt recording and recovery, stale-head refusal, exact one-shot guarded merge argv, no
 # plain-glab fallback, no retry on provider ambiguity, and zero provider access
 # for every local refusal. GitLab accepts only immediate squash and rejects all
-# repository, host, head, authority, strategy, auto-merge, source-deletion,
+# repository, host, head, branches, authority, strategy, auto-merge, source-deletion,
 # output, unknown, duplicate, and positional overrides.
 set -u
 
@@ -202,6 +202,13 @@ exit 97
 SH
   cat > "$case_dir/fakebin/glab-axi" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-} ${2:-} ${3:-}" = "mr merge --help" ]; then
+  printf '      --expected-head string\n'
+  if [ "${FM_TEST_GLAB_AXI_BRANCH_GUARDS:-1}" = 1 ]; then
+    printf '      --expected-source string\n      --expected-target string\n'
+  fi
+  exit 0
+fi
 printf '%s\n' "$*" >> "$FM_TEST_GLAB_AXI_LOG"
 case "${1:-} ${2:-}" in
   "mr view")
@@ -1531,7 +1538,7 @@ test_gitlab_exact_guarded_route_and_success_actions() {
     FM_TEST_AUTHORITY=$authority run_pr_merge "$case_dir" task-x1 "$url" -- --squash \
       > "$case_dir/stdout" 2> "$case_dir/stderr" \
       || fail "exact GitLab route failed for $authority"
-    expected="mr merge 31 --repo deep/group/subgroup/project --hostname gl.self-hosted.example --expected-url $url --expected-head $MR_HEAD --authority $authority --squash --format json"
+    expected="mr merge 31 --repo deep/group/subgroup/project --hostname gl.self-hosted.example --expected-url $url --expected-head $MR_HEAD --expected-source fm/task-x1 --expected-target main --authority $authority --squash --format json"
     [ "$(glab_merge_line "$case_dir/glab-axi.log")" = "$expected" ] \
       || fail "exact GitLab guarded argv changed for $authority: $(cat "$case_dir/glab-axi.log")"
     expect_code 2 "$(glab_view_count "$case_dir")" \
@@ -1586,6 +1593,8 @@ test_gitlab_forbidden_arguments_are_zero_provider() {
     'short-repo|-yR|other/project' \
     'hostname|--hostname|other.example' \
     "expected-head|--expected-head|$MR_STALE_HEAD" \
+    'expected-source|--expected-source|fm/other' \
+    'expected-target|--expected-target|release' \
     'expected-url|--expected-url|https://other.example/g/p/-/merge_requests/1' \
     'format|--format|toon' \
     'message|--message|custom' \
@@ -1625,6 +1634,73 @@ test_gitlab_forbidden_arguments_are_zero_provider() {
   expect_code 1 "$rc" "duplicate GitLab squash should refuse"
   assert_no_provider_call "$case_dir" duplicate-squash
   pass "fm-pr-merge refuses every non-squash GitLab behavior and override before provider access"
+}
+
+test_gitlab_branch_guard_capability_refuses_before_recording() {
+  local case_dir rc
+  case_dir=$(make_gitlab_case gitlab-branch-guard-capability)
+  set +e
+  FM_TEST_GLAB_AXI_BRANCH_GUARDS=0 run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "missing GitLab branch guards should refuse"
+  assert_grep 'requires glab-axi support for --expected-source and --expected-target' \
+    "$case_dir/stderr" "missing GitLab branch guards were not named"
+  assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \
+    "missing GitLab branch guards recorded provider state"
+  assert_no_provider_call "$case_dir" "missing-branch-guards"
+  pass "fm-pr-merge requires the task-scoped glab-axi branch guard capability"
+}
+
+test_gitlab_rerecord_preserves_only_matching_receipt() {
+  local case_dir receipt rc new_url
+  case_dir=$(make_gitlab_case gitlab-preserve-receipt)
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" >/dev/null 2> "$case_dir/first.err" \
+    || fail "initial guarded GitLab merge did not record a receipt"
+  receipt=$(grep '^gitlab_guarded_squash_receipt=' "$case_dir/state/task-x1.meta")
+  set +e
+  FM_TEST_MERGE_RC=5 run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    > "$case_dir/retry.out" 2> "$case_dir/retry.err"
+  rc=$?
+  set -e
+  expect_code 5 "$rc" "same-identity recovery refusal should propagate"
+  grep -qxF "$receipt" "$case_dir/state/task-x1.meta" \
+    || fail "same task, URL, and head lost its valid guarded-squash receipt"
+
+  case_dir=$(make_gitlab_case gitlab-invalidate-receipt-url)
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" >/dev/null 2> "$case_dir/first.err" \
+    || fail "URL mismatch fixture could not record its initial receipt"
+  new_url="$MR_PROJECT_URL/-/merge_requests/8"
+  write_mr_view_json "$case_dir/view-one.json" "$MR_HOST" "$MR_PATH" 8 "$new_url" "$MR_HEAD"
+  cp "$case_dir/view-one.json" "$case_dir/view-two.json"
+  rm -f "$case_dir/view-count"
+  set +e
+  FM_TEST_MERGE_RC=5 run_pr_merge "$case_dir" task-x1 "$new_url" \
+    > "$case_dir/retry.out" 2> "$case_dir/retry.err"
+  rc=$?
+  set -e
+  expect_code 5 "$rc" "changed-identity recovery refusal should propagate"
+  assert_no_grep '^gitlab_guarded_squash_receipt=' "$case_dir/state/task-x1.meta" \
+    "changed MR identity retained stale cleanup evidence"
+
+  case_dir=$(make_gitlab_case gitlab-invalidate-receipt-head)
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" >/dev/null 2> "$case_dir/first.err" \
+    || fail "head mismatch fixture could not record its initial receipt"
+  write_mr_view_json "$case_dir/view-one.json" "$MR_HOST" "$MR_PATH" 7 "$MR_URL" "$MR_STALE_HEAD"
+  cp "$case_dir/view-one.json" "$case_dir/view-two.json"
+  rm -f "$case_dir/view-count"
+  set +e
+  FM_TEST_MERGE_RC=5 run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    > "$case_dir/retry.out" 2> "$case_dir/retry.err"
+  rc=$?
+  set -e
+  expect_code 5 "$rc" "changed-head recovery refusal should propagate"
+  assert_no_grep '^gitlab_guarded_squash_receipt=' "$case_dir/state/task-x1.meta" \
+    "changed MR head retained stale cleanup evidence"
+  grep -qxF "pr_head=$MR_STALE_HEAD" "$case_dir/state/task-x1.meta" \
+    || fail "changed MR head did not replace the stale recorded expectation"
+  pass "GitLab re-recording preserves only matching guarded-squash evidence"
 }
 
 test_gitlab_head_and_view_identity_are_strict() {
@@ -2111,8 +2187,10 @@ test_github_still_forwards_sha_arg
 test_merge_authority_boundary
 test_gitlab_exact_guarded_route_and_success_actions
 test_gitlab_forbidden_arguments_are_zero_provider
+test_gitlab_branch_guard_capability_refuses_before_recording
 test_gitlab_head_and_view_identity_are_strict
 test_gitlab_provider_failures_and_results_are_single_attempt
+test_gitlab_rerecord_preserves_only_matching_receipt
 test_gitlab_missing_tools_refuse_before_recording
 test_secondmate_merge_reports_upward_once
 test_secondmate_merge_reports_on_the_local_route
