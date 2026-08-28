@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn) ;;
+  all|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -364,6 +364,9 @@ terminate_section_lane_child() {
 
 run_extension_section_lane() {
   local result_file=$1 section=$2 current_section_pid= section_rc=0
+  # A backgrounded function inherits the aggregate test's cleanup traps.
+  # This lane owns only its separately launched child and result publication.
+  trap - EXIT HUP INT TERM
   trap 'if [ -n "$current_section_pid" ]; then terminate_section_lane_child "$current_section_pid"; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
   FM_EXTENSION_BINDING_SECTION_CHILD=1 \
     FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
@@ -372,6 +375,8 @@ run_extension_section_lane() {
   wait "$current_section_pid" || section_rc=$?
   current_section_pid=
   publish_section_lane_result "$result_file" "$section_rc"
+  [ -z "${FM_EXTENSION_BINDING_COORDINATOR_LANE_PUBLISHED:-}" ] \
+    || printf '%s\n' "$section" > "$FM_EXTENSION_BINDING_COORDINATOR_LANE_PUBLISHED"
   return "$section_rc"
 }
 
@@ -410,7 +415,11 @@ run_extension_section_lanes() {
         0)
           section_complete[$index]=1
           remaining=$((remaining - 1))
-          wait "${section_pids[$index]}" || return $?
+          wait "${section_pids[$index]}" || {
+            section_rc=$?
+            terminate_section_lanes
+            return "$section_rc"
+          }
           if [ "$launched" -lt "$total" ]; then
             section=${@:$((launched + 1)):1}
             result_file="$section_result_root/${#section_pids[@]}.result"
@@ -440,7 +449,11 @@ run_extension_section_lanes() {
     sleep 0.05
   done
   for section_pid in "${section_pids[@]}"; do
-    wait "$section_pid" || return $?
+    wait "$section_pid" || {
+      section_rc=$?
+      terminate_section_lanes
+      return "$section_rc"
+    }
   done
 }
 
@@ -461,6 +474,15 @@ if section_enabled coordinator-stubborn; then
   printf '%s\n' "$$" > "${FM_EXTENSION_BINDING_COORDINATOR_PID:?}"
   touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
   while :; do sleep 0.05; done
+fi
+
+if section_enabled coordinator-pass; then
+  exit 0
+fi
+
+if section_enabled coordinator-late-pass; then
+  wait_for_file "${FM_EXTENSION_BINDING_COORDINATOR_LANE_PUBLISHED:?}" || exit 90
+  exit 0
 fi
 
 if [ "$extension_segment" = all ]; then
@@ -497,6 +519,13 @@ if [ "$extension_segment" = all ]; then
     fail "the coordinator left its stalled earlier child alive after a later-lane failure"
   fi
   rm -f "$coordinator_ready" "$coordinator_cleanup" "$coordinator_pid"
+  if ! FM_EXTENSION_BINDING_COORDINATOR_LANE_PUBLISHED="$coordinator_ready" \
+    run_extension_section_lanes "coordinator-pass" "coordinator-late-pass"; then
+    fail "an early successful lane prevented a later lane from publishing"
+  fi
+  assert_present "$coordinator_ready" "a successful lane did not publish its result"
+  assert_present "$coordinator_probe" "a lane cleanup removed parent coordinator state"
+  rm -f "$coordinator_ready"
   if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=1 \
     FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
     FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
@@ -508,8 +537,8 @@ if [ "$extension_segment" = all ]; then
     fail "the coordinator left its deadline child alive"
   fi
   pass "the section coordinator propagates ordered failures and bounded cleanup"
-  run_extension_section_lanes remote-lifecycle matrix remote-activation lifecycle-flow \
-    early-bind early-integrity remote-envelope remote-retirement lifecycle-state \
+  run_extension_section_lanes remote-lifecycle remote-activation matrix early-validation \
+    remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
     lifecycle-flow lifecycle-lock \
     || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
@@ -591,7 +620,11 @@ expect_failure "requires explicit --consent network" bind_package "$H_CONSENT" "
 bind_package "$H_CONSENT" "$P_CONSENT" ext-consent --consent network >/dev/null
 assert_contains "$(FM_HOME="$H_CONSENT" "$HOST" inspect org.example.consent)" '"network": true' "required consent is not recorded explicitly"
 pass "package trust and manifest-required capability consent are separate explicit facts"
+fi
 
+if section_enabled early-validation; then
+P_GOOD="$PACKAGES/good"
+make_package "$P_GOOD" org.example.good ext-good
 P_MODE="$PACKAGES/mode"
 make_package "$P_MODE" org.example.mode ext-mode
 chmod 0664 "$P_MODE/helper.txt"
