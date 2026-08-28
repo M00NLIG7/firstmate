@@ -51,7 +51,7 @@ Two things about plain `glab` were established by running it, because assuming e
 First, plain `glab` has no field selector.
 `gh` reads one field with `--json state -q .state`; `glab mr view` offers only `-F, --output string  Format output as: text, json`.
 The byte-static poll therefore continues to read state from plain glab's field output rather than adding JSON parsing to every silent poll.
-Arming, guarded merge, and cleanup separately require `jq` because they validate one complete normalized `glab-axi` JSON document and can report a missing dependency synchronously.
+Current lifecycle prerequisites are owned by [`configuration.md`](configuration.md#toolchain).
 Only an exact `merged` wakes firstmate, so a changed poll output format produces no wake rather than a false merge.
 
 Second, `glab` cannot take a merge request URL the way `gh pr view` can.
@@ -177,8 +177,7 @@ $ PATH="$noglab" fm-pr-check.sh e6 https://github.com/kunchenguid/firstmate/pull
 armed: state/e6.check.sh
 ```
 
-Current GitLab arming requires plain glab for the internal read poll, `glab-axi` for normalized MR identity and head resolution, and `jq` for strict JSON validation.
-An absent dependency refuses before publishing a watch or lifecycle record.
+Current GitLab arming prerequisites and refusal behavior are documented in [`configuration.md`](configuration.md#toolchain).
 
 ## Upgrade path from an existing armed watch
 
@@ -210,32 +209,12 @@ No armed watch is lost by upgrading.
 
 ## Guarded merge routing and squash cleanup
 
-`bin/fm-pr-merge.sh` accepts a canonical GitLab MR URL only with one explicit `captain-explicit` or `standing-yolo-green` authority class.
-It rejects every caller behavior except optional explicit squash before provider access, records one exact source head through bounded `glab-axi mr view --format json`, revalidates that same URL, head, and branch pair, and invokes the guarded `glab-axi mr merge` primitive exactly once.
-The provider argv binds the URL-derived host, complete nested project path, IID, canonical URL, durable expected head, exact source and target branches, authority, immediate squash, and JSON output.
-Because the 0.2.0 semantic floor predates the branch flags, the merge wrapper also refuses task-scoped use unless executable `glab-axi mr merge --help` exposes both branch guards.
-The wrapper never invokes plain glab for mutation, retries a merge, forwards source-deletion or auto-merge behavior, or falls back to a generic API.
-
-A zero exit is not sufficient.
-Firstmate accepts only one complete `glab-axi/ux-v1` result whose success action, MR identity, source and target branches, expected source head, successful head pipeline, authority, squash commit, and resulting target commit all match.
-The accepted actions are `merged`, `already_merged`, and `reconciled_merged`, which lets the provider reconcile a prior exact mutation without Firstmate issuing a second mutation.
-A validated result persists one `gitlab_guarded_squash_receipt=v1|task|url|authority|head|source|target|squash|result` field in the task record.
-Re-recording the same task, canonical URL, and head preserves an existing valid receipt until a validated replacement is atomically persisted, while an identity or head change invalidates it.
-Provider refusal, malformed output, duplicate output, identity drift, or any ambiguous result leaves the poll armed and records no landed outcome or cleanup receipt.
-
-GitLab cleanup requires one canonical `pr=`, one exact `pr_head=`, and one valid task-bound guarded-squash receipt.
-It re-reads one current normalized MR result, requires merged and nonconflicting state plus the exact local source branch, and binds its URL, host, nested project, IID, head, source, and target to the durable evidence.
-It always fetches the exact `refs/merge-requests/<iid>/head` and target branch from the URL-derived project even if same-named objects already exist locally, never falls back to ambient `origin` for GitLab identity, and retires its task-scoped temporary refs on every exit.
-The receipt's squash and result commits must both be reachable from the freshly fetched target, and the existing provider-agnostic content check must independently prove that merging local `HEAD` into that target adds nothing.
-Legacy records without a head or receipt, dirty work, open or conflicting MRs, stale heads, branch mismatch, malformed JSON, unreadable exact refs, unreachable result commits, and content mismatch all preserve the isolated copy.
-
-Workers receive the same generated prohibition on guarded merge invocation across every supported worker runtime.
-The session-provider integrations (`tmux`, `herdr`, `zellij`, `orca`, and `cmux`) continue to own endpoint and worktree lifecycle only; none selects a code host or invokes provider merge behavior, so no backend-specific merge branch is applicable.
-The existing plain-glab poll remains a separate read-only transport and is unchanged by the guarded mutation path.
+[`architecture.md`](architecture.md#delivery-modes-are-explicit-per-task) owns the guarded GitLab routing, result-consumption, receipt, and cleanup invariants.
+The exact invocation and receipt mechanics are owned by the header and `--help` output of [`bin/fm-pr-merge.sh`](../bin/fm-pr-merge.sh), with teardown proof mechanics owned by [`bin/fm-teardown.sh`](../bin/fm-teardown.sh).
 
 ## Executable verification
 
-The focused public-interface regressions use fake bounded provider responses, count exact provider invocations, and exercise cleanup through the real entrypoint against local Git repositories.
+The focused public-interface regressions use fake bounded provider responses, count exact provider invocations, cover accepted and rejected lifecycle evidence, and exercise cleanup through the real entrypoint against local Git repositories.
 They issue no live merge.
 
 Selected exact lines from the focused run were:
@@ -256,4 +235,4 @@ ok - GitLab teardown accepts exact guarded-squash evidence plus target content p
 ok - GitLab teardown refuses dirty, unmerged, stale, malformed, mismatched, or content-unproven evidence
 ```
 
-The generated-brief regression separately proves that ship and scout workers receive the bounded GitLab route and cannot invoke the guarded primitive.
+The generated-brief regression separately proves that ship and scout workers across every supported runtime receive the bounded GitLab route and cannot invoke the guarded primitive.
