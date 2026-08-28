@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass|coordinator-scheduler-block|coordinator-scheduler-late) ;;
+  all|coordinator|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass|coordinator-scheduler-block|coordinator-scheduler-late) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -43,6 +43,7 @@ active_runner_release=
 remote_active_release=
 unrelated_daemon_pid=
 unrelated_launcher_pid=
+section_coordinator_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
@@ -61,6 +62,10 @@ extension_test_cleanup() {
   [ -z "$unrelated_daemon_pid" ] || kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
   [ -z "$unrelated_launcher_pid" ] || kill -KILL "$unrelated_launcher_pid" 2>/dev/null || true
   [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
+  if [ -n "$section_coordinator_pid" ]; then
+    kill -TERM "$section_coordinator_pid" 2>/dev/null || true
+    wait "$section_coordinator_pid" 2>/dev/null || true
+  fi
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ] && [ -f "${REMOTE_ROOT:-}/bin/fm-remote-job-lib.sh" ]; then
     (
       # worker.pid names the serving child; the copied remote helper stops its
@@ -322,8 +327,15 @@ publish_section_lane_result() {
   mv "$temporary_file" "$result_file"
 }
 
+publish_coordinator_marker() {
+  local marker_file=$1 temporary_file
+  temporary_file="${marker_file}.$$.tmp"
+  printf 'ready\n' > "$temporary_file"
+  mv "$temporary_file" "$marker_file"
+}
+
 terminate_section_lanes() {
-  local index section_pid section_child_pid cleanup_deadline
+  local index section_pid section_child_pid cleanup_attempt
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
@@ -331,8 +343,7 @@ terminate_section_lanes() {
     case "$section_child_pid" in ''|*[!0-9]*) ;; *) kill -TERM "$section_child_pid" 2>/dev/null || true ;; esac
     kill -TERM "$section_pid" 2>/dev/null || true
   done
-  cleanup_deadline=$((SECONDS + 1))
-  while [ "$SECONDS" -lt "$cleanup_deadline" ]; do
+  for cleanup_attempt in $(seq 1 20); do
     for index in "${!section_pids[@]}"; do
       [ -n "${section_complete[$index]:-}" ] && continue
       kill -0 "${section_pids[$index]}" 2>/dev/null && break
@@ -352,10 +363,10 @@ terminate_section_lanes() {
 }
 
 terminate_section_lane_child() {
-  local section_child_pid=$1 cleanup_deadline
+  local section_child_pid=$1 cleanup_attempt
   kill -TERM "$section_child_pid" 2>/dev/null || true
-  cleanup_deadline=$((SECONDS + 1))
-  while kill -0 "$section_child_pid" 2>/dev/null && [ "$SECONDS" -lt "$cleanup_deadline" ]; do
+  for cleanup_attempt in $(seq 1 20); do
+    kill -0 "$section_child_pid" 2>/dev/null || break
     sleep 0.05
   done
   kill -0 "$section_child_pid" 2>/dev/null && kill -KILL "$section_child_pid" 2>/dev/null || true
@@ -456,16 +467,16 @@ if section_enabled coordinator-fail; then
 fi
 
 if section_enabled coordinator-wait; then
-  trap 'touch "${FM_EXTENSION_BINDING_COORDINATOR_CLEANUP:?}"; exit 0' TERM
+  trap 'publish_coordinator_marker "${FM_EXTENSION_BINDING_COORDINATOR_CLEANUP:?}"; exit 0' TERM
   printf '%s\n' "$$" > "${FM_EXTENSION_BINDING_COORDINATOR_PID:?}"
-  touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
+  publish_coordinator_marker "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
   while :; do sleep 0.05; done
 fi
 
 if section_enabled coordinator-stubborn; then
   trap '' TERM
   printf '%s\n' "$$" > "${FM_EXTENSION_BINDING_COORDINATOR_PID:?}"
-  touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
+  publish_coordinator_marker "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
   while :; do sleep 0.05; done
 fi
 
@@ -484,16 +495,26 @@ if section_enabled coordinator-scheduler-block; then
 fi
 
 if section_enabled coordinator-scheduler-late; then
-  touch "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_STARTED:?}"
-  wait_for_file "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE:?}" || exit 93
+  publish_coordinator_marker "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_STARTED:?}"
+  publish_coordinator_marker "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE:?}"
   exit 0
 fi
 
-if [ "$extension_segment" = all ]; then
+if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; then
   unknown_segment_out=$(FM_EXTENSION_BINDING_SEGMENT=typo bash "$0" 2>&1) && fail "an unknown section selector succeeded"
   assert_contains "$unknown_segment_out" "unknown extension-binding segment: typo" "an unknown section selector was not rejected"
   assert_not_contains "$unknown_segment_out" "all extension-binding tests passed" "an unknown section selector reported success"
   pass "unknown extension conformance section selectors fail before setup"
+  if [ "$extension_segment" = all ]; then
+    (
+      trap - EXIT HUP INT
+      trap 'terminate_section_lanes; exit 143' TERM
+      run_extension_section_lanes remote-lifecycle remote-activation matrix early-validation \
+        remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
+        lifecycle-flow lifecycle-lock example
+    ) &
+    section_coordinator_pid=$!
+  fi
   coordinator_probe="$TMP_ROOT/coordinator-probe"
   mkdir -p "$coordinator_probe"
   coordinator_ready="$coordinator_probe/ready"
@@ -532,17 +553,12 @@ if [ "$extension_segment" = all ]; then
   rm -f "$coordinator_ready"
   coordinator_scheduled="$coordinator_probe/scheduled"
   coordinator_release="$coordinator_probe/release"
-  (
-    wait_for_file "$coordinator_scheduled" && touch "$coordinator_release"
-  ) &
-  scheduler_release_pid=$!
   if ! FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_STARTED="$coordinator_scheduled" \
     FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE="$coordinator_release" \
     run_extension_section_lanes coordinator-scheduler-block coordinator-scheduler-block \
       coordinator-scheduler-block coordinator-scheduler-block coordinator-scheduler-late; then
     fail "the section coordinator held a later lane behind an earlier wave"
   fi
-  wait "$scheduler_release_pid" || fail "the later coordinator lane never started"
   assert_present "$coordinator_scheduled" "the coordinator did not start a later lane concurrently"
   rm -f "$coordinator_scheduled" "$coordinator_release"
   if run_extension_section_lanes coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
@@ -550,7 +566,7 @@ if [ "$extension_segment" = all ]; then
     coordinator-pass coordinator-pass coordinator-pass; then
     fail "the section coordinator accepted more than its bounded allowlist"
   fi
-  if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=1 \
+  if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=2 \
     FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
     FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
     run_extension_section_lanes "coordinator-stubborn"; then
@@ -561,10 +577,12 @@ if [ "$extension_segment" = all ]; then
     fail "the coordinator left its deadline child alive"
   fi
   pass "the section coordinator propagates ordered failures and bounded cleanup"
-  run_extension_section_lanes remote-lifecycle remote-activation matrix early-validation \
-    remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
-    lifecycle-flow lifecycle-lock example \
-    || fail "an isolated extension conformance section failed"
+  if [ "$extension_segment" = coordinator ]; then
+    printf '\nall coordinator tests passed\n'
+    exit 0
+  fi
+  wait "$section_coordinator_pid" || fail "an isolated extension conformance section failed"
+  section_coordinator_pid=
   pass "independent extension conformance sections complete through isolated public homes"
   printf '\nall extension-binding tests passed\n'
   exit 0
@@ -832,6 +850,7 @@ mkdir -p "$matrix_cases"
 declare -a matrix_case_pids=()
 for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
   (
+    trap - EXIT HUP INT TERM
     rc=0
     out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
     printf '%s\n' "$rc" > "$matrix_cases/$scenario.rc"
