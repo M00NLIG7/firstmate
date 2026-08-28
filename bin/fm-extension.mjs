@@ -859,8 +859,8 @@ let activeLifecycleLock = null;
 function readProcessTable(invocationMarker = "") {
   if (process.platform === "win32") return new Map();
   const args = invocationMarker
-    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,uid=,state=,lstart=,command="]
-    : ["-A", "-o", "pid=,ppid=,uid=,state=,lstart="];
+    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,pgid=,uid=,state=,lstart=,command="]
+    : ["-A", "-o", "pid=,ppid=,pgid=,uid=,state=,lstart="];
   const result = spawnSync("/bin/ps", args, {
     encoding: "utf8",
     env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
@@ -870,13 +870,14 @@ function readProcessTable(invocationMarker = "") {
   if (result.status !== 0 || result.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
   const table = new Map();
   for (const line of result.stdout.split("\n")) {
-    const match = /^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
+    const match = /^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
     if (!match) continue;
-    const [, pid, ppid, uid, state, started, command = ""] = match;
+    const [, pid, ppid, pgid, uid, state, started, command = ""] = match;
     const startedAt = Date.parse(started);
     if (!Number.isFinite(startedAt)) fail("process-tracking-unavailable", "cannot inspect extension process start times");
     table.set(Number(pid), {
       ppid: Number(ppid),
+      pgid: Number(pgid),
       uid: Number(uid),
       state,
       startedAt,
@@ -965,7 +966,7 @@ function ambiguousInvocationOrphans(tracker) {
   if (!tracker.error) refreshProcessTracker(tracker);
   const candidates = [];
   for (const [pid, entry] of tracker.table) {
-    if (pid === tracker.rootPid || entry.ppid !== 1 || entry.uid !== tracker.uid || entry.state.startsWith("Z")) continue;
+    if (pid === tracker.rootPid || entry.ppid !== 1 || entry.pgid !== pid || entry.uid !== tracker.uid || entry.state.startsWith("Z")) continue;
     if (entry.startedAt < tracker.startedAt - 1000 || tracker.baseline.get(pid) === entry.identity) continue;
     if (tracker.descendants.get(pid) === entry.identity) continue;
     if (tracker.unrelated.get(pid) === entry.identity) continue;
