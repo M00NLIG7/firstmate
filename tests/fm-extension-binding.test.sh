@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait) ;;
+  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -61,8 +61,13 @@ extension_test_cleanup() {
   [ -z "$unrelated_daemon_pid" ] || kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
   [ -z "$unrelated_launcher_pid" ] || kill -KILL "$unrelated_launcher_pid" 2>/dev/null || true
   [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
-  if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
-    kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
+  if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ] && [ -f "${REMOTE_ROOT:-}/bin/fm-remote-job-lib.sh" ]; then
+    (
+      # worker.pid names the serving child; the copied remote helper stops its
+      # known isolated supervisor tree so it cannot respawn during teardown.
+      . "$REMOTE_ROOT/bin/fm-remote-job-lib.sh"
+      fm_remote_job_stop_worker_tree "$(cat "$TMP_ROOT/remote-jobs/worker.pid")"
+    ) 2>/dev/null || true
   fi
   if [ -n "$first_bind_pid" ]; then
     kill -CONT "$first_bind_pid" 2>/dev/null || true
@@ -318,23 +323,52 @@ publish_section_lane_result() {
 }
 
 terminate_section_lanes() {
-  local index section_pid
+  local index section_pid section_child_pid cleanup_deadline
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
+    section_child_pid=$(cat "${section_results[$index]}.pid" 2>/dev/null || true)
+    case "$section_child_pid" in ''|*[!0-9]*) ;; *) kill -TERM "$section_child_pid" 2>/dev/null || true ;; esac
     kill -TERM "$section_pid" 2>/dev/null || true
+  done
+  cleanup_deadline=$((SECONDS + 1))
+  while [ "$SECONDS" -lt "$cleanup_deadline" ]; do
+    for index in "${!section_pids[@]}"; do
+      [ -n "${section_complete[$index]:-}" ] && continue
+      kill -0 "${section_pids[$index]}" 2>/dev/null && break
+    done || break
+    sleep 0.05
+  done
+  for index in "${!section_pids[@]}"; do
+    [ -n "${section_complete[$index]:-}" ] && continue
+    section_pid=${section_pids[$index]}
+    section_child_pid=$(cat "${section_results[$index]}.pid" 2>/dev/null || true)
+    case "$section_child_pid" in ''|*[!0-9]*) ;; *) kill -KILL "$section_child_pid" 2>/dev/null || true ;; esac
+    kill -KILL "$section_pid" 2>/dev/null || true
   done
   for section_pid in "${section_pids[@]}"; do
     wait "$section_pid" 2>/dev/null || true
   done
 }
 
+terminate_section_lane_child() {
+  local section_child_pid=$1 cleanup_deadline
+  kill -TERM "$section_child_pid" 2>/dev/null || true
+  cleanup_deadline=$((SECONDS + 1))
+  while kill -0 "$section_child_pid" 2>/dev/null && [ "$SECONDS" -lt "$cleanup_deadline" ]; do
+    sleep 0.05
+  done
+  kill -0 "$section_child_pid" 2>/dev/null && kill -KILL "$section_child_pid" 2>/dev/null || true
+  wait "$section_child_pid" 2>/dev/null || true
+}
+
 run_extension_section_lane() {
   local result_file=$1 section=$2 current_section_pid= section_rc=0
-  trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
+  trap 'if [ -n "$current_section_pid" ]; then terminate_section_lane_child "$current_section_pid"; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
   FM_EXTENSION_BINDING_SECTION_CHILD=1 \
     FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
   current_section_pid=$!
+  printf '%s\n' "$current_section_pid" > "${result_file}.pid"
   wait "$current_section_pid" || section_rc=$?
   current_section_pid=
   publish_section_lane_result "$result_file" "$section_rc"
@@ -422,6 +456,13 @@ if section_enabled coordinator-wait; then
   while :; do sleep 0.05; done
 fi
 
+if section_enabled coordinator-stubborn; then
+  trap '' TERM
+  printf '%s\n' "$$" > "${FM_EXTENSION_BINDING_COORDINATOR_PID:?}"
+  touch "${FM_EXTENSION_BINDING_COORDINATOR_READY:?}"
+  while :; do sleep 0.05; done
+fi
+
 if [ "$extension_segment" = all ]; then
   unknown_segment_out=$(FM_EXTENSION_BINDING_SEGMENT=typo bash "$0" 2>&1) && fail "an unknown section selector succeeded"
   assert_contains "$unknown_segment_out" "unknown extension-binding segment: typo" "an unknown section selector was not rejected"
@@ -458,13 +499,11 @@ if [ "$extension_segment" = all ]; then
   rm -f "$coordinator_ready" "$coordinator_cleanup" "$coordinator_pid"
   if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=1 \
     FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
-    FM_EXTENSION_BINDING_COORDINATOR_CLEANUP="$coordinator_cleanup" \
     FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
-    run_extension_section_lanes "coordinator-wait"; then
+    run_extension_section_lanes "coordinator-stubborn"; then
     fail "the section coordinator accepted a stalled child past its deadline"
   fi
   assert_present "$coordinator_ready" "the deadline probe did not start its stalled child"
-  assert_present "$coordinator_cleanup" "the deadline did not terminate its stalled child"
   if kill -0 "$(cat "$coordinator_pid")" 2>/dev/null; then
     fail "the coordinator left its deadline child alive"
   fi
