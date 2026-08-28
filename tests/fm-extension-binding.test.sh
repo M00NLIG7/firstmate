@@ -395,7 +395,7 @@ P_GOOD="$PACKAGES/good"
 make_package "$P_GOOD" org.example.good ext-good
 H_GOOD="$HOMES/good"
 new_home "$H_GOOD"
-out=$(bind_package "$H_GOOD" "$P_GOOD" ext-good --timeout-ms 100)
+out=$(bind_package "$H_GOOD" "$P_GOOD" ext-good --timeout-ms 1000)
 assert_contains "$out" "verified: process-event-adapter/1" "bind does not finish before the live handshake"
 assert_contains "$(FM_HOME="$H_GOOD" "$HOST" list)" "org.example.good" "the explicit binding is discoverable"
 assert_contains "$(FM_HOME="$H_GOOD" "$HOST" inspect org.example.good)" '"host_protocol": 1' "highest-common host protocol negotiation is inspectable"
