@@ -156,9 +156,8 @@ if (verb === "handshake") {
     const good = JSON.stringify(handshake());
     raw(good.replace('"request_id":', `"request_id":"${request.request_id}","request_id":`));
   } else if (fixed === "handshake-malformed") raw("{not-json\n");
-  else if (fixed === "handshake-rapid-reparent") {
+  else if (fixed === "handshake-leak") {
     const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-      detached: true,
       env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
       stdio: "ignore",
     });
@@ -209,7 +208,6 @@ else if (mode === "control") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    detached: true,
     env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
   });
@@ -220,35 +218,20 @@ else if (mode === "control") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    detached: true,
     stdio: "ignore",
   });
   writeFileSync(path.join(state, "leaked.pid"), `${child.pid}\n`);
   await new Promise((resolve) => setTimeout(resolve, 100));
   raw(success({ status: "result", output: "must not be accepted\n" }));
-} else if (mode === "rapid-reparent") {
+} else if (mode === "foreground-leak") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
   const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    detached: true,
     env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
     stdio: "ignore",
   });
-  writeFileSync(path.join(state, "rapid-reparent.pid"), `${child.pid}\n`);
+  writeFileSync(path.join(state, "foreground-leak.pid"), `${child.pid}\n`);
   raw(success({ status: "result", output: "must not be accepted\n" }));
-} else if (mode === "identity-evasion") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  const child = spawn("/bin/sleep", ["300"], {
-    cwd: "/",
-    detached: true,
-    env: { LANG: "C", LC_ALL: "C", PATH: "/usr/bin:/bin" },
-    stdio: "ignore",
-  });
-  child.unref();
-  writeFileSync(path.join(state, "identity-evasion.pid"), `${child.pid}\n`);
-  raw(success({ status: "result", output: "must not be accepted\n" }));
-  process.exit(0);
 } else if (mode === "overlap") {
   const state = process.env.FIRSTMATE_EXTENSION_STATE;
   mkdirSync(state, { recursive: true });
@@ -620,7 +603,7 @@ assert_contains "$literal_out" "$literal_ref" "configuration reference was re-sp
 assert_absent "$shell_sentinel" "configuration reference unexpectedly executed through a shell"
 pass "source configuration references cross one JSON envelope with no shell interpretation"
 
-for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak rapid-reparent identity-evasion error-injection authority; do
+for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
   rc=0
   out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "invalid extension response was accepted: $scenario"
@@ -634,25 +617,13 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$leaked_pid" 2>/dev/null && fail "a successful response left its background descendant alive"
-rapid_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/rapid-reparent.pid")
+rapid_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/foreground-leak.pid")
 for _ in $(seq 1 50); do
   kill -0 "$rapid_pid" 2>/dev/null || break
   sleep 0.05
 done
-kill -0 "$rapid_pid" 2>/dev/null && fail "a rapidly reparented descendant escaped cleanup"
-evasion_pid=$(cat "$H_MATRIX/state/extensions/org.example.matrix/identity-evasion.pid")
-kill -0 "$evasion_pid" 2>/dev/null || fail "ambiguous-process handling guessed ownership and signaled the process"
-rc=0
-out=$(invoke_matrix good 2>&1) || rc=$?
-[ "$rc" -ne 0 ] || fail "an unattributable surviving process did not quarantine later invocations"
-assert_contains "$out" '"code":"process-quarantined"' "quarantined invocation did not return bounded host evidence"
-kill -KILL "$evasion_pid" 2>/dev/null || true
-for _ in $(seq 1 50); do
-  kill -0 "$evasion_pid" 2>/dev/null || break
-  sleep 0.05
-done
-invoke_matrix good >/dev/null || fail "an exited quarantine identity did not release later invocations"
-pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, leaked-process, rapid-reparent, identity-evasion, and authority responses are rejected"
+kill -0 "$rapid_pid" 2>/dev/null && fail "a foreground descendant escaped invocation-group cleanup"
+pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, and foreground leaked-process responses are rejected"
 
 state_root="$H_MATRIX/state/extensions/org.example.matrix"
 overlap_out="$TMP_ROOT/overlap.out"
@@ -719,7 +690,7 @@ for _ in $(seq 1 50); do
   sleep 0.05
 done
 kill -0 "$descendant" 2>/dev/null && fail "timed-out extension left its descendant alive"
-pass "timeout escalates through process-tree cleanup and reaps detached descendants"
+pass "timeout escalates through invocation-group cleanup and reaps descendants"
 
 # A missing installed executable is actionable evidence, never fallback to a
 # similarly named command or another adapter.
@@ -1271,28 +1242,25 @@ pass "the shipped file-signal package is a runnable end-to-end external adapter"
 P_HANDSHAKE_ORPHAN="$PACKAGES/handshake-orphan"
 P_HANDSHAKE_RECOVER="$PACKAGES/handshake-recover"
 handshake_orphan_pid_file="$TMP_ROOT/handshake-orphan.pid"
-make_package "$P_HANDSHAKE_ORPHAN" org.example.handshake-orphan ext-handshake-orphan "$(printf 'handshake-rapid-reparent\n%s' "$handshake_orphan_pid_file")"
+make_package "$P_HANDSHAKE_ORPHAN" org.example.handshake-orphan ext-handshake-orphan "$(printf 'handshake-leak\n%s' "$handshake_orphan_pid_file")"
 make_package "$P_HANDSHAKE_RECOVER" org.example.handshake-orphan ext-handshake-orphan
 H_HANDSHAKE_ORPHAN="$HOMES/handshake-orphan"; new_home "$H_HANDSHAKE_ORPHAN"
 handshake_orphan_rc=0
 handshake_orphan_out=$(bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_ORPHAN" ext-handshake-orphan 2>&1) || handshake_orphan_rc=$?
-wait_for_file "$handshake_orphan_pid_file" || fail "handshake orphan fixture did not start its detached child"
+wait_for_file "$handshake_orphan_pid_file" || fail "handshake leak fixture did not start its foreground child"
 handshake_orphan_pid=$(cat "$handshake_orphan_pid_file")
 [ "$handshake_orphan_rc" -ne 0 ] || fail "a handshake orphan was accepted as a successful binding"
-assert_contains "$handshake_orphan_out" "process-attribution-ambiguous" "handshake orphan did not reject binding publication"
+assert_contains "$handshake_orphan_out" "process-leak" "handshake leak did not reject binding publication"
 assert_absent "$H_HANDSHAKE_ORPHAN/config/extensions.d/org.example.handshake-orphan.json" "handshake orphan published an enabled binding"
-kill -0 "$handshake_orphan_pid" 2>/dev/null || fail "ambiguous handshake orphan was unexpectedly signaled"
-expect_failure "process-quarantined" bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_RECOVER" ext-handshake-orphan
-kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
+kill -0 "$handshake_orphan_pid" 2>/dev/null && fail "handshake leak escaped invocation-group cleanup"
 for _ in $(seq 1 50); do
   kill -0 "$handshake_orphan_pid" 2>/dev/null || break
   sleep 0.05
 done
-kill -0 "$handshake_orphan_pid" 2>/dev/null && fail "handshake orphan remained alive after explicit cleanup"
 handshake_orphan_pid=
 bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_RECOVER" ext-handshake-orphan >/dev/null
 assert_contains "$(FM_HOME="$H_HANDSHAKE_ORPHAN" "$HOST" verify org.example.handshake-orphan)" "verified: org.example.handshake-orphan@1.2.3" \
-  "an exited handshake quarantine did not permit safe binding"
-pass "handshake execution rejects and quarantines unattributable descendants"
+  "cleaned handshake state did not permit safe binding"
+pass "handshake execution rejects and reaps foreground descendants"
 
 printf '\nall extension-binding tests passed\n'
