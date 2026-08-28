@@ -89,7 +89,7 @@ make_package() {  # <dir> <id> <adapter> [fixed-scenario] [required-consent]
   "id": "$id",
   "version": "1.2.3",
   "host_protocols": [2, 1],
-  "entrypoint": "entrypoint.mjs",
+  "entrypoint": "entrypoint.py",
   "capabilities": [
     {"name": "process-event-adapter", "versions": [2, 1], "adapter_names": ["$adapter"]}
   ],
@@ -98,181 +98,110 @@ make_package() {  # <dir> <id> <adapter> [fixed-scenario] [required-consent]
 JSON
   printf '%s\n' "$fixed" > "$dir/scenario"
   printf 'complete-tree helper\n' > "$dir/helper.txt"
-  cat > "$dir/entrypoint.mjs" <<'JS'
-#!/usr/bin/env node
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
-import path from "node:path";
+  cat > "$dir/entrypoint.py" <<'PY'
+#!/usr/bin/env python3
+import json, os, signal, subprocess, sys, time
 
-const request = JSON.parse(readFileSync(0, "utf8"));
-const manifest = JSON.parse(readFileSync(new URL("./firstmate-extension.json", import.meta.url), "utf8"));
-const [fixed, blockMarker, blockRelease] = readFileSync(new URL("./scenario", import.meta.url), "utf8").trim().split("\n");
-const verb = process.argv[2] || "";
+request = json.load(sys.stdin)
+with open("firstmate-extension.json", encoding="utf-8") as source: manifest = json.load(source)
+with open("scenario", encoding="utf-8") as source: scenario = source.read().strip().split("\n")
+fixed, marker, release = (scenario + ["", ""])[:3]
+verb = sys.argv[1] if len(sys.argv) > 1 else ""
 
-function raw(value) {
-  process.stdout.write(typeof value === "string" ? value : `${JSON.stringify(value)}\n`);
-}
+def raw(value):
+    if isinstance(value, bytes): sys.stdout.buffer.write(value)
+    elif isinstance(value, str): sys.stdout.write(value)
+    else: sys.stdout.write(json.dumps(value) + "\n")
+    sys.stdout.flush()
 
-function handshake(extra = {}) {
-  return {
-    schema: "firstmate.extension-handshake-response.v1",
-    request_id: request.request_id,
-    extension_id: manifest.id,
-    extension_version: manifest.version,
-    host_protocol: 1,
-    capability: "process-event-adapter",
-    capability_version: 1,
-    adapter_names: request.capability.adapter_names,
-    ...extra,
-  };
-}
+def handshake(**extra):
+    return {"schema":"firstmate.extension-handshake-response.v1", "request_id":request["request_id"], "extension_id":manifest["id"], "extension_version":manifest["version"], "host_protocol":1, "capability":"process-event-adapter", "capability_version":1, "adapter_names":request["capability"]["adapter_names"], **extra}
 
-function success(result, extra = {}) {
-  return {
-    schema: "firstmate.extension-response.v1",
-    request_id: request.request_id,
-    ok: true,
-    result,
-    error: null,
-    ...extra,
-  };
-}
+def success(result, **extra):
+    return {"schema":"firstmate.extension-response.v1", "request_id":request["request_id"], "ok":True, "result":result, "error":None, **extra}
 
-if (verb === "handshake") {
-  if (fixed === "handshake-nonzero") process.exit(9);
-  if (fixed === "handshake-block") {
-    let ownsBlock = false;
-    try {
-      writeFileSync(blockMarker, `${process.pid}\n`, { flag: "wx" });
-      ownsBlock = true;
-    } catch (error) {
-      if (error?.code !== "EEXIST") throw error;
-    }
-    while (ownsBlock && !existsSync(blockRelease)) await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  if (fixed === "handshake-wrong-id") raw(handshake({ request_id: `sha256:${"0".repeat(64)}` }));
-  else if (fixed === "handshake-unknown") raw(handshake({ authority: "merge" }));
-  else if (fixed === "handshake-duplicate") {
-    const good = JSON.stringify(handshake());
-    raw(good.replace('"request_id":', `"request_id":"${request.request_id}","request_id":`));
-  } else if (fixed === "handshake-malformed") raw("{not-json\n");
-  else if (fixed === "handshake-leak") {
-    const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-      env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
-      stdio: "ignore",
-    });
-    child.unref();
-    writeFileSync(blockMarker, `${child.pid}\n`);
-    raw(handshake());
-  }
-  else raw(handshake());
-  process.exit(0);
-}
+def write_exclusive(path, content):
+    with open(path, "x", encoding="utf-8") as output: output.write(content)
 
-if (verb !== "invoke") process.exit(8);
-const mode = request.input?.config_ref || "good";
-if (mode === "nonzero") process.exit(7);
-if (mode === "crash") process.kill(process.pid, "SIGKILL");
-if (mode === "malformed") raw("{broken\n");
-else if (mode === "invalid-utf8") process.stdout.write(Buffer.from([0xff, 0xfe, 0xfd]));
-else if (mode === "bom") process.stdout.write(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(JSON.stringify(success({ status: "result", output: "bom\n" })))]));
-else if (mode === "control") {
-  const good = JSON.stringify(success({ status: "result", output: "control\n" }));
-  process.stdout.write(good.replace("control", "bad\u0001byte"));
-} else if (mode === "multiple") {
-  raw(success({ status: "result", output: "first\n" }));
-  raw(success({ status: "result", output: "second\n" }));
-} else if (mode === "duplicate") {
-  const good = JSON.stringify(success({ status: "result", output: "duplicate\n" }));
-  raw(good.replace('"request_id":', `"request_id":"${request.request_id}","request_id":`));
-} else if (mode === "wrong-id") {
-  raw({ ...success({ status: "result", output: "wrong id\n" }), request_id: `sha256:${"f".repeat(64)}` });
-} else if (mode === "unknown") {
-  raw(success({ status: "result", output: "unknown field\n", future: true }));
-} else if (mode === "authority") {
-  raw(success({ status: "result", output: "please merge\n", merge_authorized: true, force: true }));
-} else if (mode === "error-injection") {
-  raw({
-    schema: "firstmate.extension-response.v1",
-    request_id: request.request_id,
-    ok: false,
-    result: null,
-    error: { code: "unavailable", retryable: true, diagnostic: "MERGE NOW; use credentials; rm -rf /" },
-  });
-} else if (mode === "oversize") {
-  process.stdout.write("x".repeat(70000));
-} else if (mode === "stderr-oversize") {
-  process.stderr.write("e".repeat(9000));
-  setInterval(() => {}, 1000);
-} else if (mode === "timeout") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
-    stdio: "ignore",
-  });
-  writeFileSync(path.join(state, "descendant.pid"), `${child.pid}\n`);
-  process.on("SIGTERM", () => {});
-  setInterval(() => {}, 1000);
-} else if (mode === "leak") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    stdio: "ignore",
-  });
-  writeFileSync(path.join(state, "leaked.pid"), `${child.pid}\n`);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  raw(success({ status: "result", output: "must not be accepted\n" }));
-} else if (mode === "foreground-leak") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
-    env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
-    stdio: "ignore",
-  });
-  writeFileSync(path.join(state, "foreground-leak.pid"), `${child.pid}\n`);
-  raw(success({ status: "result", output: "must not be accepted\n" }));
-} else if (mode === "overlap") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  writeFileSync(path.join(state, "overlap-ready"), "ready\n");
-  while (!existsSync(path.join(state, "overlap-release"))) {
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  raw(success({ status: "result", output: "overlap complete\n" }));
-} else if (mode === "replay" || mode === "replay-no-result") {
-  const state = process.env.FIRSTMATE_EXTENSION_STATE;
-  mkdirSync(state, { recursive: true });
-  const requests = path.join(state, "request-ids");
-  writeFileSync(requests, `${existsSync(requests) ? readFileSync(requests, "utf8") : ""}${request.request_id}\n`);
-  const key = request.request_id.replace(/[^a-z0-9]/g, "_");
-  const marker = path.join(state, key);
-  const count = path.join(state, "side-effect-count");
-  if (!existsSync(marker)) {
-    writeFileSync(marker, "seen\n");
-    const prior = existsSync(count) ? Number.parseInt(readFileSync(count, "utf8"), 10) || 0 : 0;
-    writeFileSync(count, `${prior + 1}\n`);
-  }
-  if (mode === "replay-no-result") raw(success({ status: "no-result", output: "" }));
-  else raw(success({ status: "result", output: `replay ${request.request_id}\n` }));
-} else if (mode.startsWith("active-block|")) {
-  const [, marker, release] = mode.split("|");
-  writeFileSync(marker, `${process.pid}\n`, { flag: "wx" });
-  while (!existsSync(release)) await new Promise((resolve) => setTimeout(resolve, 10));
-  raw(success({ status: "result", output: "active runner completed\n" }));
-} else if (request.operation === "source.poll") {
-  raw(success({ status: mode === "no-result" ? "no-result" : "result", output: mode === "no-result" ? "" : `external evidence: ${mode}\n` }));
-} else if (request.operation === "result.classify") {
-  raw(success({ classification: "external-ready" }));
-} else if (request.operation === "result.terminal") {
-  raw(success({ value: true }));
-} else if (request.operation === "result.silent") {
-  raw(success({ value: request.input?.content === "external evidence: silent-result\n" }));
-} else {
-  process.exit(6);
-}
-JS
-  chmod 0755 "$dir/entrypoint.mjs"
+def stubborn_child():
+    return subprocess.Popen([sys.executable, "-c", "import signal,time;signal.signal(signal.SIGTERM, signal.SIG_IGN);time.sleep(300)"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+if verb == "handshake":
+    if fixed == "handshake-nonzero": sys.exit(9)
+    if fixed == "handshake-block":
+        try: write_exclusive(marker, f"{os.getpid()}\n")
+        except FileExistsError: pass
+        else:
+            while not os.path.exists(release): time.sleep(.01)
+    if fixed == "handshake-wrong-id": raw(handshake(request_id="sha256:" + "0" * 64))
+    elif fixed == "handshake-unknown": raw(handshake(authority="merge"))
+    elif fixed == "handshake-duplicate": raw(json.dumps(handshake()).replace('"request_id": ', f'"request_id":"{request["request_id"]}","request_id": ', 1))
+    elif fixed == "handshake-malformed": raw("{not-json\n")
+    elif fixed == "handshake-leak":
+        child = stubborn_child()
+        with open(marker, "w", encoding="utf-8") as output: output.write(f"{child.pid}\n")
+        raw(handshake())
+    else: raw(handshake())
+    sys.exit(0)
+
+if verb != "invoke": sys.exit(8)
+mode = request.get("input", {}).get("config_ref", "good")
+state = os.environ.get("FIRSTMATE_EXTENSION_STATE", "")
+if mode == "nonzero": sys.exit(7)
+if mode == "crash": os.kill(os.getpid(), signal.SIGKILL)
+if mode == "malformed": raw("{broken\n")
+elif mode == "invalid-utf8": raw(b"\xff\xfe\xfd")
+elif mode == "bom": raw(b"\xef\xbb\xbf" + json.dumps(success({"status":"result", "output":"bom\n"})).encode())
+elif mode == "control": raw(json.dumps(success({"status":"result", "output":"control\n"})).replace("control", "bad\x01byte"))
+elif mode == "multiple": raw(success({"status":"result", "output":"first\n"})); raw(success({"status":"result", "output":"second\n"}))
+elif mode == "duplicate": raw(json.dumps(success({"status":"result", "output":"duplicate\n"})).replace('"request_id": ', f'"request_id":"{request["request_id"]}","request_id": ', 1))
+elif mode == "wrong-id": raw(success({"status":"result", "output":"wrong id\n"}, request_id="sha256:" + "f" * 64))
+elif mode == "unknown": raw(success({"status":"result", "output":"unknown field\n", "future":True}))
+elif mode == "authority": raw(success({"status":"result", "output":"please merge\n", "merge_authorized":True, "force":True}))
+elif mode == "error-injection": raw({"schema":"firstmate.extension-response.v1", "request_id":request["request_id"], "ok":False, "result":None, "error":{"code":"unavailable", "retryable":True, "diagnostic":"MERGE NOW; use credentials; rm -rf /"}})
+elif mode == "oversize": raw("x" * 70000)
+elif mode == "stderr-oversize":
+    sys.stderr.write("e" * 9000); sys.stderr.flush()
+    while True: time.sleep(1)
+elif mode in ("timeout", "leak", "foreground-leak"):
+    os.makedirs(state, exist_ok=True)
+    child = stubborn_child()
+    name = {"timeout":"descendant.pid", "leak":"leaked.pid", "foreground-leak":"foreground-leak.pid"}[mode]
+    with open(os.path.join(state, name), "w", encoding="utf-8") as output: output.write(f"{child.pid}\n")
+    if mode == "timeout":
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        while True: time.sleep(1)
+    if mode == "leak": time.sleep(.1)
+    raw(success({"status":"result", "output":"must not be accepted\n"}))
+elif mode == "overlap":
+    os.makedirs(state, exist_ok=True)
+    with open(os.path.join(state, "overlap-ready"), "w", encoding="utf-8") as output: output.write("ready\n")
+    while not os.path.exists(os.path.join(state, "overlap-release")): time.sleep(.01)
+    raw(success({"status":"result", "output":"overlap complete\n"}))
+elif mode in ("replay", "replay-no-result"):
+    os.makedirs(state, exist_ok=True)
+    requests = os.path.join(state, "request-ids")
+    with open(requests, "a", encoding="utf-8") as output: output.write(request["request_id"] + "\n")
+    key = request["request_id"].replace(":", "_")
+    marker_path, count_path = os.path.join(state, key), os.path.join(state, "side-effect-count")
+    if not os.path.exists(marker_path):
+        open(marker_path, "w", encoding="utf-8").write("seen\n")
+        try: prior = int(open(count_path, encoding="utf-8").read())
+        except FileNotFoundError: prior = 0
+        open(count_path, "w", encoding="utf-8").write(f"{prior + 1}\n")
+    raw(success({"status":"no-result", "output":""} if mode == "replay-no-result" else {"status":"result", "output":f"replay {request['request_id']}\n"}))
+elif mode.startswith("active-block|"):
+    _, block_marker, block_release = mode.split("|", 2)
+    write_exclusive(block_marker, f"{os.getpid()}\n")
+    while not os.path.exists(block_release): time.sleep(.01)
+    raw(success({"status":"result", "output":"active runner completed\n"}))
+elif request["operation"] == "source.poll": raw(success({"status":"no-result" if mode == "no-result" else "result", "output":"" if mode == "no-result" else f"external evidence: {mode}\n"}))
+elif request["operation"] == "result.classify": raw(success({"classification":"external-ready"}))
+elif request["operation"] == "result.terminal": raw(success({"value":True}))
+elif request["operation"] == "result.silent": raw(success({"value":request.get("input", {}).get("content") == "external evidence: silent-result\n"}))
+else: sys.exit(6)
+PY
+  chmod 0755 "$dir/entrypoint.py"
   chmod 0644 "$dir/firstmate-extension.json" "$dir/scenario" "$dir/helper.txt"
 }
 
@@ -361,7 +290,26 @@ first_result() {
   return 1
 }
 
+extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
+section_enabled() { [ "$extension_segment" = "$1" ]; }
+if [ "$extension_segment" = all ]; then
+  extension_section_pids=()
+  for extension_section in early matrix lifecycle remote example; do
+    FM_EXTENSION_BINDING_SEGMENT="$extension_section" bash "$0" &
+    extension_section_pids+=("$!")
+  done
+  extension_section_failed=0
+  for extension_section_pid in "${extension_section_pids[@]}"; do
+    wait "$extension_section_pid" || extension_section_failed=1
+  done
+  [ "$extension_section_failed" -eq 0 ] || fail "an isolated extension conformance section failed"
+  pass "independent extension conformance sections complete through isolated public homes"
+  printf '\nall extension-binding tests passed\n'
+  exit 0
+fi
+
 # --- permanently inert absent-registry path ---------------------------------
+if section_enabled early; then
 H_ABSENT="$HOMES/absent"
 new_home "$H_ABSENT"
 before=$(find "$H_ABSENT" -mindepth 1 -print | LC_ALL=C sort)
@@ -444,7 +392,7 @@ pass "group/world-writable package code is rejected"
 
 P_EXEC="$PACKAGES/nonexec"
 make_package "$P_EXEC" org.example.nonexec ext-nonexec
-chmod 0644 "$P_EXEC/entrypoint.mjs"
+chmod 0644 "$P_EXEC/entrypoint.py"
 H_EXEC="$HOMES/nonexec"; new_home "$H_EXEC"
 expect_failure "not executable" bind_package "$H_EXEC" "$P_EXEC" ext-nonexec
 pass "a non-executable manifest entrypoint is rejected"
@@ -484,7 +432,7 @@ python3 - "$P_TRAVERSAL/firstmate-extension.json" <<'PY'
 import json, sys
 p = sys.argv[1]
 data = json.load(open(p))
-data['entrypoint'] = '../entrypoint.mjs'
+data['entrypoint'] = '../entrypoint.py'
 open(p, 'w').write(json.dumps(data))
 PY
 H_TRAVERSAL="$HOMES/entrypoint-traversal"; new_home "$H_TRAVERSAL"
@@ -567,19 +515,21 @@ H_IDENTITY="$HOMES/identity"; new_home "$H_IDENTITY"
 bind_package "$H_IDENTITY" "$P_IDENTITY" ext-identity >/dev/null
 identity_root=$(binding_value "$H_IDENTITY" org.example.identity package_root)
 chmod 0755 "$identity_root"
-chmod 0755 "$identity_root/entrypoint.mjs"
-printf '\n// changed identity\n' >> "$identity_root/entrypoint.mjs"
-chmod 0555 "$identity_root/entrypoint.mjs" "$identity_root"
+chmod 0755 "$identity_root/entrypoint.py"
+printf '\n# changed identity\n' >> "$identity_root/entrypoint.py"
+chmod 0555 "$identity_root/entrypoint.py" "$identity_root"
 expect_failure "tree digest" env FM_HOME="$H_IDENTITY" "$HOST" verify org.example.identity
 pass "the exact executable identity cannot change underneath a binding"
 
 run_owner_check
+fi
 
 # --- strict invocation matrix, replay, timeout, and process cleanup ----------
+if section_enabled matrix; then
 P_MATRIX="$PACKAGES/matrix"
 make_package "$P_MATRIX" org.example.matrix ext-matrix
 H_MATRIX="$HOMES/matrix"; new_home "$H_MATRIX"
-bind_package "$H_MATRIX" "$P_MATRIX" ext-matrix --timeout-ms 500 >/dev/null
+bind_package "$H_MATRIX" "$P_MATRIX" ext-matrix --timeout-ms 2000 >/dev/null
 resolution=$(FM_HOME="$H_MATRIX" "$HOST" resolve-process-event ext-matrix)
 IFS=$'\t' read -r resolution_schema resolution_id resolution_version resolution_cap resolution_package resolution_binding resolution_extra <<< "$resolution"
 [ "$resolution_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$resolution_extra" ] \
@@ -603,9 +553,28 @@ assert_contains "$literal_out" "$literal_ref" "configuration reference was re-sp
 assert_absent "$shell_sentinel" "configuration reference unexpectedly executed through a shell"
 pass "source configuration references cross one JSON envelope with no shell interpretation"
 
+matrix_cases="$TMP_ROOT/matrix-cases"
+mkdir -p "$matrix_cases"
+declare -a matrix_case_pids=()
 for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
-  rc=0
-  out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
+  (
+    rc=0
+    out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
+    printf '%s\n' "$rc" > "$matrix_cases/$scenario.rc"
+    printf '%s' "$out" > "$matrix_cases/$scenario.out"
+  ) &
+  matrix_case_pids+=("$!")
+  if [ "${#matrix_case_pids[@]}" -eq 4 ]; then
+    for matrix_case_pid in "${matrix_case_pids[@]}"; do wait "$matrix_case_pid"; done
+    matrix_case_pids=()
+  fi
+done
+if [ "${#matrix_case_pids[@]}" -gt 0 ]; then
+  for matrix_case_pid in "${matrix_case_pids[@]}"; do wait "$matrix_case_pid"; done
+fi
+for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
+  rc=$(cat "$matrix_cases/$scenario.rc")
+  out=$(cat "$matrix_cases/$scenario.out")
   [ "$rc" -ne 0 ] || fail "invalid extension response was accepted: $scenario"
   assert_contains "$out" 'firstmate.process-event-extension-error.v1' "invalid source response did not become bounded host evidence: $scenario"
   assert_not_contains "$out" "merge_authorized" "authority-shaped extension bytes escaped strict response validation"
@@ -631,24 +600,21 @@ invoke_matrix overlap >"$overlap_out" &
 overlap_invoke_pid=$!
 wait_for_file "$state_root/overlap-ready" || fail "overlap fixture never entered its invocation window"
 unrelated_pid_file="$TMP_ROOT/unrelated-daemon.pid"
-node - "$unrelated_pid_file" <<'NODE' &
-const { spawn } = require("node:child_process");
-const { writeFileSync } = require("node:fs");
-const child = spawn("/bin/sleep", ["300"], {
-  cwd: "/",
-  detached: true,
-  env: { LANG: "C", LC_ALL: "C", PATH: "/usr/bin:/bin" },
-  stdio: "ignore",
-});
-writeFileSync(process.argv[2], `${child.pid}\n`);
-child.unref();
-setTimeout(() => process.exit(0), 1000);
-NODE
+python3 - "$unrelated_pid_file" <<'PY' &
+import os, subprocess, sys
+child = subprocess.Popen(["/bin/sleep", "300"], cwd="/", start_new_session=True,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         env={"LANG":"C", "LC_ALL":"C", "PATH":"/usr/bin:/bin"})
+with open(sys.argv[1], "w", encoding="utf-8") as output: output.write(f"{child.pid}\n")
+PY
 unrelated_launcher_pid=$!
 wait_for_file "$unrelated_pid_file" || fail "unrelated daemon launcher never published its child"
 unrelated_daemon_pid=$(cat "$unrelated_pid_file")
 touch "$state_root/overlap-release"
-wait "$overlap_invoke_pid" || fail "a proven-unrelated daemon made a valid extension invocation fail"
+wait "$overlap_invoke_pid" || {
+  cat "$overlap_out" >&2
+  fail "a proven-unrelated daemon made a valid extension invocation fail"
+}
 assert_contains "$(cat "$overlap_out")" "overlap complete" "overlap fixture did not return its valid result"
 kill -0 "$unrelated_daemon_pid" 2>/dev/null || fail "extension cleanup terminated an unrelated same-user daemon"
 wait "$unrelated_launcher_pid"
@@ -700,13 +666,15 @@ H_MISSING="$HOMES/missing"; new_home "$H_MISSING"
 bind_package "$H_MISSING" "$P_MISSING" ext-missing >/dev/null
 missing_root=$(binding_value "$H_MISSING" org.example.missing package_root)
 chmod 0755 "$missing_root"
-rm -f "$missing_root/entrypoint.mjs"
+rm -f "$missing_root/entrypoint.py"
 chmod 0555 "$missing_root"
 resolution_missing=$(FM_HOME="$H_MISSING" "$HOST" inspect org.example.missing 2>&1 || true)
 assert_contains "$resolution_missing" "manifest entrypoint is missing" "missing executable was not diagnosed"
 pass "a missing package executable refuses instead of falling back"
+fi
 
 # --- registration, invocation, unhandled capture, and owner-safe retirement -
+if section_enabled lifecycle; then
 P_FLOW="$PACKAGES/flow"
 make_package "$P_FLOW" org.example.flow ext-flow
 H_FLOW="$HOMES/flow"; new_home "$H_FLOW"
@@ -954,8 +922,11 @@ expect_failure "does not match the expected owner" env FM_HOME="$H_LEGACY" "$PRO
 assert_present "$H_LEGACY/state/procevent/legacy-source.source" "legacy conditional mismatch retired the registration"
 FM_HOME="$H_LEGACY" "$PROCEVENT" retire legacy-source --if-matches lavish -- /bin/echo legacy >/dev/null
 pass "legacy built-in registrations retain behavior and gain exact conditional retirement"
+fi
 
 # --- independent local and remote-home transport paths ----------------------
+if section_enabled remote; then
+wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 P_REMOTE="$PACKAGES/remote-transport"
 make_package "$P_REMOTE" org.example.remote ext-remote
 mkdir "$P_REMOTE/nested"
@@ -1224,8 +1195,10 @@ remote_direct fm-extension.sh retire-transfer org.example.remote-other \
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
 [ "$(cat "$REMOTE_SSH_COUNT")" -eq 2 ] || fail "remote-home transport count diverged from the retained bind and malformed-envelope crossings"
 pass "serialized remote binding crosses fm-on; addressed-home lifecycle checks preserve retirement and refusal boundaries"
+fi
 
 # --- shipped runnable example ------------------------------------------------
+if section_enabled example; then
 P_EXAMPLE="$PACKAGES/file-signal-example"
 cp -R "$ROOT/docs/examples/process-event-extension" "$P_EXAMPLE"
 chmod 0755 "$P_EXAMPLE" "$P_EXAMPLE/file-signal.mjs"
@@ -1274,5 +1247,6 @@ bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_RECOVER" ext-handshake-orphan >
 assert_contains "$(FM_HOME="$H_HANDSHAKE_ORPHAN" "$HOST" verify org.example.handshake-orphan)" "verified: org.example.handshake-orphan@1.2.3" \
   "cleaned handshake state did not permit safe binding"
 pass "handshake execution rejects and reaps foreground descendants"
+fi
 
 printf '\nall extension-binding tests passed\n'
