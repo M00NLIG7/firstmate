@@ -957,19 +957,18 @@ function startProcessTracker(invocationMarker) {
     unrelated: new Map(),
     table,
     timer: null,
+    fastTrackerUntil: 0,
+    nextTrackerRefresh: 0,
     error: null,
   };
 }
 
 function ambiguousInvocationOrphans(tracker) {
   if (!tracker || process.platform === "win32") return [];
-  if (!tracker.error) refreshProcessTracker(tracker);
   const candidates = [];
-  for (const [pid, entry] of tracker.table) {
-    if (pid === tracker.rootPid || entry.ppid !== 1 || entry.pgid !== pid || entry.uid !== tracker.uid || entry.state.startsWith("Z")) continue;
-    if (entry.startedAt < tracker.startedAt - 1000 || tracker.baseline.get(pid) === entry.identity) continue;
-    if (tracker.descendants.get(pid) === entry.identity) continue;
-    if (tracker.unrelated.get(pid) === entry.identity) continue;
+  for (const [pid, identity] of tracker.descendants) {
+    const entry = tracker.table.get(pid);
+    if (entry?.identity !== identity || entry.state.startsWith("Z") || entry.pgid !== pid) continue;
     candidates.push({ pid, identity: entry.identity });
   }
   return candidates;
@@ -1036,14 +1035,19 @@ function armProcessTracker(tracker, child, onError) {
   // small setup gap in which an unrelated same-user orphan can be mistaken
   // for an extension descendant.
   for (const [pid, entry] of tracker.table) tracker.baseline.set(pid, entry.identity);
+  tracker.fastTrackerUntil = Date.now() + 5;
+  tracker.nextTrackerRefresh = 0;
   tracker.timer = setInterval(() => {
+    const now = Date.now();
+    if (now < tracker.nextTrackerRefresh) return;
+    tracker.nextTrackerRefresh = now + (now < tracker.fastTrackerUntil ? 1 : 20);
     try {
       refreshProcessTracker(tracker);
     } catch (error) {
       tracker.error = error;
       onError();
     }
-  }, 20);
+  }, 1);
 }
 
 function stopProcessTracker(tracker) {
@@ -1151,6 +1155,17 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   const completion = new Promise((resolve, reject) => {
     child.once("error", () => reject(new HostError("entrypoint-missing", "bound extension entrypoint could not be started")));
     child.stdout.on("data", (chunk) => {
+      try {
+        // A detached child can clear its invocation marker and outlive a
+        // short handshake before the periodic tracker tick.  Refresh while
+        // accepting its response, when its parent relationship is still
+        // observable, rather than attributing unrelated user services.
+        refreshProcessTracker(processTracker);
+      } catch (error) {
+        processTracker.error = error;
+        forceStop("process-tracking-unavailable", "cannot inspect the extension process tree");
+        return;
+      }
       stdoutBytes += chunk.length;
       if (stdoutBytes > MAX_JSON_BYTES) {
         forceStop("response-oversized", `extension stdout exceeds ${MAX_JSON_BYTES} bytes`);
@@ -1183,13 +1198,13 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   }
   clearTimeout(timeout);
   if (killTimer) clearTimeout(killTimer);
-  const leakedProcessTree = !forcedCode && (groupAlive(child.pid) || trackedDescendantsAlive(processTracker));
+  const ambiguousProcesses = statePath ? ambiguousInvocationOrphans(processTracker) : [];
+  const leakedProcessTree = !forcedCode && ambiguousProcesses.length === 0 && (groupAlive(child.pid) || trackedDescendantsAlive(processTracker));
   try {
     if (forcedCode || leakedProcessTree) await cleanupProcessTree(child, processTracker);
   } finally {
     stopProcessTracker(processTracker);
   }
-  const ambiguousProcesses = statePath ? ambiguousInvocationOrphans(processTracker) : [];
   await quarantineAmbiguousProcesses(statePath, ambiguousProcesses);
   activeChild = null;
   activeProcessTracker = null;
@@ -1197,7 +1212,7 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   if (forcedCode) fail(forcedCode, forcedMessage);
   if (leakedProcessTree) fail("process-leak", `extension ${verb} left a background process tree`);
   if (ambiguousProcesses.length) {
-    fail("process-attribution-ambiguous", `extension ${verb} overlapped a newly orphaned same-user process and its response cannot be accepted safely`);
+    fail("process-attribution-ambiguous", `extension ${verb} left a detached descendant and its response cannot be accepted safely`);
   }
   if (outcome.signal || outcome.code !== 0) fail("process-failed", `extension ${verb} exited nonzero`);
   return parseStrictJson(Buffer.concat(stdout), `extension ${verb} response`);
