@@ -14,6 +14,7 @@
 #   fm-procevent.sh sweep-home [--preflight]
 #   fm-procevent.sh binding-retirement-preflight <binding-digest>
 #   fm-procevent.sh extension-retirement <binding|transfer> <retirement-arguments...>
+#   fm-procevent.sh extension-bind <bind|receive-transfer-bind> <binding-arguments...>
 #   fm-procevent.sh list
 #
 # register   Record a built-in source: its adapter, its canonical id, and the
@@ -72,6 +73,9 @@
 # extension-retirement
 #            Serialize one tracked binding or transfer retirement against
 #            extension resolution and registration publication in this home.
+# extension-bind
+#            Serialize tracked binding publication against extension resolution,
+#            registration publication, and retirement in this home.
 # list       Show registered sources, owners, and pending captured results.
 #
 # Terminal knowledge is adapter-owned. This runner never inspects a result and
@@ -1274,6 +1278,18 @@ cmd_extension_retirement() {
   exec "$EXTENSION_HOST" "$@"
 }
 
+cmd_extension_bind() {
+  local command=${1-} owner
+  case "$command" in bind|receive-transfer-bind) ;; *) die "unsupported extension binding command: $command" ;; esac
+  extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
+  owner=${FM_LOCK_OWNER_DIR:-}
+  [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
+  export FM_EXTENSION_RETIREMENT_MODE=bind
+  export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
+  export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
+  exec "$EXTENSION_HOST" "$@"
+}
+
 case "${1-}" in
   register)           shift; cmd_register "$@" ;;
   register-extension) shift; cmd_register_extension "$@" ;;
@@ -1286,6 +1302,7 @@ case "${1-}" in
   sweep-home)         shift; cmd_sweep_home "$@" ;;
   binding-retirement-preflight) shift; cmd_binding_retirement_preflight "$@" ;;
   extension-retirement) shift; cmd_extension_retirement "$@" ;;
+  extension-bind) shift; cmd_extension_bind "$@" ;;
   list)               shift; cmd_list "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;
