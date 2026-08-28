@@ -15,6 +15,7 @@ TMP_ROOT_RAW=$(fm_test_tmproot fm-extension-binding)
 TMP_ROOT=$(cd "$TMP_ROOT_RAW" && pwd -P)
 first_bind_pid=
 second_bind_pid=
+handshake_orphan_pid=
 concurrent_release=
 race_register_pid=
 race_retire_pid=
@@ -46,6 +47,7 @@ extension_test_cleanup() {
   [ -z "$remote_active_release" ] || touch "$remote_active_release" 2>/dev/null || true
   [ -z "$unrelated_daemon_pid" ] || kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
   [ -z "$unrelated_launcher_pid" ] || kill -KILL "$unrelated_launcher_pid" 2>/dev/null || true
+  [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
   if [ -f "$TMP_ROOT/remote-jobs/worker.pid" ]; then
     kill "$(cat "$TMP_ROOT/remote-jobs/worker.pid")" 2>/dev/null || true
   fi
@@ -154,6 +156,16 @@ if (verb === "handshake") {
     const good = JSON.stringify(handshake());
     raw(good.replace('"request_id":', `"request_id":"${request.request_id}","request_id":`));
   } else if (fixed === "handshake-malformed") raw("{not-json\n");
+  else if (fixed === "handshake-rapid-reparent") {
+    const child = spawn(process.execPath, ["-e", "process.chdir('/');process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], {
+      detached: true,
+      env: { LANG: "C", LC_ALL: "C", PATH: process.env.PATH || "" },
+      stdio: "ignore",
+    });
+    child.unref();
+    writeFileSync(blockMarker, `${child.pid}\n`);
+    raw(handshake());
+  }
   else raw(handshake());
   process.exit(0);
 }
@@ -1255,5 +1267,32 @@ assert_contains "$(FM_HOME="$H_EXAMPLE" "$PROCEVENT" classify "$example_result")
 assert_absent "$H_EXAMPLE/state/procevent/example-file.source" "example terminal result did not retire its source"
 FM_HOME="$H_EXAMPLE" "$PROCEVENT" retire example-file --if-owner "$example_token" >/dev/null
 pass "the shipped file-signal package is a runnable end-to-end external adapter"
+
+P_HANDSHAKE_ORPHAN="$PACKAGES/handshake-orphan"
+P_HANDSHAKE_RECOVER="$PACKAGES/handshake-recover"
+handshake_orphan_pid_file="$TMP_ROOT/handshake-orphan.pid"
+make_package "$P_HANDSHAKE_ORPHAN" org.example.handshake-orphan ext-handshake-orphan "$(printf 'handshake-rapid-reparent\n%s' "$handshake_orphan_pid_file")"
+make_package "$P_HANDSHAKE_RECOVER" org.example.handshake-orphan ext-handshake-orphan
+H_HANDSHAKE_ORPHAN="$HOMES/handshake-orphan"; new_home "$H_HANDSHAKE_ORPHAN"
+handshake_orphan_rc=0
+handshake_orphan_out=$(bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_ORPHAN" ext-handshake-orphan 2>&1) || handshake_orphan_rc=$?
+wait_for_file "$handshake_orphan_pid_file" || fail "handshake orphan fixture did not start its detached child"
+handshake_orphan_pid=$(cat "$handshake_orphan_pid_file")
+[ "$handshake_orphan_rc" -ne 0 ] || fail "a handshake orphan was accepted as a successful binding"
+assert_contains "$handshake_orphan_out" "process-attribution-ambiguous" "handshake orphan did not reject binding publication"
+assert_absent "$H_HANDSHAKE_ORPHAN/config/extensions.d/org.example.handshake-orphan.json" "handshake orphan published an enabled binding"
+kill -0 "$handshake_orphan_pid" 2>/dev/null || fail "ambiguous handshake orphan was unexpectedly signaled"
+expect_failure "process-quarantined" bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_RECOVER" ext-handshake-orphan
+kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
+for _ in $(seq 1 50); do
+  kill -0 "$handshake_orphan_pid" 2>/dev/null || break
+  sleep 0.05
+done
+kill -0 "$handshake_orphan_pid" 2>/dev/null && fail "handshake orphan remained alive after explicit cleanup"
+handshake_orphan_pid=
+bind_package "$H_HANDSHAKE_ORPHAN" "$P_HANDSHAKE_RECOVER" ext-handshake-orphan >/dev/null
+assert_contains "$(FM_HOME="$H_HANDSHAKE_ORPHAN" "$HOST" verify org.example.handshake-orphan)" "verified: org.example.handshake-orphan@1.2.3" \
+  "an exited handshake quarantine did not permit safe binding"
+pass "handshake execution rejects and quarantines unattributable descendants"
 
 printf '\nall extension-binding tests passed\n'
