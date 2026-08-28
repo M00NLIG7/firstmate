@@ -14,6 +14,7 @@ PROCEVENT="$ROOT/bin/fm-procevent.sh"
 TMP_ROOT_RAW=$(fm_test_tmproot fm-extension-binding)
 TMP_ROOT=$(cd "$TMP_ROOT_RAW" && pwd -P)
 first_bind_pid=
+second_bind_pid=
 concurrent_release=
 race_register_pid=
 race_retire_pid=
@@ -52,6 +53,10 @@ extension_test_cleanup() {
     kill -CONT "$first_bind_pid" 2>/dev/null || true
     kill -TERM "$first_bind_pid" 2>/dev/null || true
     wait "$first_bind_pid" 2>/dev/null || true
+  fi
+  if [ -n "$second_bind_pid" ]; then
+    kill -TERM "$second_bind_pid" 2>/dev/null || true
+    wait "$second_bind_pid" 2>/dev/null || true
   fi
   chmod -R u+w "$TMP_ROOT_RAW" 2>/dev/null || true
   fm_test_cleanup
@@ -390,12 +395,14 @@ case "$package_root" in "$H_GOOD"/data/extensions/packages/*) ;; *) fail "bindin
   || fail "managed package root is not read-only"
 pass "bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding"
 
-P_CONCURRENT="$PACKAGES/concurrent"
+P_CONCURRENT_ONE="$PACKAGES/concurrent-one"
+P_CONCURRENT_TWO="$PACKAGES/concurrent-two"
 concurrent_marker="$TMP_ROOT/concurrent.entered"
 concurrent_release="$TMP_ROOT/concurrent.release"
-make_package "$P_CONCURRENT" org.example.concurrent ext-concurrent "$(printf 'handshake-block\n%s\n%s' "$concurrent_marker" "$concurrent_release")"
+make_package "$P_CONCURRENT_ONE" org.example.concurrent-one ext-concurrent "$(printf 'handshake-block\n%s\n%s' "$concurrent_marker" "$concurrent_release")"
+make_package "$P_CONCURRENT_TWO" org.example.concurrent-two ext-concurrent
 H_CONCURRENT="$HOMES/concurrent"; new_home "$H_CONCURRENT"
-bind_package "$H_CONCURRENT" "$P_CONCURRENT" ext-concurrent \
+bind_package "$H_CONCURRENT" "$P_CONCURRENT_ONE" ext-concurrent \
   > "$TMP_ROOT/concurrent-first.out" 2>&1 &
 first_bind_pid=$!
 for _ in $(seq 1 200); do
@@ -403,16 +410,26 @@ for _ in $(seq 1 200); do
   sleep 0.01
 done
 [ -s "$concurrent_marker" ] || fail "first concurrent bind never reached its pre-publication handshake"
-bind_package "$H_CONCURRENT" "$P_CONCURRENT" ext-concurrent >/dev/null
+bind_package "$H_CONCURRENT" "$P_CONCURRENT_TWO" ext-concurrent > "$TMP_ROOT/concurrent-second.out" 2>&1 &
+second_bind_pid=$!
+sleep 0.2
+kill -0 "$second_bind_pid" 2>/dev/null || fail "second concurrent bind bypassed the extension lifecycle boundary"
 touch "$concurrent_release"
 first_bind_rc=0
 wait "$first_bind_pid" || first_bind_rc=$?
 first_bind_pid=
+second_bind_rc=0
+wait "$second_bind_pid" || second_bind_rc=$?
+second_bind_pid=
 concurrent_release=
-[ "$first_bind_rc" -ne 0 ] || fail "both concurrent binds unexpectedly published one binding"
-assert_contains "$(FM_HOME="$H_CONCURRENT" "$HOST" verify org.example.concurrent)" "verified: org.example.concurrent@1.2.3" \
-  "losing concurrent bind removed the winning binding's shared package"
-pass "a losing concurrent bind preserves the winning binding's content-addressed package"
+[ "$first_bind_rc" -eq 0 ] || fail "first concurrent bind did not publish its binding"
+[ "$second_bind_rc" -ne 0 ] || fail "both concurrent adapter binds unexpectedly succeeded"
+assert_contains "$(cat "$TMP_ROOT/concurrent-second.out")" "adapter is already enabled by another binding" \
+  "losing concurrent bind did not report the adapter conflict"
+assert_contains "$(FM_HOME="$H_CONCURRENT" "$HOST" verify org.example.concurrent-one)" "verified: org.example.concurrent-one@1.2.3" \
+  "serialized bind did not preserve the winning package"
+expect_failure "no binding exists for extension: org.example.concurrent-two" env FM_HOME="$H_CONCURRENT" "$HOST" verify org.example.concurrent-two
+pass "concurrent binds serialize adapter ownership through publication"
 
 P_CONSENT="$PACKAGES/consent"
 make_package "$P_CONSENT" org.example.consent ext-consent good network
@@ -459,7 +476,8 @@ make_package "$P_GIT" org.example.git ext-git
 git -C "$P_GIT" init -q
 H_GIT="$HOMES/git"; new_home "$H_GIT"
 expect_failure "Git project or task copy" bind_package "$H_GIT" "$P_GIT" ext-git
-expect_failure "Git project or task copy" bind_package "$H_GIT" "$ROOT/docs/examples/process-event-extension" file-signal --consent artifact-references
+example_package=$(cd "$ROOT/docs/examples/process-event-extension" && pwd -P)
+expect_failure "Git project or task copy" bind_package "$H_GIT" "$example_package" file-signal --consent artifact-references
 P_HOME_LOCAL="$H_GIT/projects/home-package"
 make_package "$P_HOME_LOCAL" org.example.home-local ext-home-local
 expect_failure "outside the active Firstmate home" bind_package "$H_GIT" "$P_HOME_LOCAL" ext-home-local

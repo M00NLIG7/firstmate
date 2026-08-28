@@ -1454,7 +1454,7 @@ async function atomicWriteBinding(registry, destination, bytes) {
 }
 
 async function cmdBind(args) {
-  return cmdBindFrom(args, null);
+  await runLifecycleBinding("bind", args);
 }
 
 async function cmdBindFrom(args, stagedRoot) {
@@ -1688,7 +1688,7 @@ async function assertLifecycleLockOwned() {
 
 async function claimInheritedLifecycleLock(home) {
   const mode = process.env.FM_EXTENSION_RETIREMENT_MODE;
-  if (mode !== "binding" && mode !== "transfer") fail("lifecycle-lock-invalid", "retirement mode is invalid");
+  if (mode !== "binding" && mode !== "transfer" && mode !== "bind") fail("lifecycle-lock-invalid", "extension lifecycle mode is invalid");
   const stateRoot = effectiveStateRoot(home);
   const expectedLock = path.join(stateRoot, "procevent", ".extension-binding-lifecycle.lock");
   const lockPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_LOCK || "");
@@ -1712,6 +1712,10 @@ async function releaseLifecycleLock() {
 }
 
 async function cmdReceiveTransferBind(args) {
+  await runLifecycleBinding("receive-transfer-bind", args);
+}
+
+async function cmdReceiveTransferBindLocked(args) {
   const home = await activeHome();
   const envelope = parseStrictJson(await readStdinBounded(MAX_TRANSFER_JSON_BYTES), "package transfer", MAX_TRANSFER_JSON_BYTES);
   const { manifest, manifestDigest } = validateTransferEnvelope(envelope);
@@ -1926,6 +1930,43 @@ async function runLifecycleRetirement(mode, args) {
   process.stdout.write(Buffer.concat(stdout));
 }
 
+async function runLifecycleBinding(commandName, args) {
+  const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
+  const home = await activeHome();
+  const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
+  if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
+  if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+  if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  const child = spawn(command, ["extension-bind", commandName, ...args], {
+    cwd: CODE_ROOT,
+    env,
+    shell: false,
+    stdio: [commandName === "receive-transfer-bind" ? "pipe" : "ignore", "pipe", "pipe"],
+  });
+  if (commandName === "receive-transfer-bind") process.stdin.pipe(child.stdin);
+  const stdout = [];
+  const stderr = [];
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  child.stdout.on("data", (chunk) => {
+    stdoutBytes += chunk.length;
+    if (stdoutBytes <= MAX_JSON_BYTES) stdout.push(chunk);
+  });
+  child.stderr.on("data", (chunk) => {
+    stderrBytes += chunk.length;
+    if (stderrBytes <= MAX_STDERR_BYTES) stderr.push(chunk);
+  });
+  const outcome = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).catch(() => fail("binding-failed", "extension lifecycle binding could not start"));
+  if (stdoutBytes > MAX_JSON_BYTES || stderrBytes > MAX_STDERR_BYTES || outcome.code !== 0 || outcome.signal) {
+    const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
+    fail("binding-failed", diagnostic || "extension lifecycle binding failed");
+  }
+  process.stdout.write(Buffer.concat(stdout));
+}
+
 async function cmdRetireBinding(args) {
   await runLifecycleRetirement("binding", args);
 }
@@ -1939,7 +1980,13 @@ async function runInheritedLifecycleRetirement(args) {
   const mode = await claimInheritedLifecycleLock(home);
   try {
     if (mode === "binding") await cmdRetireBindingLocked(args);
-    else await cmdRetireTransferLocked(args);
+    else if (mode === "transfer") await cmdRetireTransferLocked(args);
+    else {
+      const [command, ...commandArgs] = args;
+      if (command === "bind") await cmdBindFrom(commandArgs, null);
+      else if (command === "receive-transfer-bind") await cmdReceiveTransferBindLocked(commandArgs);
+      else fail("lifecycle-lock-invalid", "extension lifecycle binding command is invalid");
+    }
   } finally {
     await releaseLifecycleLock();
   }
