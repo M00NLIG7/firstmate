@@ -1066,7 +1066,7 @@ remote_on() {
   FM_FAKE_REMOTE_ENTRYPOINT="$REMOTE_ROOT/bin/fm-remote-entrypoint.sh" \
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
   FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
-  "$ROOT/bin/fm-on.sh" ios "$@"
+  "$ROOT/bin/fm-on.sh" --stdin ios "$@"
 }
 remote_controller() {
   FM_HOME="$H_REMOTE_CONTROL" \
@@ -1141,7 +1141,7 @@ for transfer_case in traversal symlink hash size duplicate unexpected; do
 done
 printf '{broken' > "$TMP_ROOT/remote-transfer-malformed.json"
 head -c 80 "$REMOTE_TRANSFER" > "$TMP_ROOT/remote-transfer-truncated.json"
-expect_failure "json-invalid" remote_receive_file "$TMP_ROOT/remote-transfer-malformed.json" ext-remote
+expect_failure "package transfer has a non-string object key" remote_receive_file "$TMP_ROOT/remote-transfer-malformed.json" ext-remote
 expect_failure "json-invalid" remote_receive_file_direct "$TMP_ROOT/remote-transfer-truncated.json" ext-remote
 assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "invalid transfer published a remote binding"
 if find "$H_REMOTE/data/extensions/staging" -name '.receive-*' -print 2>/dev/null | grep -q .; then
