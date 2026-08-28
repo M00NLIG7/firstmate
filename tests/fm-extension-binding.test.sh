@@ -330,26 +330,19 @@ terminate_section_lanes() {
 }
 
 run_extension_section_lane() {
-  local result_file=$1 section current_section_pid= section_rc=0
-  shift
+  local result_file=$1 section=$2 current_section_pid= section_rc=0
   trap 'if [ -n "$current_section_pid" ]; then kill -TERM "$current_section_pid" 2>/dev/null || true; wait "$current_section_pid" 2>/dev/null || true; fi; publish_section_lane_result "$result_file" 143; exit 143' TERM
-  for section in "$@"; do
-    FM_EXTENSION_BINDING_SECTION_CHILD=1 \
-      FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
-    current_section_pid=$!
-    wait "$current_section_pid" || section_rc=$?
-    current_section_pid=
-    if [ "$section_rc" -ne 0 ]; then
-      publish_section_lane_result "$result_file" "$section_rc"
-      return "$section_rc"
-    fi
-  done
+  FM_EXTENSION_BINDING_SECTION_CHILD=1 \
+    FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0" &
+  current_section_pid=$!
+  wait "$current_section_pid" || section_rc=$?
+  current_section_pid=
   publish_section_lane_result "$result_file" "$section_rc"
   return "$section_rc"
 }
 
 run_extension_section_lanes() {
-  local lane section_pid result_file section_rc timeout_seconds deadline index remaining
+  local section section_pid result_file section_rc timeout_seconds deadline index remaining launched total
   local -a section_pids=()
   local -a section_results=()
   local -a section_complete=()
@@ -360,14 +353,16 @@ run_extension_section_lanes() {
   esac
   [ "$timeout_seconds" -gt 0 ] && [ "$timeout_seconds" -lt 35 ] || return 64
   section_result_root=$(mktemp -d "$TMP_ROOT/section-lanes.XXXXXX") || return 1
-  for lane in "$@"; do
+  total=$#
+  launched=0
+  while [ "$launched" -lt "$total" ] && [ "${#section_pids[@]}" -lt 4 ]; do
+    section=${@:$((launched + 1)):1}
     result_file="$section_result_root/${#section_pids[@]}.result"
-    # Lane contents are fixed below, so its word split is not user input.
-    # shellcheck disable=SC2086
-    run_extension_section_lane "$result_file" $lane &
+    run_extension_section_lane "$result_file" "$section" &
     section_pids+=("$!")
     section_results+=("$result_file")
     section_complete+=("")
+    launched=$((launched + 1))
   done
   deadline=$((SECONDS + timeout_seconds))
   remaining=${#section_pids[@]}
@@ -381,6 +376,17 @@ run_extension_section_lanes() {
         0)
           section_complete[$index]=1
           remaining=$((remaining - 1))
+          wait "${section_pids[$index]}" || return $?
+          if [ "$launched" -lt "$total" ]; then
+            section=${@:$((launched + 1)):1}
+            result_file="$section_result_root/${#section_pids[@]}.result"
+            run_extension_section_lane "$result_file" "$section" &
+            section_pids+=("$!")
+            section_results+=("$result_file")
+            section_complete+=("")
+            launched=$((launched + 1))
+            remaining=$((remaining + 1))
+          fi
           ;;
         ''|*[!0-9]*)
           terminate_section_lanes
@@ -463,9 +469,9 @@ if [ "$extension_segment" = all ]; then
     fail "the coordinator left its deadline child alive"
   fi
   pass "the section coordinator propagates ordered failures and bounded cleanup"
-  run_extension_section_lanes "matrix example" "early-bind early-integrity" \
-    "remote-envelope remote-lifecycle" \
-    "remote-retirement lifecycle-state lifecycle-flow lifecycle-lock" \
+  run_extension_section_lanes matrix example early-bind early-integrity \
+    remote-envelope remote-lifecycle remote-retirement lifecycle-state \
+    lifecycle-flow lifecycle-lock \
     || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
   printf '\nall extension-binding tests passed\n'
