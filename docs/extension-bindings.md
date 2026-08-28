@@ -106,12 +106,9 @@ Logs must use stderr.
 
 Each JSON envelope is limited to 65,536 bytes, extension stderr is limited to 8,192 bytes, and a raw process-event result is limited to 32,768 bytes so it can be carried into later classification requests.
 The parser rejects malformed UTF-8, a byte-order mark, duplicate object keys, unknown fields, unescaped controls, unpaired surrogates, multiple documents, and trailing bytes.
-A timeout or output-bound violation sends `TERM`, escalates to `KILL`, and refuses until the attributable extension process tree is gone, including descendants that create another session or process group while retaining the invocation identity until observed.
-The host combines an unguessable invocation-scoped environment identity with parent-child traversal so cleanup never claims a merely contemporaneous same-user orphan.
-Because this is not an operating-system sandbox, an adapter must not deliberately erase both its invocation identity and observable ancestry before the host records the descendant.
-A newly orphaned same-user process that cannot be attributed safely makes the host reject the response without signaling that process and quarantines later invocations until the exact process identity exits.
-This fail-closed quarantine prevents repeated polls from accumulating possible adapter descendants without killing an unrelated daemon that happened to start concurrently.
-A child that exits while leaving tracked descendants behind is also rejected and cleaned up.
+A host-created process group belongs to exactly one extension invocation. A timeout, output-bound violation, failed response, or successful parent that leaves that group live sends `TERM`, escalates to `KILL`, and rejects the invocation until that exact group is gone.
+Extension children must remain foreground members of their invocation group and be owned and reaped by the live entrypoint. Starting another session or process group, changing process groups, double-forking, reparenting, or surviving the entrypoint response violates this protocol contract.
+Trusted same-user code is not an operating-system sandbox: deliberate process-group escape is outside this protocol guarantee. The host never infers ownership from process-table scans or signals contemporaneous same-user processes outside the exact invocation group.
 Extension stderr and failure diagnostics are never copied into a wake or authority-bearing record.
 
 ### Handshake

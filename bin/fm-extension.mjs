@@ -45,7 +45,7 @@
 // receive one bounded UTF-8 JSON document on stdin, and must return exactly one
 // bounded UTF-8 JSON document on stdout. Extension stderr is bounded and never
 // copied into authoritative records. Timeout, malformed output, nonzero exit,
-// or a surviving tracked process tree is rejected after TERM/KILL cleanup.
+// or a surviving invocation process group is rejected after TERM/KILL cleanup.
 //
 // This is a trust and integrity boundary, not an operating-system sandbox.
 // Enabled packages are trusted same-user code and retain that user's OS access.
@@ -53,8 +53,8 @@
 // merge, decision, destination, force, discard, cleanup, credential-use, task
 // mutation, or stronger-operation capability.
 
-import { spawn, spawnSync } from "node:child_process";
-import { constants as fsConstants, realpathSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { constants as fsConstants } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -833,7 +833,7 @@ async function ensureExtensionState(home, binding) {
   return statePath;
 }
 
-function childEnvironment(binding, statePath = "", invocationMarker = "") {
+function childEnvironment(binding, statePath = "") {
   const env = {
     PATH: sanitizedPath(),
     LANG: "C",
@@ -842,7 +842,6 @@ function childEnvironment(binding, statePath = "", invocationMarker = "") {
     FIRSTMATE_EXTENSION_VERSION: binding.extension_version,
   };
   if (statePath) env.FIRSTMATE_EXTENSION_STATE = statePath;
-  if (invocationMarker) env.FIRSTMATE_EXTENSION_INVOCATION = invocationMarker;
   if (binding.consents.credential_store) {
     for (const name of ["HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_STATE_HOME", "SSH_AUTH_SOCK"]) {
       if (process.env[name]) env[name] = process.env[name];
@@ -852,221 +851,8 @@ function childEnvironment(binding, statePath = "", invocationMarker = "") {
 }
 
 let activeChild = null;
-let activeProcessTracker = null;
 let terminatingForSignal = false;
 let activeLifecycleLock = null;
-
-function readProcessTable(invocationMarker = "") {
-  if (process.platform === "win32") return new Map();
-  const args = invocationMarker
-    ? [process.platform === "darwin" ? "-Eww" : "eww", "-A", "-o", "pid=,ppid=,pgid=,uid=,state=,lstart=,command="]
-    : ["-A", "-o", "pid=,ppid=,pgid=,uid=,state=,lstart="];
-  const result = spawnSync("/bin/ps", args, {
-    encoding: "utf8",
-    env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
-    maxBuffer: 4 * 1024 * 1024,
-    timeout: 1000,
-  });
-  if (result.status !== 0 || result.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
-  const table = new Map();
-  for (const line of result.stdout.split("\n")) {
-    const match = /^\s*([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+([0-9]+)\s+(\S+)\s+((?:\S+\s+){4}\S+)(?:\s+(.*))?\s*$/.exec(line);
-    if (!match) continue;
-    const [, pid, ppid, pgid, uid, state, started, command = ""] = match;
-    const startedAt = Date.parse(started);
-    if (!Number.isFinite(startedAt)) fail("process-tracking-unavailable", "cannot inspect extension process start times");
-    table.set(Number(pid), {
-      ppid: Number(ppid),
-      pgid: Number(pgid),
-      uid: Number(uid),
-      state,
-      startedAt,
-      identity: `${pid}:${started}`,
-      invocation: invocationMarker !== "" && command.includes(`FIRSTMATE_EXTENSION_INVOCATION=${invocationMarker}`),
-    });
-  }
-  return table;
-}
-
-function processExecutable(pid) {
-  if (process.platform === "linux") {
-    try { return realpathSync(`/proc/${pid}/exe`); } catch { return ""; }
-  }
-  if (process.platform === "darwin") {
-    const result = spawnSync("/usr/sbin/lsof", ["-a", "-d", "txt", "-p", String(pid), "-Fn"], {
-      encoding: "utf8",
-      env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
-      maxBuffer: 64 * 1024,
-      timeout: 1000,
-    });
-    if (result.status !== 0 || result.error) return "";
-    const name = result.stdout.split("\n").find((line) => line.startsWith("n"));
-    return name ? name.slice(1) : "";
-  }
-  return "";
-}
-
-function refreshProcessTracker(tracker) {
-  if (!tracker || process.platform === "win32") return;
-  const table = readProcessTable(tracker.invocationMarker);
-  const parents = new Set([tracker.rootPid]);
-  for (const [pid, identity] of tracker.descendants) {
-    if (table.get(pid)?.identity === identity) parents.add(pid);
-  }
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const [pid, entry] of table) {
-      const alreadyTracked = tracker.descendants.get(pid) === entry.identity;
-      if (pid !== tracker.rootPid && (entry.invocation || parents.has(entry.ppid)) && !alreadyTracked) {
-        tracker.descendants.set(pid, entry.identity);
-        parents.add(pid);
-        changed = true;
-      }
-    }
-  }
-  const unrelatedParents = new Set();
-  for (const [pid, identity] of tracker.baseline) {
-    if (pid !== 1 && table.get(pid)?.identity === identity) unrelatedParents.add(pid);
-  }
-  for (const [pid, identity] of tracker.unrelated) {
-    if (table.get(pid)?.identity === identity) unrelatedParents.add(pid);
-  }
-  changed = true;
-  while (changed) {
-    changed = false;
-    for (const [pid, entry] of table) {
-      if (pid === tracker.rootPid || parents.has(pid) || unrelatedParents.has(pid) || !unrelatedParents.has(entry.ppid)) continue;
-      tracker.unrelated.set(pid, entry.identity);
-      unrelatedParents.add(pid);
-      changed = true;
-    }
-  }
-  tracker.table = table;
-}
-
-function startProcessTracker(invocationMarker) {
-  const table = readProcessTable();
-  return {
-    rootPid: 0,
-    uid: currentUid(),
-    startedAt: Date.now(),
-    invocationMarker,
-    baseline: new Map([...table].map(([pid, entry]) => [pid, entry.identity])),
-    descendants: new Map(),
-    unrelated: new Map(),
-    table,
-    timer: null,
-    fastTrackerUntil: 0,
-    nextTrackerRefresh: 0,
-    error: null,
-  };
-}
-
-function ambiguousInvocationOrphans(tracker) {
-  if (!tracker || process.platform === "win32") return [];
-  const candidates = [];
-  for (const [pid, identity] of tracker.descendants) {
-    const entry = tracker.table.get(pid);
-    if (entry?.identity !== identity || entry.state.startsWith("Z") || entry.pgid !== pid) continue;
-    candidates.push({ pid, identity: entry.identity });
-  }
-  return candidates;
-}
-
-function processQuarantinePath(statePath) {
-  return statePath ? path.join(statePath, ".firstmate-process-quarantine.json") : "";
-}
-
-async function refuseActiveProcessQuarantine(statePath) {
-  const quarantinePath = processQuarantinePath(statePath);
-  if (!quarantinePath) return;
-  const info = await maybeLstat(quarantinePath);
-  if (!info) return;
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== currentUid() || (info.mode & 0o077) !== 0) {
-    fail("process-quarantine-invalid", "extension process quarantine state is unsafe");
-  }
-  const quarantine = parseStrictJson(await readFile(quarantinePath), "extension process quarantine");
-  exactKeys(quarantine, ["schema", "processes"], "extension process quarantine");
-  if (quarantine.schema !== "firstmate.extension-process-quarantine.v1" || !Array.isArray(quarantine.processes) || quarantine.processes.length === 0) {
-    fail("process-quarantine-invalid", "extension process quarantine state is invalid");
-  }
-  const table = readProcessTable();
-  const active = quarantine.processes.some((processIdentity) => {
-    if (!isPlainObject(processIdentity)) fail("process-quarantine-invalid", "extension process quarantine identity is invalid");
-    exactKeys(processIdentity, ["identity", "pid"], "extension process quarantine identity");
-    if (!Number.isSafeInteger(processIdentity.pid) || processIdentity.pid <= 1 || typeof processIdentity.identity !== "string") {
-      fail("process-quarantine-invalid", "extension process quarantine identity is invalid");
-    }
-    const entry = table.get(processIdentity.pid);
-    return entry?.identity === processIdentity.identity && !entry.state.startsWith("Z");
-  });
-  if (active) fail("process-quarantined", "a prior invocation left an unattributable same-user process; refuse until that exact process identity exits");
-  await unlink(quarantinePath);
-}
-
-async function quarantineAmbiguousProcesses(statePath, processes) {
-  const quarantinePath = processQuarantinePath(statePath);
-  if (!quarantinePath || processes.length === 0) return;
-  await writeFile(quarantinePath, prettyJson({
-    schema: "firstmate.extension-process-quarantine.v1",
-    processes,
-  }), { flag: "wx", mode: 0o600 }).catch((error) => {
-    if (error?.code !== "EEXIST") throw error;
-  });
-}
-
-function armProcessTracker(tracker, child, onError) {
-  tracker.rootPid = child.pid;
-  if (!processExecutable(child.pid)) {
-    tracker.error = new HostError("process-tracking-unavailable", "cannot inspect the extension executable identity");
-    onError();
-    return;
-  }
-  try {
-    refreshProcessTracker(tracker);
-  } catch (error) {
-    tracker.error = error;
-    onError();
-    return;
-  }
-  // Processes present before the extension child is observed cannot be
-  // attributed to that invocation.  The pre-spawn snapshot alone leaves a
-  // small setup gap in which an unrelated same-user orphan can be mistaken
-  // for an extension descendant.
-  for (const [pid, entry] of tracker.table) tracker.baseline.set(pid, entry.identity);
-  tracker.fastTrackerUntil = Date.now() + 5;
-  tracker.nextTrackerRefresh = 0;
-  tracker.timer = setInterval(() => {
-    const now = Date.now();
-    if (now < tracker.nextTrackerRefresh) return;
-    tracker.nextTrackerRefresh = now + (now < tracker.fastTrackerUntil ? 1 : 20);
-    try {
-      refreshProcessTracker(tracker);
-    } catch (error) {
-      tracker.error = error;
-      onError();
-    }
-  }, 1);
-}
-
-function stopProcessTracker(tracker) {
-  if (!tracker) return;
-  if (tracker.timer) clearInterval(tracker.timer);
-  if (!tracker.error) {
-    try { refreshProcessTracker(tracker); } catch (error) { tracker.error = error; }
-  }
-}
-
-function trackedDescendantsAlive(tracker) {
-  if (!tracker || process.platform === "win32") return false;
-  if (!tracker.error) refreshProcessTracker(tracker);
-  for (const [pid, identity] of tracker.descendants) {
-    const entry = tracker.table.get(pid);
-    if (entry?.identity === identity && !entry.state.startsWith("Z")) return true;
-  }
-  return false;
-}
 
 function groupAlive(pid) {
   if (!pid || process.platform === "win32") return false;
@@ -1078,34 +864,27 @@ function groupAlive(pid) {
   }
 }
 
-function signalProcessTree(child, tracker, signal) {
+function signalProcessGroup(child, signal) {
   if (!child || !child.pid) return;
   try {
     if (process.platform === "win32") child.kill(signal);
     else process.kill(-child.pid, signal);
   } catch {}
-  if (!tracker || process.platform === "win32") return;
-  try { refreshProcessTracker(tracker); } catch (error) { tracker.error = error; }
-  for (const [pid, identity] of tracker.descendants) {
-    const entry = tracker.table.get(pid);
-    if (entry?.identity !== identity || entry.state.startsWith("Z")) continue;
-    try { process.kill(pid, signal); } catch {}
-  }
 }
 
 async function sleep(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function cleanupProcessTree(child, tracker) {
-  if (!child || !child.pid || (!groupAlive(child.pid) && !trackedDescendantsAlive(tracker))) return;
-  signalProcessTree(child, tracker, "SIGTERM");
+async function cleanupProcessGroup(child) {
+  if (!child || !child.pid || !groupAlive(child.pid)) return;
+  signalProcessGroup(child, "SIGTERM");
   const termUntil = Date.now() + TERMINATE_GRACE_MS;
-  while (Date.now() < termUntil && (groupAlive(child.pid) || trackedDescendantsAlive(tracker))) await sleep(20);
-  if (groupAlive(child.pid) || trackedDescendantsAlive(tracker)) signalProcessTree(child, tracker, "SIGKILL");
+  while (Date.now() < termUntil && groupAlive(child.pid)) await sleep(20);
+  if (groupAlive(child.pid)) signalProcessGroup(child, "SIGKILL");
   const killUntil = Date.now() + CLEANUP_WAIT_MS;
-  while (Date.now() < killUntil && (groupAlive(child.pid) || trackedDescendantsAlive(tracker))) await sleep(20);
-  if (groupAlive(child.pid) || trackedDescendantsAlive(tracker)) fail("process-cleanup-failed", "extension process tree survived TERM and KILL");
+  while (Date.now() < killUntil && groupAlive(child.pid)) await sleep(20);
+  if (groupAlive(child.pid)) fail("process-cleanup-failed", "extension process group survived TERM and KILL");
 }
 
 async function runExtensionProcess(packageInfo, binding, verb, request, timeoutMs, statePath = "") {
@@ -1115,16 +894,12 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || entryInfo.nlink !== 1 || entryInfo.uid !== currentUid()) {
     fail("entrypoint-invalid", "bound extension entrypoint identity is unsafe");
   }
-  await refuseActiveProcessQuarantine(statePath);
-
   let child;
-  const invocationMarker = randomBytes(32).toString("hex");
-  const processTracker = startProcessTracker(invocationMarker);
   try {
     child = spawn(packageInfo.entrypoint, [verb], {
       cwd: packageInfo.root,
       detached: process.platform !== "win32",
-      env: childEnvironment(binding, statePath, invocationMarker),
+      env: childEnvironment(binding, statePath),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -1132,7 +907,6 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     fail("entrypoint-missing", "bound extension entrypoint could not be started");
   }
   activeChild = child;
-  activeProcessTracker = processTracker;
   let stdoutBytes = 0;
   let stderrBytes = 0;
   const stdout = [];
@@ -1144,28 +918,13 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     if (forcedCode) return;
     forcedCode = code;
     forcedMessage = message;
-    signalProcessTree(child, processTracker, "SIGTERM");
-    killTimer = setTimeout(() => signalProcessTree(child, processTracker, "SIGKILL"), TERMINATE_GRACE_MS);
+    signalProcessGroup(child, "SIGTERM");
+    killTimer = setTimeout(() => signalProcessGroup(child, "SIGKILL"), TERMINATE_GRACE_MS);
   };
-
-  armProcessTracker(processTracker, child, () => {
-    forceStop("process-tracking-unavailable", "cannot inspect the extension process tree");
-  });
 
   const completion = new Promise((resolve, reject) => {
     child.once("error", () => reject(new HostError("entrypoint-missing", "bound extension entrypoint could not be started")));
     child.stdout.on("data", (chunk) => {
-      try {
-        // A detached child can clear its invocation marker and outlive a
-        // short handshake before the periodic tracker tick.  Refresh while
-        // accepting its response, when its parent relationship is still
-        // observable, rather than attributing unrelated user services.
-        refreshProcessTracker(processTracker);
-      } catch (error) {
-        processTracker.error = error;
-        forceStop("process-tracking-unavailable", "cannot inspect the extension process tree");
-        return;
-      }
       stdoutBytes += chunk.length;
       if (stdoutBytes > MAX_JSON_BYTES) {
         forceStop("response-oversized", `extension stdout exceeds ${MAX_JSON_BYTES} bytes`);
@@ -1190,30 +949,17 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   } catch (error) {
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    await cleanupProcessTree(child, processTracker).catch(() => {});
-    stopProcessTracker(processTracker);
+    await cleanupProcessGroup(child).catch(() => {});
     activeChild = null;
-    activeProcessTracker = null;
     throw error;
   }
   clearTimeout(timeout);
   if (killTimer) clearTimeout(killTimer);
-  const ambiguousProcesses = statePath ? ambiguousInvocationOrphans(processTracker) : [];
-  const leakedProcessTree = !forcedCode && ambiguousProcesses.length === 0 && (groupAlive(child.pid) || trackedDescendantsAlive(processTracker));
-  try {
-    if (forcedCode || leakedProcessTree) await cleanupProcessTree(child, processTracker);
-  } finally {
-    stopProcessTracker(processTracker);
-  }
-  await quarantineAmbiguousProcesses(statePath, ambiguousProcesses);
+  const leakedProcessGroup = !forcedCode && groupAlive(child.pid);
+  if (forcedCode || leakedProcessGroup) await cleanupProcessGroup(child);
   activeChild = null;
-  activeProcessTracker = null;
-  if (processTracker.error) fail("process-tracking-unavailable", "cannot inspect the extension process tree");
   if (forcedCode) fail(forcedCode, forcedMessage);
-  if (leakedProcessTree) fail("process-leak", `extension ${verb} left a background process tree`);
-  if (ambiguousProcesses.length) {
-    fail("process-attribution-ambiguous", `extension ${verb} left a detached descendant and its response cannot be accepted safely`);
-  }
+  if (leakedProcessGroup) fail("process-leak", `extension ${verb} left a background process in its invocation group`);
   if (outcome.signal || outcome.code !== 0) fail("process-failed", `extension ${verb} exited nonzero`);
   return parseStrictJson(Buffer.concat(stdout), `extension ${verb} response`);
 }
@@ -1222,9 +968,9 @@ async function handleSignal(signal) {
   if (terminatingForSignal) return;
   terminatingForSignal = true;
   if (activeChild) {
-    signalProcessTree(activeChild, activeProcessTracker, "SIGTERM");
+    signalProcessGroup(activeChild, "SIGTERM");
     await sleep(TERMINATE_GRACE_MS);
-    signalProcessTree(activeChild, activeProcessTracker, "SIGKILL");
+    signalProcessGroup(activeChild, "SIGKILL");
   }
   process.exit(signal === "SIGTERM" ? 143 : 130);
 }
