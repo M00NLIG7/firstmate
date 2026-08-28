@@ -10,7 +10,7 @@ if [ "${1:-}" = remote-bind ]; then
   package_root=$3
   shift 3
   "$SCRIPT_DIR/fm-extension.mjs" pack-transfer "$package_root" \
-    | "$SCRIPT_DIR/fm-on.sh" "$route" fm-extension.sh receive-transfer-bind "$@"
+    | "$SCRIPT_DIR/fm-on.sh" --stdin "$route" fm-extension.sh receive-transfer-bind "$@"
   exit $?
 fi
 exec "$SCRIPT_DIR/fm-extension.mjs" "$@"

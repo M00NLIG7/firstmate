@@ -9,6 +9,12 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
+case "$extension_segment" in
+  all|early-bind|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait) ;;
+  *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
+esac
+
 HOST="$ROOT/bin/fm-extension.mjs"
 PROCEVENT="$ROOT/bin/fm-procevent.sh"
 TMP_ROOT_RAW=$(fm_test_tmproot fm-extension-binding)
@@ -290,8 +296,13 @@ first_result() {
   return 1
 }
 
-extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
-section_enabled() { [ "$extension_segment" = "$1" ]; }
+section_enabled() {
+  local section
+  for section in "$@"; do
+    [ "$extension_segment" = "$section" ] && return 0
+  done
+  return 1
+}
 wait_for_section_children() {
   local section_pid failed=0
   for section_pid in "$@"; do
@@ -341,6 +352,10 @@ if section_enabled coordinator-wait; then
 fi
 
 if [ "$extension_segment" = all ]; then
+  unknown_segment_out=$(FM_EXTENSION_BINDING_SEGMENT=typo bash "$0" 2>&1) && fail "an unknown section selector succeeded"
+  assert_contains "$unknown_segment_out" "unknown extension-binding segment: typo" "an unknown section selector was not rejected"
+  assert_not_contains "$unknown_segment_out" "all extension-binding tests passed" "an unknown section selector reported success"
+  pass "unknown extension conformance section selectors fail before setup"
   coordinator_probe="$TMP_ROOT/coordinator-probe"
   mkdir -p "$coordinator_probe"
   coordinator_ready="$coordinator_probe/ready"
@@ -353,8 +368,9 @@ if [ "$extension_segment" = all ]; then
   assert_present "$coordinator_ready" "the coordinator probe did not start its waiting child"
   assert_present "$coordinator_cleanup" "the coordinator did not terminate and reap its waiting child"
   pass "the section coordinator propagates child failure and cleans up waiting children"
-  run_extension_section_lanes "remote" "early example" "lifecycle-state lifecycle-flow" \
-    "lifecycle-lock" "matrix" \
+  run_extension_section_lanes "matrix example" "early-bind early-integrity" \
+    "remote-envelope remote-lifecycle" \
+    "remote-retirement lifecycle-state lifecycle-flow lifecycle-lock" \
     || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
   printf '\nall extension-binding tests passed\n'
@@ -362,7 +378,7 @@ if [ "$extension_segment" = all ]; then
 fi
 
 # --- permanently inert absent-registry path ---------------------------------
-if section_enabled early; then
+if section_enabled early-bind; then
 H_ABSENT="$HOMES/absent"
 new_home "$H_ABSENT"
 before=$(find "$H_ABSENT" -mindepth 1 -print | LC_ALL=C sort)
@@ -541,7 +557,17 @@ for scenario in handshake-wrong-id handshake-unknown handshake-duplicate handsha
 done
 pass "handshake request identity, exact fields, JSON, and process exit are validated before enablement"
 
+run_owner_check
+fi
+
 # Binding file and complete installed tree are revalidated on every use.
+if section_enabled early-integrity; then
+P_GOOD="$PACKAGES/good"
+make_package "$P_GOOD" org.example.good ext-good
+H_GOOD="$HOMES/good"
+new_home "$H_GOOD"
+bind_package "$H_GOOD" "$P_GOOD" ext-good >/dev/null
+package_root=$(binding_value "$H_GOOD" org.example.good package_root)
 chmod 0644 "$H_GOOD/config/extensions.d/org.example.good.json"
 expect_failure "mode 0600" env FM_HOME="$H_GOOD" "$HOST" verify org.example.good
 chmod 0600 "$H_GOOD/config/extensions.d/org.example.good.json"
@@ -573,8 +599,6 @@ printf '\n# changed identity\n' >> "$identity_root/entrypoint.py"
 chmod 0555 "$identity_root/entrypoint.py" "$identity_root"
 expect_failure "tree digest" env FM_HOME="$H_IDENTITY" "$HOST" verify org.example.identity
 pass "the exact executable identity cannot change underneath a binding"
-
-run_owner_check
 fi
 
 # --- strict invocation matrix, replay, timeout, and process cleanup ----------
@@ -988,8 +1012,8 @@ FM_HOME="$H_LEGACY" "$PROCEVENT" retire legacy-source --if-matches lavish -- /bi
 pass "legacy built-in registrations retain behavior and gain exact conditional retirement"
 fi
 
-# --- independent local and remote-home transport paths ----------------------
-if section_enabled remote; then
+# --- independent remote envelope, lifecycle, and retirement paths -----------
+if section_enabled remote-envelope remote-lifecycle remote-retirement; then
 wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 P_REMOTE="$PACKAGES/remote-transport"
 make_package "$P_REMOTE" org.example.remote ext-remote
@@ -1072,6 +1096,7 @@ remote_receive_file_direct() {
     --adapter "$adapter" --trust-same-user-code < "$file"
 }
 
+if section_enabled remote-envelope; then
 REMOTE_TRANSFER="$TMP_ROOT/remote-transfer.json"
 FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE" > "$REMOTE_TRANSFER"
 mutate_transfer() {
@@ -1136,6 +1161,10 @@ find "$H_REMOTE/data/extensions/retired-staging/org.example.remote-partial" -min
   || fail "failed remote activation was not retained reversibly"
 pass "failed activation cannot partially publish and retains exact transfer evidence"
 
+[ "$(cat "$REMOTE_SSH_COUNT")" -eq 1 ] || fail "remote malformed-envelope transport crossing was not retained"
+fi
+
+if section_enabled remote-lifecycle; then
 remote_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE" --adapter ext-remote --trust-same-user-code)
 assert_contains "$remote_bind" "bound: org.example.remote@1.2.3" "remote transport did not publish the binding"
 remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
@@ -1191,8 +1220,42 @@ remote_direct fm-procevent.sh start remote-source >/dev/null
 assert_present "$H_REMOTE/state/procevent-inbox/remote-source.1.result" "remote runner did not capture its extension result"
 remote_direct fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
 assert_absent "$H_REMOTE/state/procevent/remote-source.source" "remote owner-matched retirement left its registration"
+expect_failure "unhandled process-event result" remote_direct fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
+remote_direct fm-procevent.sh handled remote-source 1 >/dev/null
+remote_direct fm-extension.sh retire-transfer org.example.remote \
+  --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest" >/dev/null
+assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "remote lifecycle retirement left its binding discoverable"
+[ "$(cat "$REMOTE_SSH_COUNT")" -eq 1 ] || fail "remote lifecycle transport crossing count diverged"
+pass "serialized remote binding crosses fm-on through addressed-home capture and retirement"
+fi
+
+if section_enabled remote-retirement; then
+REMOTE_TRANSFER="$TMP_ROOT/remote-retirement-transfer.json"
+FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE" > "$REMOTE_TRANSFER"
+remote_bind=$(remote_receive_file_direct "$REMOTE_TRANSFER" ext-remote)
+remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-digest: //p')
+remote_binding_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^binding-digest: //p')
+case "$remote_transfer_digest:$remote_binding_digest" in sha256:*:sha256:*) ;; *) fail "direct remote binding returned incomplete identities" ;; esac
+remote_source_root=$(binding_value "$H_REMOTE" org.example.remote source.path)
+remote_registration=$(remote_direct fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
+remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
+remote_resolution=$(remote_direct fm-extension.sh resolve-process-event ext-remote)
+IFS=$'\t' read -r _remote_schema remote_id remote_version remote_capability remote_package remote_binding remote_extra <<< "$remote_resolution"
+[ -z "$remote_extra" ] || fail "remote retirement resolution returned extra fields"
+remote_result=$(remote_direct fm-extension.sh process-event ext-remote source.poll \
+  --expect-extension "$remote_id" --expect-version "$remote_version" \
+  --expect-capability-version "$remote_capability" --expect-package-digest "$remote_package" \
+  --expect-binding-digest "$remote_binding" --source-id remote-source --config-ref remote-result \
+  --request-id "sha256:$(printf '6%.0s' {1..64})")
+assert_contains "$remote_result" "external evidence: remote-result" "retirement fixture did not invoke its addressed extension"
+remote_direct fm-procevent.sh start remote-source >/dev/null
+assert_present "$H_REMOTE/state/procevent-inbox/remote-source.1.result" "retirement fixture did not capture its result"
+remote_direct fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
+assert_absent "$H_REMOTE/state/procevent/remote-source.source" "retirement fixture owner retirement left its registration"
 remote_stage_root=${remote_source_root%/package}
 remote_receipt="$remote_stage_root/receipt.json"
+wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 expect_failure "unhandled process-event result" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 remote_direct fm-procevent.sh handled remote-source 1 >/dev/null
@@ -1228,7 +1291,9 @@ expect_failure "version directory" remote_direct fm-extension.sh retire-transfer
 mv "$remote_wrong_version" "$remote_version_root"
 P_REMOTE_OTHER="$PACKAGES/remote-other"
 make_package "$P_REMOTE_OTHER" org.example.remote-other ext-remote-other
-remote_other_bind=$(remote_direct fm-extension.sh bind "$P_REMOTE_OTHER" --adapter ext-remote-other --trust-same-user-code)
+REMOTE_OTHER_TRANSFER="$TMP_ROOT/remote-other-transfer.json"
+FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE_OTHER" > "$REMOTE_OTHER_TRANSFER"
+remote_other_bind=$(remote_receive_file_direct "$REMOTE_OTHER_TRANSFER" ext-remote-other)
 remote_other_transfer=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^transfer-digest: //p')
 remote_other_binding=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^binding-digest: //p')
 remote_binding_path="$H_REMOTE/config/extensions.d/org.example.remote.json"
@@ -1257,8 +1322,8 @@ pass "remote retirement refuses ambiguous drift and resumes an exact crash cut"
 remote_direct fm-extension.sh retire-transfer org.example.remote-other \
   --if-transfer-digest "$remote_other_transfer" --if-binding-digest "$remote_other_binding" >/dev/null
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
-[ "$(cat "$REMOTE_SSH_COUNT")" -eq 2 ] || fail "remote-home transport count diverged from the retained bind and malformed-envelope crossings"
-pass "serialized remote binding crosses fm-on; addressed-home lifecycle checks preserve retirement and refusal boundaries"
+pass "remote retirement and refusal checks run against an isolated addressed home"
+fi
 fi
 
 # --- shipped runnable example ------------------------------------------------
