@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass) ;;
+  all|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass|coordinator-scheduler-block|coordinator-scheduler-late) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -381,7 +381,7 @@ run_extension_section_lane() {
 }
 
 run_extension_section_lanes() {
-  local section section_pid result_file section_rc timeout_seconds deadline index remaining launched total
+  local section section_pid result_file section_rc timeout_seconds deadline index remaining launched total maximum_sections
   local -a section_pids=()
   local -a section_results=()
   local -a section_complete=()
@@ -393,8 +393,11 @@ run_extension_section_lanes() {
   [ "$timeout_seconds" -gt 0 ] && [ "$timeout_seconds" -lt 35 ] || return 64
   section_result_root=$(mktemp -d "$TMP_ROOT/section-lanes.XXXXXX") || return 1
   total=$#
+  # The aggregate's validated isolated allowlist has twelve sections.
+  maximum_sections=12
+  [ "$total" -le "$maximum_sections" ] || return 64
   launched=0
-  while [ "$launched" -lt "$total" ] && [ "${#section_pids[@]}" -lt 4 ]; do
+  while [ "$launched" -lt "$total" ]; do
     section=${@:$((launched + 1)):1}
     result_file="$section_result_root/${#section_pids[@]}.result"
     run_extension_section_lane "$result_file" "$section" &
@@ -420,16 +423,6 @@ run_extension_section_lanes() {
             terminate_section_lanes
             return "$section_rc"
           }
-          if [ "$launched" -lt "$total" ]; then
-            section=${@:$((launched + 1)):1}
-            result_file="$section_result_root/${#section_pids[@]}.result"
-            run_extension_section_lane "$result_file" "$section" &
-            section_pids+=("$!")
-            section_results+=("$result_file")
-            section_complete+=("")
-            launched=$((launched + 1))
-            remaining=$((remaining + 1))
-          fi
           ;;
         ''|*[!0-9]*)
           terminate_section_lanes
@@ -485,6 +478,17 @@ if section_enabled coordinator-late-pass; then
   exit 0
 fi
 
+if section_enabled coordinator-scheduler-block; then
+  wait_for_file "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE:?}" || exit 92
+  exit 0
+fi
+
+if section_enabled coordinator-scheduler-late; then
+  touch "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_STARTED:?}"
+  wait_for_file "${FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE:?}" || exit 93
+  exit 0
+fi
+
 if [ "$extension_segment" = all ]; then
   unknown_segment_out=$(FM_EXTENSION_BINDING_SEGMENT=typo bash "$0" 2>&1) && fail "an unknown section selector succeeded"
   assert_contains "$unknown_segment_out" "unknown extension-binding segment: typo" "an unknown section selector was not rejected"
@@ -526,6 +530,26 @@ if [ "$extension_segment" = all ]; then
   assert_present "$coordinator_ready" "a successful lane did not publish its result"
   assert_present "$coordinator_probe" "a lane cleanup removed parent coordinator state"
   rm -f "$coordinator_ready"
+  coordinator_scheduled="$coordinator_probe/scheduled"
+  coordinator_release="$coordinator_probe/release"
+  (
+    wait_for_file "$coordinator_scheduled" && touch "$coordinator_release"
+  ) &
+  scheduler_release_pid=$!
+  if ! FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_STARTED="$coordinator_scheduled" \
+    FM_EXTENSION_BINDING_COORDINATOR_SCHEDULER_RELEASE="$coordinator_release" \
+    run_extension_section_lanes coordinator-scheduler-block coordinator-scheduler-block \
+      coordinator-scheduler-block coordinator-scheduler-block coordinator-scheduler-late; then
+    fail "the section coordinator held a later lane behind an earlier wave"
+  fi
+  wait "$scheduler_release_pid" || fail "the later coordinator lane never started"
+  assert_present "$coordinator_scheduled" "the coordinator did not start a later lane concurrently"
+  rm -f "$coordinator_scheduled" "$coordinator_release"
+  if run_extension_section_lanes coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
+    coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
+    coordinator-pass coordinator-pass coordinator-pass; then
+    fail "the section coordinator accepted more than its bounded allowlist"
+  fi
   if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=1 \
     FM_EXTENSION_BINDING_COORDINATOR_READY="$coordinator_ready" \
     FM_EXTENSION_BINDING_COORDINATOR_PID="$coordinator_pid" \
@@ -539,7 +563,7 @@ if [ "$extension_segment" = all ]; then
   pass "the section coordinator propagates ordered failures and bounded cleanup"
   run_extension_section_lanes remote-lifecycle remote-activation matrix early-validation \
     remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
-    lifecycle-flow lifecycle-lock \
+    lifecycle-flow lifecycle-lock example \
     || fail "an isolated extension conformance section failed"
   pass "independent extension conformance sections complete through isolated public homes"
   printf '\nall extension-binding tests passed\n'
