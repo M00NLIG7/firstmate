@@ -335,29 +335,15 @@ publish_coordinator_marker() {
 }
 
 terminate_section_lanes() {
-  local index section_pid section_child_pid cleanup_attempt
+  local index section_pid
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
-    section_child_pid=$(cat "${section_results[$index]}.pid" 2>/dev/null || true)
-    case "$section_child_pid" in ''|*[!0-9]*) ;; *) kill -TERM "$section_child_pid" 2>/dev/null || true ;; esac
     kill -TERM "$section_pid" 2>/dev/null || true
   done
-  for cleanup_attempt in $(seq 1 20); do
-    for index in "${!section_pids[@]}"; do
-      [ -n "${section_complete[$index]:-}" ] && continue
-      kill -0 "${section_pids[$index]}" 2>/dev/null && break
-    done || break
-    sleep 0.05
-  done
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
-    section_child_pid=$(cat "${section_results[$index]}.pid" 2>/dev/null || true)
-    case "$section_child_pid" in ''|*[!0-9]*) ;; *) kill -KILL "$section_child_pid" 2>/dev/null || true ;; esac
-    kill -KILL "$section_pid" 2>/dev/null || true
-  done
-  for section_pid in "${section_pids[@]}"; do
     wait "$section_pid" 2>/dev/null || true
   done
 }
@@ -509,9 +495,10 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
     (
       trap - EXIT HUP INT
       trap 'terminate_section_lanes; exit 143' TERM
-      run_extension_section_lanes remote-lifecycle remote-activation matrix early-validation \
+      run_extension_section_lanes lifecycle-lock remote-lifecycle remote-activation matrix \
+        early-validation \
         remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
-        lifecycle-flow lifecycle-lock example
+        lifecycle-flow example
     ) &
     section_coordinator_pid=$!
   fi

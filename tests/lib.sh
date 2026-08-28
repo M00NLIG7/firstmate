@@ -138,6 +138,9 @@ fm_test_reap_orphans() {
     mtime=$(stat -c %Y "$marker" 2>/dev/null || stat -f %m "$marker" 2>/dev/null) || continue
     [ $((now - mtime)) -ge "$FM_TEST_ORPHAN_MAX_AGE_SECONDS" ] || continue
     dir=$(dirname "$marker")
+    if [ -d "$dir" ] && [ ! -L "$dir" ]; then
+      find "$dir" -type d -exec chmod u+rwx {} + 2>/dev/null || true
+    fi
     rm -rf "$dir"
   done
 }
