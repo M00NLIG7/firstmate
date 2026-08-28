@@ -1,0 +1,73 @@
+FM_TEST_BEGIN 2026-08-28T16:46:16Z tests/fm-extension-binding.test.sh family=unclassified expected_gate_skip=none
+ok - unknown extension conformance section selectors fail before setup
+ok - an absent home-local registry is inert, state-free, and ignores project/environment discovery
+ok - group/world-writable package code is rejected
+ok - a non-executable manifest entrypoint is rejected
+ok - binding mode and complete installed code-tree digest are revalidated
+ok - source-root traversal and package-tree symlinks are rejected
+ok - source configuration references cross one JSON envelope with no shell interpretation
+ok - hard-linked package code is rejected
+ok - the section coordinator propagates ordered failures and bounded cleanup
+ok - the exact executable identity cannot change underneath a binding
+
+all extension-binding tests passed
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+ok - bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding
+ok - registration publication and binding retirement share one lifecycle boundary
+ok - a project, task-copy, or operational-home package cannot register even when named explicitly
+not-autohandled: example-file (left for the handler; still unacknowledged)
+ok - public extension dispatch exposes no unlocked retirement entry
+ok - manifest entrypoint traversal is rejected before execution
+ok - malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, and foreground leaked-process responses are rejected
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+ok - process cleanup never adopts a proven-unrelated same-user process
+ok - manifest JSON rejects duplicate and unknown fields instead of widening into plugin hooks
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - concurrent binds serialize adapter ownership through publication
+ok - unknown-only protocol and capability versions refuse without downgrade
+ok - an exact request id is matched and supports idempotent replay
+ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
+ok - handshake execution rejects and reaps foreground descendants
+
+all extension-binding tests passed
+ok - package trust and manifest-required capability consent are separate explicit facts
+
+all extension-binding tests passed
+ok - retirement worker ownership survives wrapper death and recovers exactly
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - local binding retirement requires its exact identity and disables invocation
+
+all extension-binding tests passed
+ok - handshake request identity, exact fields, JSON, and process exit are validated before enablement
+not run - foreign-owner fixture requires chown privilege
+
+all extension-binding tests passed
+ok - remote receiver rejects malformed, truncated, traversal, link, hash, size, duplicate, and incomplete envelopes
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - the generic runner reuses one request id until that source sequence is durably captured
+ok - signal interruption leaves lifecycle lock recovery to the next owner
+ok - failed activation cannot partially publish and retains exact transfer evidence
+
+all extension-binding tests passed
+ok - overridden state confines extension work and captured-result operations
+ok - remote registration owner transitions observe the active runner boundary
+
+all extension-binding tests passed
+ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
+
+all extension-binding tests passed
+ok - timeout escalates through invocation-group cleanup and reaps descendants
+ok - bounded home sweep retires an extension source through its exact owner token
+ok - a missing package executable refuses instead of falling back
+
+all extension-binding tests passed
+ok - legacy built-in registrations retain behavior and gain exact conditional retirement
+
+all extension-binding tests passed
+ok - remote retirement refuses ambiguous drift and resumes an exact crash cut
+not ok - an isolated extension conformance section failed
+FM_TEST_END 2026-08-28T16:46:54Z tests/fm-extension-binding.test.sh exit=1 duration_ms=37654 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=37802
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=37654 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-extension-binding.test.sh duration_ms=37654
+TEST_RUNNER_EXIT=1\n

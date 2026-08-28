@@ -1,0 +1,2 @@
+zsh:3: command not found: setsid
+TEST_RUNNER_EXIT=127
