@@ -254,11 +254,4 @@ ok - GitLab teardown accepts exact guarded-squash evidence plus target content p
 ok - GitLab teardown refuses dirty, unmerged, stale, malformed, mismatched, or content-unproven evidence
 ```
 
-The shared-runtime applicability inspection was:
-
-```
-$ if rg -n 'fm-pr-merge|glab-axi|gitlab_guarded' bin/fm-harness.sh bin/fm-backend.sh bin/backends .agents/skills/harness-adapters/SKILL.md docs/{tmux,herdr,zellij,orca,cmux}-backend.md; then exit 1; else echo 'no provider merge routing in worker-runtime or session-provider integrations'; fi
-no provider merge routing in worker-runtime or session-provider integrations
-```
-
 The generated-brief regression separately proves that ship and scout workers receive the bounded GitLab route and cannot invoke the guarded primitive.
