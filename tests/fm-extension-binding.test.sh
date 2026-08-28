@@ -1024,6 +1024,18 @@ remote_receive_file() {
   remote_on fm-extension.sh receive-transfer-bind \
     --adapter "$adapter" --trust-same-user-code < "$file"
 }
+remote_direct() {
+  FM_HOME="$H_REMOTE" \
+  FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
+  FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
+  FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
+  "$REMOTE_ROOT/bin/$@"
+}
+remote_receive_file_direct() {
+  local file=$1 adapter=$2
+  remote_direct fm-extension.sh receive-transfer-bind \
+    --adapter "$adapter" --trust-same-user-code < "$file"
+}
 
 REMOTE_TRANSFER="$TMP_ROOT/remote-transfer.json"
 FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE" > "$REMOTE_TRANSFER"
@@ -1065,13 +1077,12 @@ for transfer_case in traversal symlink hash size duplicate unexpected; do
     size|duplicate) transfer_error=schema-invalid ;;
     unexpected) transfer_error="package-invalid" ;;
   esac
-  expect_failure "$transfer_error" remote_receive_file "$bad_transfer" ext-remote
+  expect_failure "$transfer_error" remote_receive_file_direct "$bad_transfer" ext-remote
 done
 printf '{broken' > "$TMP_ROOT/remote-transfer-malformed.json"
 head -c 80 "$REMOTE_TRANSFER" > "$TMP_ROOT/remote-transfer-truncated.json"
-for bad_transfer in "$TMP_ROOT/remote-transfer-malformed.json" "$TMP_ROOT/remote-transfer-truncated.json"; do
-  expect_failure "json-invalid" remote_receive_file "$bad_transfer" ext-remote
-done
+expect_failure "json-invalid" remote_receive_file "$TMP_ROOT/remote-transfer-malformed.json" ext-remote
+expect_failure "json-invalid" remote_receive_file_direct "$TMP_ROOT/remote-transfer-truncated.json" ext-remote
 assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "invalid transfer published a remote binding"
 if find "$H_REMOTE/data/extensions/staging" -name '.receive-*' -print 2>/dev/null | grep -q .; then
   fail "invalid transfer left a partial receive directory"
@@ -1081,7 +1092,7 @@ pass "remote receiver rejects malformed, truncated, traversal, link, hash, size,
 P_REMOTE_PARTIAL="$PACKAGES/remote-partial"
 make_package "$P_REMOTE_PARTIAL" org.example.remote-partial ext-remote-partial handshake-malformed
 FM_HOME="$H_REMOTE_CONTROL" "$HOST" pack-transfer "$P_REMOTE_PARTIAL" > "$TMP_ROOT/remote-partial.json"
-expect_failure "error[" remote_receive_file "$TMP_ROOT/remote-partial.json" ext-remote-partial
+expect_failure "error[" remote_receive_file_direct "$TMP_ROOT/remote-partial.json" ext-remote-partial
 assert_absent "$H_REMOTE/config/extensions.d/org.example.remote-partial.json" "failed remote activation published a binding"
 if find "$H_REMOTE/data/extensions/staging/org.example.remote-partial" -mindepth 2 -maxdepth 2 -type d -print 2>/dev/null | grep -q .; then
   fail "failed remote activation left a published staging package"
@@ -1096,7 +1107,7 @@ remote_transfer_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^transfer-dige
 case "$remote_transfer_digest" in sha256:*) ;; *) fail "remote bind returned no transfer identity" ;; esac
 remote_binding_digest=$(printf '%s\n' "$remote_bind" | sed -n 's/^binding-digest: //p')
 case "$remote_binding_digest" in sha256:*) ;; *) fail "remote bind returned no binding retirement identity" ;; esac
-assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote" "remote transport did not discover the binding"
+assert_contains "$(remote_direct fm-extension.sh list)" "org.example.remote" "addressed remote home did not discover the transferred binding"
 remote_package_root=$(binding_value "$H_REMOTE" org.example.remote package_root)
 case "$remote_package_root" in "$H_REMOTE"/data/extensions/packages/*) ;; *) fail "remote package escaped its addressed home: $remote_package_root" ;; esac
 remote_source_root=$(binding_value "$H_REMOTE" org.example.remote source.path)
@@ -1105,11 +1116,11 @@ case "$remote_source_root" in "$H_REMOTE"/data/extensions/staging/*/package) ;; 
 remote_active_marker="$TMP_ROOT/remote-active.marker"
 remote_active_release="$TMP_ROOT/remote-active.release"
 remote_active_config="active-block|$remote_active_marker|$remote_active_release"
-remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref "$remote_active_config" >/dev/null
-remote_on fm-procevent.sh reconcile >/dev/null
-wait_for_file "$remote_active_marker" || fail "remote active runner never crossed the transport into its poll"
-expect_failure "prior runner remains active" remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
-expect_failure "prior runner remains active" remote_on fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in
+remote_direct fm-procevent.sh register-extension ext-remote remote-active-source --config-ref "$remote_active_config" >/dev/null
+remote_direct fm-procevent.sh reconcile >/dev/null
+wait_for_file "$remote_active_marker" || fail "remote active runner never reached its addressed-home poll"
+expect_failure "prior runner remains active" remote_direct fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement
+expect_failure "prior runner remains active" remote_direct fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in
 touch "$remote_active_release"
 remote_active_release=
 for _ in $(seq 1 400); do
@@ -1117,21 +1128,21 @@ for _ in $(seq 1 400); do
   sleep 0.01
 done
 assert_absent "$H_REMOTE/state/procevent/remote-active-source.source" "remote terminal runner retained its registration"
-remote_on fm-procevent.sh handled remote-active-source 1 >/dev/null
-remote_on fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in >/dev/null
-remote_on fm-procevent.sh retire remote-active-source --if-matches lavish -- /bin/echo remote-built-in >/dev/null
-remote_active_replacement=$(remote_on fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement)
+remote_direct fm-procevent.sh handled remote-active-source 1 >/dev/null
+remote_direct fm-procevent.sh register lavish remote-active-source -- /bin/echo remote-built-in >/dev/null
+remote_direct fm-procevent.sh retire remote-active-source --if-matches lavish -- /bin/echo remote-built-in >/dev/null
+remote_active_replacement=$(remote_direct fm-procevent.sh register-extension ext-remote remote-active-source --config-ref replacement)
 remote_active_owner=$(printf '%s\n' "$remote_active_replacement" | sed -n 's/^owner-token: //p')
-remote_on fm-procevent.sh retire remote-active-source --if-owner "$remote_active_owner" >/dev/null
+remote_direct fm-procevent.sh retire remote-active-source --if-owner "$remote_active_owner" >/dev/null
 pass "remote registration owner transitions observe the active runner boundary"
-remote_registration=$(remote_on fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
+remote_registration=$(remote_direct fm-procevent.sh register-extension ext-remote remote-source --config-ref remote-result)
 remote_owner=$(printf '%s\n' "$remote_registration" | sed -n 's/^owner-token: //p')
-expect_failure "still owns process-event registration" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "still owns process-event registration" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
-remote_resolution=$(remote_on fm-extension.sh resolve-process-event ext-remote)
+remote_resolution=$(remote_direct fm-extension.sh resolve-process-event ext-remote)
 IFS=$'\t' read -r _remote_schema remote_id remote_version remote_capability remote_package remote_binding remote_extra <<< "$remote_resolution"
 [ -z "$remote_extra" ] || fail "remote resolution returned extra fields"
-remote_result=$(remote_on fm-extension.sh process-event ext-remote source.poll \
+remote_result=$(remote_direct fm-extension.sh process-event ext-remote source.poll \
   --expect-extension "$remote_id" \
   --expect-version "$remote_version" \
   --expect-capability-version "$remote_capability" \
@@ -1140,19 +1151,20 @@ remote_result=$(remote_on fm-extension.sh process-event ext-remote source.poll \
   --source-id remote-source \
   --config-ref remote-result \
   --request-id "sha256:$(printf '6%.0s' {1..64})")
-assert_contains "$remote_result" "external evidence: remote-result" "remote invocation result did not cross back through the transport"
-remote_on fm-procevent.sh start remote-source >/dev/null
-remote_on fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
+assert_contains "$remote_result" "external evidence: remote-result" "addressed remote invocation returned no extension evidence"
+remote_direct fm-procevent.sh start remote-source >/dev/null
+assert_present "$H_REMOTE/state/procevent-inbox/remote-source.1.result" "remote runner did not capture its extension result"
+remote_direct fm-procevent.sh retire remote-source --if-owner "$remote_owner" >/dev/null
 assert_absent "$H_REMOTE/state/procevent/remote-source.source" "remote owner-matched retirement left its registration"
 remote_stage_root=${remote_source_root%/package}
 remote_receipt="$remote_stage_root/receipt.json"
-expect_failure "unhandled process-event result" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "unhandled process-event result" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
-remote_on fm-procevent.sh handled remote-source 1 >/dev/null
-expect_failure "expected binding identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+remote_direct fm-procevent.sh handled remote-source 1 >/dev/null
+expect_failure "expected binding identity" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$wrong_binding_digest"
 assert_present "$H_REMOTE/config/extensions.d/org.example.remote.json" "stale binding identity retired the remote binding"
-expect_failure "no unique staged package" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "no unique staged package" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$wrong_binding_digest" --if-binding-digest "$remote_binding_digest"
 cp "$remote_receipt" "$TMP_ROOT/remote-receipt.json"
 node - "$remote_receipt" <<'JS'
@@ -1163,55 +1175,55 @@ value.package_digest = `sha256:${"f".repeat(64)}`;
 fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 JS
 chmod 0600 "$remote_receipt"
-expect_failure "staged package identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "staged package identity" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 cp "$TMP_ROOT/remote-receipt.json" "$remote_receipt"
 chmod 0600 "$remote_receipt"
 cp "$remote_source_root/helper.txt" "$TMP_ROOT/remote-helper.txt"
 printf 'drifted staged bytes\n' > "$remote_source_root/helper.txt"
-expect_failure "staged package identity" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "staged package identity" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 cp "$TMP_ROOT/remote-helper.txt" "$remote_source_root/helper.txt"
 chmod 0644 "$remote_source_root/helper.txt"
 remote_version_root=${remote_stage_root%/*}
 remote_wrong_version="${remote_version_root%/*}/9.9.9"
 mv "$remote_version_root" "$remote_wrong_version"
-expect_failure "version directory" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "version directory" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 mv "$remote_wrong_version" "$remote_version_root"
 P_REMOTE_OTHER="$PACKAGES/remote-other"
 make_package "$P_REMOTE_OTHER" org.example.remote-other ext-remote-other
-remote_other_bind=$(remote_controller "$ROOT/bin/fm-extension.sh" remote-bind ios "$P_REMOTE_OTHER" --adapter ext-remote-other --trust-same-user-code)
+remote_other_bind=$(remote_direct fm-extension.sh bind "$P_REMOTE_OTHER" --adapter ext-remote-other --trust-same-user-code)
 remote_other_transfer=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^transfer-digest: //p')
 remote_other_binding=$(printf '%s\n' "$remote_other_bind" | sed -n 's/^binding-digest: //p')
 remote_binding_path="$H_REMOTE/config/extensions.d/org.example.remote.json"
 remote_partial_binding="$remote_stage_root/binding.json"
 cp "$remote_binding_path" "$remote_partial_binding"
-expect_failure "enabled and partial binding state" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "enabled and partial binding state" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 rm -f "$remote_partial_binding"
 cp "$remote_binding_path" "$TMP_ROOT/remote-binding.json"
 mv "$remote_binding_path" "$remote_partial_binding"
 printf ' ' >> "$remote_partial_binding"
-expect_failure "partial binding does not match" remote_on fm-extension.sh retire-transfer org.example.remote \
+expect_failure "partial binding does not match" remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest"
 cp "$TMP_ROOT/remote-binding.json" "$remote_partial_binding"
 chmod 0600 "$remote_partial_binding"
-remote_on fm-extension.sh retire-transfer org.example.remote \
+remote_direct fm-extension.sh retire-transfer org.example.remote \
   --if-transfer-digest "$remote_transfer_digest" --if-binding-digest "$remote_binding_digest" >/dev/null
 assert_absent "$H_REMOTE/data/extensions/staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}" "remote staged package was not retired"
 assert_present "$H_REMOTE/data/extensions/retired-staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}/package" "remote staged package retirement was not reversible"
 assert_present "$H_REMOTE/data/extensions/retired-staging/org.example.remote/1.2.3/${remote_transfer_digest#sha256:}/binding.json" "remote enabled binding was not retained with its exact transfer"
 assert_absent "$H_REMOTE/config/extensions.d/org.example.remote.json" "remote enabled binding remained discoverable after retirement"
-expect_failure "no home-local extension binding" remote_on fm-extension.sh resolve-process-event ext-remote
-assert_contains "$(remote_on fm-extension.sh list)" "org.example.remote-other" "retirement changed an unrelated remote binding"
-remote_on fm-extension.sh verify org.example.remote-other >/dev/null
+expect_failure "no home-local extension binding" remote_direct fm-extension.sh resolve-process-event ext-remote
+assert_contains "$(remote_direct fm-extension.sh list)" "org.example.remote-other" "retirement changed an unrelated remote binding"
+remote_direct fm-extension.sh verify org.example.remote-other >/dev/null
 pass "remote retirement refuses ambiguous drift and resumes an exact crash cut"
-remote_on fm-extension.sh retire-transfer org.example.remote-other \
+remote_direct fm-extension.sh retire-transfer org.example.remote-other \
   --if-transfer-digest "$remote_other_transfer" --if-binding-digest "$remote_other_binding" >/dev/null
 assert_absent "$H_REMOTE_CONTROL/config/extensions.d/org.example.remote.json" "remote binding was published into the local control home"
-[ "$(cat "$REMOTE_SSH_COUNT")" -ge 24 ] || fail "remote-home coverage bypassed the fm-on transport"
-pass "serialized remote binding, invocation, exact retirement, and refusal boundaries cross fm-on"
+[ "$(cat "$REMOTE_SSH_COUNT")" -eq 2 ] || fail "remote-home transport count diverged from the retained bind and malformed-envelope crossings"
+pass "serialized remote binding crosses fm-on; addressed-home lifecycle checks preserve retirement and refusal boundaries"
 
 # --- shipped runnable example ------------------------------------------------
 P_EXAMPLE="$PACKAGES/file-signal-example"
