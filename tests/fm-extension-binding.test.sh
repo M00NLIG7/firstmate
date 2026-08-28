@@ -351,7 +351,7 @@ terminate_section_lanes() {
 terminate_section_lane_child() {
   local section_child_pid=$1 cleanup_attempt
   kill -TERM "$section_child_pid" 2>/dev/null || true
-  for cleanup_attempt in $(seq 1 20); do
+  for ((cleanup_attempt = 0; cleanup_attempt < 20; cleanup_attempt++)); do
     kill -0 "$section_child_pid" 2>/dev/null || break
     sleep 0.05
   done
@@ -360,7 +360,7 @@ terminate_section_lane_child() {
 }
 
 run_extension_section_lane() {
-  local result_file=$1 section=$2 current_section_pid= section_rc=0
+  local result_file=$1 section=$2 current_section_pid='' section_rc=0
   # A backgrounded function inherits the aggregate test's cleanup traps.
   # This lane owns only its separately launched child and result publication.
   trap - EXIT HUP INT TERM
@@ -395,7 +395,8 @@ run_extension_section_lanes() {
   [ "$total" -le "$maximum_sections" ] || return 64
   launched=0
   while [ "$launched" -lt "$total" ]; do
-    section=${@:$((launched + 1)):1}
+    section=$1
+    shift
     result_file="$section_result_root/${#section_pids[@]}.result"
     run_extension_section_lane "$result_file" "$section" &
     section_pids+=("$!")
@@ -413,7 +414,7 @@ run_extension_section_lanes() {
       section_rc=$(cat "$result_file")
       case "$section_rc" in
         0)
-          section_complete[$index]=1
+          section_complete[index]=1
           remaining=$((remaining - 1))
           wait "${section_pids[$index]}" || {
             section_rc=$?
@@ -1287,11 +1288,13 @@ remote_receive_file() {
     --adapter "$adapter" --trust-same-user-code < "$file"
 }
 remote_direct() {
+  local command=$1
+  shift
   FM_HOME="$H_REMOTE" \
   FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
   FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux \
   FM_REMOTE_JOB_STATE_ROOT="$TMP_ROOT/remote-jobs" \
-  "$REMOTE_ROOT/bin/$@"
+  "$REMOTE_ROOT/bin/$command" "$@"
 }
 remote_receive_file_direct() {
   local file=$1 adapter=$2
@@ -1334,7 +1337,7 @@ for transfer_case in traversal symlink hash size duplicate unexpected; do
   bad_transfer="$TMP_ROOT/remote-transfer-$transfer_case.json"
   mutate_transfer "$transfer_case" "$bad_transfer"
   case "$transfer_case" in
-    traversal) transfer_error=path-unsafe ;;
+    traversal) transfer_error="path-unsafe" ;;
     symlink) transfer_error="package-invalid" ;;
     hash) transfer_error=integrity-mismatch ;;
     size|duplicate) transfer_error=schema-invalid ;;
