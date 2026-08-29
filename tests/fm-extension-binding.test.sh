@@ -1330,7 +1330,16 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
       --expect-package-digest "$7" --expect-binding-digest "$8"
   ' sh "$TMP_ROOT/forged-pinned-result" "$HOST" ext-flow "$override_id" "$override_version" \
   "$override_cap" "$override_package" "$override_binding"
-pass "caller environment and working directory cannot forge pinned capture authority"
+expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  sh -c '
+    cd "$1" || exit 1
+    exec 8<.
+    exec "$2" extension-process-event "$3" result.classify --result-file ./forged-source.1.result \
+      --expect-extension "$4" --expect-version "$5" --expect-capability-version "$6" \
+      --expect-package-digest "$7" --expect-binding-digest "$8"
+  ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
+  "$override_cap" "$override_package" "$override_binding"
+pass "caller environment, descriptor, and lifecycle entry cannot forge capture authority"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" register-extension ext-flow inbox-swap-source --config-ref good >/dev/null
 mkdir "$TMP_ROOT/inbox-link-target"
@@ -1440,15 +1449,51 @@ capture_signal_registry="$capture_signal_state/procevent"
 mkdir -p "$capture_signal_registry" "$capture_signal_state/procevent-inbox"
 chmod 0700 "$capture_signal_state" "$capture_signal_registry" "$capture_signal_state/procevent-inbox"
 exec 9<"$capture_signal_registry"
+exec 8<"$capture_signal_state/procevent-inbox"
+capture_signal_authority=$(mktemp "$capture_signal_registry/.authority.XXXXXXXX")
+dd if=/dev/urandom of="$capture_signal_authority" bs=32 count=1 2>/dev/null
+chmod 0600 "$capture_signal_authority"
+exec 7<"$capture_signal_authority"
+rm "$capture_signal_authority"
 capture_signal=$(perl "$ROOT/bin/fm-procevent-extension-capture.pl" \
-  "$capture_signal_state" 9 capture-signal-source ext-flow org.example.flow 1.2.3 1 \
+  9 8 capture-signal-source ext-flow org.example.flow 1.2.3 1 \
   "sha256:$(printf 'a%.0s' {1..64})" "sha256:$(printf 'b%.0s' {1..64})" signal-token \
   capture-signal-source.runner .capture-signal.output "$$" 1024 -- perl -e 'kill "KILL", $$')
 exec 9<&-
+exec 8<&-
+exec 7<&-
 [ "$capture_signal" = $'failure\t0' ] || fail "signal-terminated extension invocation was not reported as failure"
 [ -z "$(find "$capture_signal_registry" "$capture_signal_state/procevent-inbox" -mindepth 1 -print -quit)" ] \
   || fail "signal-terminated extension invocation left staged or successful evidence"
 pass "signal-terminated extension capture cannot publish an empty success"
+capture_swap_state="$TMP_ROOT/capture-swap-state"
+capture_swap_registry="$capture_swap_state/procevent"
+capture_swap_inbox="$capture_swap_state/procevent-inbox"
+mkdir -p "$capture_swap_registry" "$capture_swap_inbox" "$TMP_ROOT/capture-swap-outside"
+chmod 0700 "$capture_swap_state" "$capture_swap_registry" "$capture_swap_inbox" "$TMP_ROOT/capture-swap-outside"
+exec 9<"$capture_swap_registry"
+exec 8<"$capture_swap_inbox"
+capture_swap_authority=$(mktemp "$capture_swap_registry/.authority.XXXXXXXX")
+dd if=/dev/urandom of="$capture_swap_authority" bs=32 count=1 2>/dev/null
+chmod 0600 "$capture_swap_authority"
+exec 7<"$capture_swap_authority"
+rm "$capture_swap_authority"
+mv "$capture_swap_inbox" "$TMP_ROOT/capture-swap-real-inbox"
+ln -s "$TMP_ROOT/capture-swap-outside" "$capture_swap_inbox"
+capture_swap=$(perl "$ROOT/bin/fm-procevent-extension-capture.pl" \
+  9 8 capture-swap-source ext-flow org.example.flow 1.2.3 1 \
+  "sha256:$(printf 'a%.0s' {1..64})" "sha256:$(printf 'b%.0s' {1..64})" swap-token \
+  capture-swap-source.runner .capture-swap.output "$$" 1024 -- /bin/printf 'pinned helper result')
+exec 9<&-
+exec 8<&-
+exec 7<&-
+[ "$capture_swap" = $'captured\tcapture-swap-source.1.result\t0\t0' ] \
+  || fail "pinned capture helper did not report its captured result"
+assert_present "$TMP_ROOT/capture-swap-real-inbox/capture-swap-source.1.result" \
+  "pinned capture helper lost evidence after an inbox substitution"
+[ -z "$(find "$TMP_ROOT/capture-swap-outside" -mindepth 1 -print -quit)" ] \
+  || fail "capture helper reopened a substituted inbox pathname"
+pass "capture helper retains the inherited inbox descriptor before publication"
 H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
 LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
 LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"

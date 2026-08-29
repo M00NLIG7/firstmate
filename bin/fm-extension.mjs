@@ -55,7 +55,7 @@
 // mutation, or stronger-operation capability.
 
 import { spawn } from "node:child_process";
-import { constants as fsConstants, fstatSync, statSync } from "node:fs";
+import { constants as fsConstants, fstatSync, readFileSync, statSync } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -96,6 +96,7 @@ const ERROR_EVIDENCE_SCHEMA = "firstmate.process-event-extension-error.v1";
 const INVOCATION_OWNER_SCHEMA = "firstmate.extension-invocation-owner.v1";
 const INVOCATION_READY_SCHEMA = "firstmate.extension-invocation-ready.v1";
 const INVOCATION_RELEASE_SCHEMA = "firstmate.extension-invocation-release.v1";
+const PINNED_CAPTURE_AUTHORITY_FD = 7;
 const PINNED_CAPTURE_FD = 8;
 const MAX_JSON_BYTES = 65536;
 const MAX_RESULT_BYTES = 32768;
@@ -1497,8 +1498,29 @@ function hasPinnedCaptureDirectory() {
   }
 }
 
+function hasPinnedCaptureAuthority() {
+  try {
+    const authority = fstatSync(PINNED_CAPTURE_AUTHORITY_FD);
+    return authority.isFile() && authority.nlink === 0
+      && authority.uid === currentUid() && modeOf(authority) === 0o600;
+  } catch {
+    return false;
+  }
+}
+
+function pinnedCaptureAuthorityDigest() {
+  if (!hasPinnedCaptureAuthority()) return null;
+  try {
+    const authority = readFileSync(PINNED_CAPTURE_AUTHORITY_FD);
+    return authority.length === 32 ? createHash("sha256").update(authority).digest("hex") : null;
+  } catch {
+    return null;
+  }
+}
+
 async function readCapturedResult(home, resultFile) {
-  const pinned = Boolean(activeLifecycleLock) && hasPinnedCaptureDirectory();
+  const authorityDigest = activeLifecycleLock ? pinnedCaptureAuthorityDigest() : null;
+  const pinned = authorityDigest !== null && hasPinnedCaptureDirectory();
   const absolute = pinned ? resultFile : path.resolve(resultFile);
   const inbox = path.join(effectiveStateRoot(home), "procevent-inbox");
   if (pinned) {
@@ -1508,11 +1530,50 @@ async function readCapturedResult(home, resultFile) {
     const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
     if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
   }
-  const info = await maybeLstat(absolute);
-  if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
-  if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
-  if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
-  const bytes = await readFile(absolute);
+  let bytes;
+  if (pinned) {
+    let resultHandle;
+    try {
+      resultHandle = await open(absolute, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    } catch {
+      fail("link-unsafe", "captured result cannot be opened without following links");
+    }
+    try {
+      const info = await resultHandle.stat();
+      if (!info.isFile() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
+      if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
+      if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
+      const authorityPath = `${absolute.slice(0, -".result".length)}.authority`;
+      let authorityHandle;
+      try {
+        authorityHandle = await open(authorityPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      } catch {
+        fail("path-unsafe", "captured result lacks its pinned capture authority");
+      }
+      try {
+        const authorityInfo = await authorityHandle.stat();
+        if (!authorityInfo.isFile() || authorityInfo.nlink !== 1
+            || authorityInfo.uid !== currentUid() || modeOf(authorityInfo) !== 0o600 || authorityInfo.size !== 72) {
+          fail("path-unsafe", "captured result lacks its pinned capture authority");
+        }
+        const declaredAuthority = (await authorityHandle.readFile()).toString("utf8");
+        if (declaredAuthority !== `sha256:${authorityDigest}\n`) {
+          fail("path-unsafe", "captured result does not match its pinned capture authority");
+        }
+      } finally {
+        await authorityHandle.close();
+      }
+      bytes = await resultHandle.readFile();
+    } finally {
+      await resultHandle.close();
+    }
+  } else {
+    const info = await maybeLstat(absolute);
+    if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
+    if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
+    if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
+    bytes = await readFile(absolute);
+  }
   let content;
   try {
     content = decoder.decode(bytes);
@@ -2153,9 +2214,9 @@ async function runLifecycleProcessEvent(args) {
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
-  const pinnedResult = hasPinnedCaptureDirectory();
+  const pinnedResult = hasPinnedCaptureAuthority() && hasPinnedCaptureDirectory();
   const stdio = pinnedResult
-    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", "ignore", PINNED_CAPTURE_FD]
+    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", PINNED_CAPTURE_AUTHORITY_FD, PINNED_CAPTURE_FD]
     : ["ignore", "pipe", "pipe"];
   const child = spawn(command, ["extension-process-event", ...args], {
     cwd: pinnedResult ? process.cwd() : CODE_ROOT,

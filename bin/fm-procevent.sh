@@ -650,7 +650,7 @@ cmd_start() {
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
-  local runner inbox
+  local runner inbox capture_authority
   if [ "$extension_owner" -eq 1 ]; then
     fm_procevent_extension_staging_prepare "$STATE" \
       || die "cannot safely prepare the external registry staging boundary"
@@ -666,6 +666,15 @@ cmd_start() {
     [ "$(pwd -P)" = "$inbox" ] \
       || die "cannot durably capture the extension result"
     exec 8<. || die "cannot retain the external capture boundary"
+    capture_authority=$(mktemp ".capture-authority.XXXXXXXX") \
+      || die "cannot create external capture authority"
+    if ! dd if=/dev/urandom of="$capture_authority" bs=32 count=1 2>/dev/null \
+      || ! chmod 0600 "$capture_authority" \
+      || ! exec 7<"$capture_authority" \
+      || ! rm -f -- "$capture_authority"; then
+      rm -f -- "$capture_authority"
+      die "cannot retain external capture authority"
+    fi
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
     runner="$id.runner"
   else
@@ -683,7 +692,7 @@ cmd_start() {
   local truncated=0 capture_state durable
   if [ "$extension_owner" -eq 1 ]; then
     capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
-      "$STATE" 9 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
+      9 8 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
       "$FM_PROCEVENT_EXTENSION_VERSION" "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
       "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" \
       "$CLAIM_TOKEN" "$runner" "$out" "$$" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \

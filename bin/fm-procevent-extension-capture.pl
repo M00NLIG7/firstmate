@@ -1,9 +1,10 @@
 use strict;
 use warnings;
 use Cwd qw(getcwd);
+use Digest::SHA qw(sha256_hex);
 use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDWR);
 
-my ($state, $registry_fd, $id, $adapter, $extension_id, $extension_version, $capability_version,
+my ($registry_fd, $inbox_fd, $id, $adapter, $extension_id, $extension_version, $capability_version,
     $package_digest, $binding_digest, $claim_token, $runner_name, $output_name,
     $runner_pid, $limit, @command) = @ARGV;
 die "missing command\n" unless @command && shift(@command) eq "--";
@@ -52,12 +53,19 @@ open(my $registry_dir, "<&=$registry_fd") or fail("cannot retain registry direct
 chdir($registry_dir) or fail("cannot enter registry directory");
 safe_dir(".", 0700) or fail("unsafe registry directory");
 my $registry = getcwd();
-opendir(my $state_dir, $state) or fail("cannot enter state directory");
-chdir($state_dir) or fail("cannot enter state directory");
-getcwd() eq $state or fail("state directory changed");
-safe_dir(".") or fail("unsafe state directory");
-safe_dir("procevent-inbox", 0700) or fail("unsafe inbox directory");
-opendir(my $inbox_dir, "procevent-inbox") or fail("cannot retain inbox directory");
+open(my $inbox_dir, "<&=$inbox_fd") or fail("cannot retain inbox directory");
+chdir($inbox_dir) or fail("cannot enter inbox directory");
+safe_dir(".", 0700) or fail("unsafe inbox directory");
+open(my $authority, "<&=7") or fail("cannot retain capture authority");
+my $authority_bytes = "";
+while (1) {
+  my $read = sysread($authority, my $buffer, 32 - length($authority_bytes));
+  defined $read or fail("cannot read capture authority");
+  last if $read == 0;
+  $authority_bytes .= $buffer;
+}
+length($authority_bytes) == 32 or fail("invalid capture authority");
+my $authority_digest = sha256_hex($authority_bytes);
 chdir($registry_dir) or fail("cannot return to registry directory");
 getcwd() eq $registry or fail("registry directory changed");
 my $runner = open_new($runner_name);
@@ -113,6 +121,7 @@ my $nonce = ".$prefix.$$";
 my $result_tmp = "$nonce.result";
 my $adapter_tmp = "$nonce.adapter";
 my $extension_tmp = "$nonce.extension";
+my $authority_tmp = "$nonce.authority";
 my $result = open_new($result_tmp);
 seek($stage, 0, 0) or fail("cannot rewind staged output");
 copy_all($stage, $result);
@@ -123,8 +132,12 @@ close($adapter_file) or fail("cannot close adapter evidence");
 my $extension_file = open_new($extension_tmp);
 write_all($extension_file, join("\n", "schema=fm-procevent-extension-owner.v1", "extension_id=$extension_id", "extension_version=$extension_version", "capability_version=$capability_version", "package_digest=$package_digest", "binding_digest=$binding_digest", ""));
 close($extension_file) or fail("cannot close extension evidence");
+my $authority_file = open_new($authority_tmp);
+write_all($authority_file, "sha256:$authority_digest\n");
+close($authority_file) or fail("cannot close capture authority");
 publish_new($adapter_tmp, "$prefix.adapter");
 publish_new($extension_tmp, "$prefix.extension");
+publish_new($authority_tmp, "$prefix.authority");
 publish_new($result_tmp, "$prefix.result");
 close($stage) or fail("cannot close staged output");
 chdir($registry_dir) or fail("cannot return to registry directory");
