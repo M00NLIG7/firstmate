@@ -217,7 +217,7 @@ cleanup_extension_registration_invocations_locked() {  # <source-id>
 # sidecar, not the current adapter name alone, supplies every expected binding
 # field, so replacing a binding cannot reinterpret old evidence.
 extension_result_command() {  # <adapter> <operation> <result-file>
-  local adapter=$1 operation=$2 result=$3 owner_state reservation='' owner claim_path
+  local adapter=$1 operation=$2 result=$3 owner_state reservation='' owner claim_path handoff_status
   fm_procevent_result_extension_load "$result"
   owner_state=$?
   [ "$owner_state" -eq 0 ] || return 1
@@ -245,7 +245,9 @@ extension_result_command() {  # <adapter> <operation> <result-file>
         8 6 "$claim_path" "$CLAIM_HOME" "$CLAIM_ID" "$CLAIM_TOKEN" "$CLAIM_PID" \
         "$(fm_pid_identity "$CLAIM_PID")" "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" "$reservation" \
         "$operation" "$result" "$EXTENSION_HOST" -- "${command[@]:1}"
-    return $?
+    handoff_status=$?
+    extension_lifecycle_lock_release
+    return "$handoff_status"
   fi
   "${command[@]}"
 }
@@ -658,6 +660,7 @@ cmd_start() {
   CLAIM_REG_IDENTITY=$FM_PROCEVENT_CLAIM_REG_IDENTITY
   STAGED_OUTPUT=
   release_start_claim() {
+    extension_lifecycle_lock_release 2>/dev/null || true
     [ -z "$STAGED_OUTPUT" ] || rm -f -- "$STAGED_OUTPUT"
     fm_procevent_source_lock_acquire "$CLAIM_ID" 2>/dev/null || return 0
     if fm_procevent_claim_load_locked "$CLAIM_ID" 2>/dev/null \

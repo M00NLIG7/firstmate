@@ -55,6 +55,8 @@ signal_cleanup_group_pid=
 crash_cleanup_host_pid=
 crash_cleanup_group_pid=
 crash_cleanup_release=
+crash_silent_start_pid=
+crash_silent_runner_pid=
 section_coordinator_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
@@ -85,6 +87,8 @@ extension_test_cleanup() {
   [ -z "$crash_cleanup_host_pid" ] || kill -KILL "$crash_cleanup_host_pid" 2>/dev/null || true
   [ -z "$crash_cleanup_group_pid" ] || kill -KILL -"$crash_cleanup_group_pid" 2>/dev/null || true
   [ -z "$crash_cleanup_release" ] || touch "$crash_cleanup_release" 2>/dev/null || true
+  [ -z "$crash_silent_start_pid" ] || kill -TERM "$crash_silent_start_pid" 2>/dev/null || true
+  [ -z "$crash_silent_runner_pid" ] || kill -TERM -"$crash_silent_runner_pid" 2>/dev/null || true
   [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
   if [ -n "$section_coordinator_pid" ]; then
     kill -TERM "$section_coordinator_pid" 2>/dev/null || true
@@ -247,7 +251,9 @@ elif request["operation"] == "result.classify": raw(success({"classification":"e
 elif request["operation"] == "result.terminal": raw(success({"value":True}))
 elif request["operation"] == "result.silent":
     content = request.get("input", {}).get("content", "")
-    if content.startswith("external evidence: silent-block|"):
+    if content == "external evidence: crash-silent\\n":
+        os.kill(os.getpid(), signal.SIGKILL)
+    elif content.startswith("external evidence: silent-block|"):
         _, block_marker, block_release = content.rstrip("\n").split("|", 2)
         write_exclusive(block_marker, f"{os.getpid()}\n")
         while not os.path.exists(block_release): time.sleep(.01)
@@ -1048,6 +1054,32 @@ assert_not_contains "$classification" "wrong-built-in-owner" "a later same-name 
 assert_absent "$H_FLOW/state/procevent/flow-source.source" "terminal external source stayed registered"
 FM_HOME="$H_FLOW" "$PROCEVENT" retire flow-source --if-owner "$owner_one" >/dev/null
 pass "one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end"
+FM_HOME="$H_FLOW" "$PROCEVENT" register-extension ext-flow crash-silent-source --config-ref crash-silent >/dev/null
+FM_HOME="$H_FLOW" "$PROCEVENT" start crash-silent-source > "$TMP_ROOT/crash-silent-start.out" 2>&1 &
+crash_silent_start_pid=$!
+for _ in $(seq 1 400); do
+  if [ -f "$TMP_ROOT/claims/crash-silent-source.claim" ]; then
+    crash_silent_runner_pid=$(sed -n '2p' "$TMP_ROOT/claims/crash-silent-source.claim")
+  fi
+  kill -0 "$crash_silent_start_pid" 2>/dev/null || break
+  sleep 0.01
+done
+if kill -0 "$crash_silent_start_pid" 2>/dev/null; then
+  kill -TERM "$crash_silent_start_pid" 2>/dev/null || true
+  [ -z "$crash_silent_runner_pid" ] || kill -TERM -"$crash_silent_runner_pid" 2>/dev/null || true
+  wait "$crash_silent_start_pid" 2>/dev/null || true
+  crash_silent_start_pid=
+  crash_silent_runner_pid=
+  fail "inner host crash during result.silent wedged its runner before result.terminal"
+fi
+wait "$crash_silent_start_pid" || fail "runner did not recover from inner result.silent crash"
+crash_silent_start_pid=
+crash_silent_runner_pid=
+assert_present "$H_FLOW/state/procevent-inbox/crash-silent-source.1.result" "crashed silent invocation discarded captured evidence"
+assert_absent "$H_FLOW/state/procevent/crash-silent-source.source" "terminal retry did not retire the crashed silent source"
+assert_absent "$H_FLOW/state/procevent/.extension-binding-lifecycle.lock" "inner host crash left a lifecycle lock behind"
+FM_HOME="$H_FLOW" "$PROCEVENT" handled crash-silent-source 1 >/dev/null
+pass "inner result.silent host crash releases the parent lifecycle lock before terminal retry"
 wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 expect_failure "expected binding identity" env FM_HOME="$H_FLOW" "$HOST" retire-binding org.example.flow --if-binding-digest "$wrong_binding_digest"
 assert_present "$H_FLOW/config/extensions.d/org.example.flow.json" "stale identity retired the local binding"
