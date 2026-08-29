@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Structural interface tests for progressive harness-adapter reference loading.
+# Semantic interface tests for progressive harness-adapter reference loading.
 set -eu
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,37 +14,40 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
-common_for_operation() {
-  case "$1" in
-    start) printf '%s\n' references/common/dispatch.md ;;
-    trust|skill|interrupt|exit|resume|recovery)
-      printf '%s\n' references/common/control-and-recovery.md
-      ;;
-    primary) printf '%s\n' references/common/primary-hooks.md ;;
-    model-effort) printf '%s\n' references/common/model-and-effort.md ;;
-    verify)
-      printf '%s\n' \
-        references/common/dispatch.md \
-        references/common/control-and-recovery.md \
-        references/common/primary-hooks.md \
-        references/common/model-and-effort.md
-      ;;
-    *) return 1 ;;
-  esac
+routing_contract() {
+  awk '
+    /^```json harness-adapter-routing-v1$/ { capture = 1; next }
+    capture && /^```$/ { exit }
+    capture { print }
+  ' "$SKILL_ROOT/SKILL.md"
 }
 
-harness_reference() {
-  case "$1" in
-    claude) printf '%s\n' references/harness/claude.md ;;
-    codex) printf '%s\n' references/harness/codex.md ;;
-    opencode) printf '%s\n' references/harness/opencode.md ;;
-    pi|pi-signed) printf '%s\n' references/harness/pi.md ;;
-    grok) printf '%s\n' references/harness/grok.md ;;
-    kimi) printf '%s\n' references/harness/kimi.md ;;
-    cursor) printf '%s\n' references/harness/cursor.md ;;
-    muse) printf '%s\n' references/harness/muse.md ;;
-    *) return 1 ;;
-  esac
+ROUTING_JSON=$(routing_contract)
+printf '%s\n' "$ROUTING_JSON" | jq -e . >/dev/null \
+  || fail "router did not emit a valid harness-adapter-routing-v1 contract"
+
+reference_plan() {
+  local operation=$1 harness=$2 scenario=${3:-default}
+  printf '%s\n' "$ROUTING_JSON" | jq -er \
+    --arg operation "$operation" \
+    --arg scenario "$scenario" \
+    --arg harness "$harness" '
+      .operations[$operation][$scenario] as $common
+      | .harnesses[$harness] as $tool
+      | if ($common | type) != "array" or ($tool | type) != "string" then
+          error("unknown routing scenario")
+        else
+          $common[], $tool
+        end
+    '
+}
+
+assert_plan() {
+  local operation=$1 harness=$2 scenario=$3 expected=$4 actual
+  actual=$(reference_plan "$operation" "$harness" "$scenario") \
+    || fail "$operation/$scenario/$harness did not produce a reference plan"
+  [ "$actual" = "$expected" ] \
+    || fail "$operation/$scenario/$harness produced an unexpected plan: $actual"
 }
 
 assert_skill_relative_readable() {
@@ -55,28 +58,55 @@ assert_skill_relative_readable() {
   ) || fail "$label did not resolve from the skill directory: $relative"
 }
 
-test_every_operation_and_harness_resolves() {
-  local operation harness common tool
-  for operation in start trust skill interrupt exit resume recovery primary model-effort verify; do
-    for harness in claude codex opencode pi pi-signed grok kimi cursor muse; do
-      tool=$(harness_reference "$harness") || fail "missing tool reference plan for $harness"
-      assert_skill_relative_readable "$SKILL_ROOT" "$tool" "$operation/$harness tool reference"
-      while IFS= read -r common; do
-        [ -n "$common" ] || continue
-        assert_skill_relative_readable "$SKILL_ROOT" "$common" "$operation/$harness common reference"
-      done < <(common_for_operation "$operation")
-    done
-  done
-  pass "every operation scenario resolves one common plan and every supported harness reference"
+test_contract_covers_required_scenarios() {
+  local operations harnesses
+  operations=$(printf '%s\n' "$ROUTING_JSON" | jq -r '.operations | keys | join(" ")')
+  harnesses=$(printf '%s\n' "$ROUTING_JSON" | jq -r '.harnesses | keys | join(" ")')
+  [ "$operations" = "exit interrupt model-effort primary recovery resume skill start trust verify" ] \
+    || fail "routing operations are incomplete: $operations"
+  [ "$harnesses" = "claude codex cursor grok kimi muse opencode pi pi-signed" ] \
+    || fail "supported harness identities are incomplete: $harnesses"
+
+  assert_plan start claude model-or-effort \
+    $'references/common/dispatch.md\nreferences/common/model-and-effort.md\nreferences/harness/claude.md'
+  assert_plan start codex trust-dialog \
+    $'references/common/control-and-recovery.md\nreferences/harness/codex.md'
+  assert_plan recovery opencode replacement-profile \
+    $'references/common/control-and-recovery.md\nreferences/common/dispatch.md\nreferences/common/model-and-effort.md\nreferences/harness/opencode.md'
+  assert_plan recovery pi secondmate \
+    $'references/common/control-and-recovery.md\nreferences/common/primary-hooks.md\nreferences/harness/pi.md'
+  assert_plan recovery pi-signed replacement-secondmate \
+    $'references/common/control-and-recovery.md\nreferences/common/dispatch.md\nreferences/common/model-and-effort.md\nreferences/common/primary-hooks.md\nreferences/harness/pi.md'
+  assert_plan model-effort grok configured-profile \
+    $'references/common/model-and-effort.md\nreferences/common/dispatch.md\nreferences/harness/grok.md'
+  assert_plan verify muse default \
+    $'references/common/dispatch.md\nreferences/common/control-and-recovery.md\nreferences/common/primary-hooks.md\nreferences/common/model-and-effort.md\nreferences/harness/muse.md'
+  pass "router contract covers base and conditional operation scenarios"
+}
+
+test_every_scenario_and_harness_resolves() {
+  local operation scenario harness relative
+  while IFS=$'\t' read -r operation scenario; do
+    while IFS= read -r harness; do
+      while IFS= read -r relative; do
+        assert_skill_relative_readable \
+          "$SKILL_ROOT" "$relative" "$operation/$scenario/$harness reference"
+      done < <(reference_plan "$operation" "$harness" "$scenario")
+    done < <(printf '%s\n' "$ROUTING_JSON" | jq -r '.harnesses | keys[]')
+  done < <(printf '%s\n' "$ROUTING_JSON" | jq -r '
+    .operations | to_entries[] as $operation
+    | $operation.value | keys[]
+    | [$operation.key, .] | @tsv
+  ')
+  pass "every router-emitted scenario resolves across every supported harness"
 }
 
 test_combined_identity_is_intentional() {
-  local pi plain signed
-  plain=$(harness_reference pi)
-  signed=$(harness_reference pi-signed)
-  [ "$plain" = "$signed" ] || fail "Pi and Pi-signed must share their genuinely common contract"
-  pi=$(harness_reference pi)
-  [ "$pi" = references/harness/pi.md ] || fail "unexpected Pi reference path: $pi"
+  local plain signed
+  plain=$(printf '%s\n' "$ROUTING_JSON" | jq -r '.harnesses.pi')
+  signed=$(printf '%s\n' "$ROUTING_JSON" | jq -r '.harnesses["pi-signed"]')
+  [ "$plain" = "$signed" ] \
+    || fail "Pi and Pi-signed must share their genuinely common contract"
   pass "Pi and Pi-signed share one tool reference without creating another skill"
 }
 
@@ -84,27 +114,19 @@ test_shared_skill_tree_paths() {
   local canonical claude_view relative
   canonical=$(cd "$SKILL_ROOT" && pwd -P)
   claude_view=$(cd "$ROOT/.claude/skills/harness-adapters" && pwd -P)
-  [ "$claude_view" = "$canonical" ] || fail "Claude skill view does not resolve to the shared .agents tree"
+  [ "$claude_view" = "$canonical" ] \
+    || fail "Claude skill view does not resolve to the shared .agents tree"
 
-  for relative in \
-    references/common/dispatch.md \
-    references/common/control-and-recovery.md \
-    references/common/primary-hooks.md \
-    references/common/model-and-effort.md \
-    references/harness/claude.md \
-    references/harness/codex.md \
-    references/harness/opencode.md \
-    references/harness/pi.md \
-    references/harness/grok.md \
-    references/harness/kimi.md \
-    references/harness/cursor.md \
-    references/harness/muse.md; do
-    assert_skill_relative_readable "$ROOT/.claude/skills/harness-adapters" "$relative" "Claude shared-tree reference"
-  done
+  while IFS= read -r relative; do
+    assert_skill_relative_readable \
+      "$ROOT/.claude/skills/harness-adapters" "$relative" "Claude shared-tree reference"
+  done < <(printf '%s\n' "$ROUTING_JSON" | jq -r '
+    [.operations[][][], .harnesses[]] | unique[]
+  ')
 
   [ "$(find "$SKILL_ROOT/references" -name SKILL.md -type f -print -quit)" = "" ] \
     || fail "references must not introduce separately catalogued skills"
-  pass "canonical and Claude-compatible skill roots expose the same on-demand resources"
+  pass "canonical and Claude-compatible skill roots expose the routed resources"
 }
 
 test_external_owner_paths_resolve_from_skill_root() {
@@ -134,7 +156,8 @@ test_external_owner_paths_resolve_from_skill_root() {
   pass "shared executable, documentation, and sibling-skill owners resolve from the skill root"
 }
 
-test_every_operation_and_harness_resolves
+test_contract_covers_required_scenarios
+test_every_scenario_and_harness_resolves
 test_combined_identity_is_intentional
 test_shared_skill_tree_paths
 test_external_owner_paths_resolve_from_skill_root

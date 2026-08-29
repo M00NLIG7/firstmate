@@ -19,8 +19,8 @@ Files under `references/` are resources of this skill, not additional catalogued
 ## Path contract
 
 The skill directory is the directory containing this `SKILL.md`.
-Resolve every relative path named anywhere in this skill against that directory, including paths named by a nested reference.
-Never resolve a path relative to the nested file itself.
+Resolve on-demand reference links and relative links to their executable, documentation, or sibling-skill owners against the skill directory, including links named by a nested reference.
+Operational paths keep the context named by their owner: `config/` and active-home settings belong to the active Firstmate home, `state/` belongs to that home, and project settings such as `.claude/settings.json` belong to the target project.
 
 ## Non-negotiable safety
 
@@ -48,30 +48,48 @@ A new adapter's verified marker and command name must land in `../../../bin/fm-h
 
 ## Operation-to-reference matrix
 
-Every row requires the selected or recorded tool file from the harness table after the named common file.
+Every emitted plan appends the selected or recorded harness reference after the named common references.
+The `harness-adapter-routing-v1` object is the machine-readable and human-visible selection contract: choose the operation, choose the scenario within it, then append the selected harness reference.
+`default` is the normal scenario when no narrower scenario applies.
+Kimi and Muse establish their unsupported primary boundary in their selected harness reference.
+A new tool remains undispatchable until the `verify` plan, its harness entry, every named owner, and the live checks land.
 
-| Operation | Required common reference | Addition |
-|---|---|---|
-| Start a crewmate, scout, or secondmate | [dispatch](references/common/dispatch.md) | Add [model and effort](references/common/model-and-effort.md) when choosing either axis; switch to the trust row if a dialog appears. |
-| Handle trust or first-run UI | [control and recovery](references/common/control-and-recovery.md) | None. |
-| Invoke a harness skill | [control and recovery](references/common/control-and-recovery.md) | None. |
-| Interrupt | [control and recovery](references/common/control-and-recovery.md) | None. |
-| Exit | [control and recovery](references/common/control-and-recovery.md) | None. |
-| Resume a native session | [control and recovery](references/common/control-and-recovery.md) | Use relaunch when the tool has no verified native resume. |
-| Recover or relaunch | [control and recovery](references/common/control-and-recovery.md) | Add [dispatch](references/common/dispatch.md) and [model and effort](references/common/model-and-effort.md) only for a replacement profile; add [primary hooks](references/common/primary-hooks.md) for a secondmate. |
-| Primary startup, hooks, watcher, or integration | [primary hooks](references/common/primary-hooks.md) | The selected Kimi or Muse reference establishes its unsupported boundary. |
-| Select or validate model or effort | [model and effort](references/common/model-and-effort.md) | Add [dispatch](references/common/dispatch.md) for configured profile precedence. |
-| Verify or re-verify an adapter | All four common references | Add the existing tool file when re-verifying; a new tool remains undispatchable until every named owner and live check lands. |
-
-## Harness reference table
-
-| Identity | Required tool reference |
-|---|---|
-| `claude` | [Claude](references/harness/claude.md) |
-| `codex` | [Codex](references/harness/codex.md) |
-| `opencode` | [OpenCode](references/harness/opencode.md) |
-| `pi` or `pi-signed` | [Pi and Pi-signed](references/harness/pi.md) |
-| `grok` | [Grok Build](references/harness/grok.md) |
-| `kimi` | [Kimi Code](references/harness/kimi.md) |
-| `cursor` | [Cursor Agent](references/harness/cursor.md) |
-| `muse` | [Muse Code](references/harness/muse.md) |
+```json harness-adapter-routing-v1
+{
+  "operations": {
+    "start": {
+      "default": ["references/common/dispatch.md"],
+      "model-or-effort": ["references/common/dispatch.md", "references/common/model-and-effort.md"],
+      "trust-dialog": ["references/common/control-and-recovery.md"]
+    },
+    "trust": {"default": ["references/common/control-and-recovery.md"]},
+    "skill": {"default": ["references/common/control-and-recovery.md"]},
+    "interrupt": {"default": ["references/common/control-and-recovery.md"]},
+    "exit": {"default": ["references/common/control-and-recovery.md"]},
+    "resume": {"default": ["references/common/control-and-recovery.md"]},
+    "recovery": {
+      "default": ["references/common/control-and-recovery.md"],
+      "replacement-profile": ["references/common/control-and-recovery.md", "references/common/dispatch.md", "references/common/model-and-effort.md"],
+      "secondmate": ["references/common/control-and-recovery.md", "references/common/primary-hooks.md"],
+      "replacement-secondmate": ["references/common/control-and-recovery.md", "references/common/dispatch.md", "references/common/model-and-effort.md", "references/common/primary-hooks.md"]
+    },
+    "primary": {"default": ["references/common/primary-hooks.md"]},
+    "model-effort": {
+      "default": ["references/common/model-and-effort.md"],
+      "configured-profile": ["references/common/model-and-effort.md", "references/common/dispatch.md"]
+    },
+    "verify": {"default": ["references/common/dispatch.md", "references/common/control-and-recovery.md", "references/common/primary-hooks.md", "references/common/model-and-effort.md"]}
+  },
+  "harnesses": {
+    "claude": "references/harness/claude.md",
+    "codex": "references/harness/codex.md",
+    "opencode": "references/harness/opencode.md",
+    "pi": "references/harness/pi.md",
+    "pi-signed": "references/harness/pi.md",
+    "grok": "references/harness/grok.md",
+    "kimi": "references/harness/kimi.md",
+    "cursor": "references/harness/cursor.md",
+    "muse": "references/harness/muse.md"
+  }
+}
+```
