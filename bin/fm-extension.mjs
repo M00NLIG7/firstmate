@@ -55,7 +55,7 @@
 // mutation, or stronger-operation capability.
 
 import { spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, fstatSync, statSync } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -96,6 +96,7 @@ const ERROR_EVIDENCE_SCHEMA = "firstmate.process-event-extension-error.v1";
 const INVOCATION_OWNER_SCHEMA = "firstmate.extension-invocation-owner.v1";
 const INVOCATION_READY_SCHEMA = "firstmate.extension-invocation-ready.v1";
 const INVOCATION_RELEASE_SCHEMA = "firstmate.extension-invocation-release.v1";
+const PINNED_CAPTURE_FD = 8;
 const MAX_JSON_BYTES = 65536;
 const MAX_RESULT_BYTES = 32768;
 const MAX_STDERR_BYTES = 8192;
@@ -1485,8 +1486,19 @@ function validateOperationResult(operation, result) {
   fail("operation-unsupported", `unsupported process-event operation: ${operation}`);
 }
 
+function hasPinnedCaptureDirectory() {
+  try {
+    const pinned = fstatSync(PINNED_CAPTURE_FD);
+    const current = statSync(".");
+    return pinned.isDirectory() && current.isDirectory()
+      && pinned.dev === current.dev && pinned.ino === current.ino;
+  } catch {
+    return false;
+  }
+}
+
 async function readCapturedResult(home, resultFile) {
-  const pinned = process.env.FM_PROCEVENT_CAPTURE_PINNED_RESULT === "1";
+  const pinned = Boolean(activeLifecycleLock) && hasPinnedCaptureDirectory();
   const absolute = pinned ? resultFile : path.resolve(resultFile);
   const inbox = path.join(effectiveStateRoot(home), "procevent-inbox");
   if (pinned) {
@@ -2141,13 +2153,15 @@ async function runLifecycleProcessEvent(args) {
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
-  const pinnedResult = process.env.FM_PROCEVENT_CAPTURE_PINNED_RESULT === "1";
-  if (pinnedResult) env.FM_PROCEVENT_CAPTURE_PINNED_RESULT = "1";
+  const pinnedResult = hasPinnedCaptureDirectory();
+  const stdio = pinnedResult
+    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", "ignore", PINNED_CAPTURE_FD]
+    : ["ignore", "pipe", "pipe"];
   const child = spawn(command, ["extension-process-event", ...args], {
     cwd: pinnedResult ? process.cwd() : CODE_ROOT,
     env,
     shell: false,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio,
   });
   const stdout = [];
   const stderr = [];

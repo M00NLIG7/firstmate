@@ -665,6 +665,7 @@ cmd_start() {
       || die "cannot durably capture the extension result"
     [ "$(pwd -P)" = "$inbox" ] \
       || die "cannot durably capture the extension result"
+    exec 8<. || die "cannot retain the external capture boundary"
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
     runner="$id.runner"
   else
@@ -746,7 +747,6 @@ EOF
 
   if [ "$extension_owner" -eq 1 ]; then
     durable="./$durable"
-    export FM_PROCEVENT_CAPTURE_PINNED_RESULT=1
   fi
 
   if [ "$extension_owner" -eq 1 ]; then

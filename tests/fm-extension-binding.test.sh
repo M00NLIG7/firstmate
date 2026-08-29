@@ -1298,6 +1298,10 @@ override_bind=$(bind_package "$H_STATE_OVERRIDE" "$P_FLOW" ext-flow)
 override_bind_digest=$(printf '%s\n' "$override_bind" | sed -n 's/^binding-digest: //p')
 override_registration=$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" register-extension ext-flow override-source --config-ref silent-result)
 override_owner=$(printf '%s\n' "$override_registration" | sed -n 's/^owner-token: //p')
+override_resolution=$(FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" resolve-process-event ext-flow)
+IFS=$'\t' read -r override_schema override_id override_version override_cap override_package override_binding override_extra <<< "$override_resolution"
+[ "$override_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$override_extra" ] \
+  || fail "overridden-state resolution record is malformed"
 expect_failure "still owns process-event registration" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$HOST" retire-binding org.example.flow --if-binding-digest "$override_bind_digest"
 assert_present "$H_STATE_OVERRIDE/config/extensions.d/org.example.flow.json" "overridden-state dependency did not preserve its binding"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" "$PROCEVENT" start override-source >/dev/null
@@ -1315,6 +1319,18 @@ chmod 0600 "$TMP_ROOT/override-outside/override-source.1.result"
 chmod 0600 "$TMP_ROOT/override-outside/override-source.1.adapter" "$TMP_ROOT/override-outside/override-source.1.extension"
 expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" classify "$TMP_ROOT/override-outside/override-source.1.result"
+mkdir "$TMP_ROOT/forged-pinned-result"
+printf 'forged extension evidence\n' > "$TMP_ROOT/forged-pinned-result/forged-source.1.result"
+chmod 0600 "$TMP_ROOT/forged-pinned-result/forged-source.1.result"
+expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  FM_PROCEVENT_CAPTURE_PINNED_RESULT=1 sh -c '
+    cd "$1" || exit 1
+    exec "$2" process-event "$3" result.classify --result-file ./forged-source.1.result \
+      --expect-extension "$4" --expect-version "$5" --expect-capability-version "$6" \
+      --expect-package-digest "$7" --expect-binding-digest "$8"
+  ' sh "$TMP_ROOT/forged-pinned-result" "$HOST" ext-flow "$override_id" "$override_version" \
+  "$override_cap" "$override_package" "$override_binding"
+pass "caller environment and working directory cannot forge pinned capture authority"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" register-extension ext-flow inbox-swap-source --config-ref good >/dev/null
 mkdir "$TMP_ROOT/inbox-link-target"
