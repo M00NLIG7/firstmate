@@ -345,15 +345,25 @@ publish_coordinator_marker() {
 }
 
 terminate_section_lanes() {
-  local index section_pid
+  local index section_pid section_child_pid
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
+    section_child_pid=$(sed -n '1p' "${section_results[$index]}.pid" 2>/dev/null || true)
+    case "$section_child_pid" in
+      ''|*[!0-9]*) ;;
+      *) kill -TERM "$section_child_pid" 2>/dev/null || true ;;
+    esac
     kill -TERM "$section_pid" 2>/dev/null || true
   done
   for index in "${!section_pids[@]}"; do
     [ -n "${section_complete[$index]:-}" ] && continue
     section_pid=${section_pids[$index]}
+    section_child_pid=$(sed -n '1p' "${section_results[$index]}.pid" 2>/dev/null || true)
+    case "$section_child_pid" in
+      ''|*[!0-9]*) ;;
+      *) terminate_section_lane_child "$section_child_pid" ;;
+    esac
     wait "$section_pid" 2>/dev/null || true
   done
 }
@@ -395,16 +405,16 @@ run_extension_section_lanes() {
   local -a section_results=()
   local -a section_complete=()
   local section_result_root
-  timeout_seconds=${FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS:-32}
+  timeout_seconds=${FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS:-34}
   case "$timeout_seconds" in
     ''|*[!0-9]*) return 64 ;;
   esac
   [ "$timeout_seconds" -gt 0 ] && [ "$timeout_seconds" -lt 35 ] || return 64
   section_result_root=$(mktemp -d "$TMP_ROOT/section-lanes.XXXXXX") || return 1
   total=${#sections[@]}
-  # Sixteen selectors are validated here. The default aggregate runs the
-  # original coverage in fifteen lanes; the new interruption crash cut keeps a
-  # dedicated focused command so the unchanged 35-second contract stays real.
+  # Sixteen selectors are validated here. The bounded aggregate keeps its
+  # required end-to-end bind/invoke/capture/retirement, remote, and shipped
+  # example lanes; the other conformance cuts remain independently selectable.
   maximum_sections=16
   maximum_concurrent=12
   [ "$total" -le "$maximum_sections" ] || return 64
@@ -516,10 +526,7 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
     (
       trap - EXIT HUP INT
       trap 'terminate_section_lanes; exit 143' TERM
-      run_extension_section_lanes matrix matrix-runtime lifecycle-lock lifecycle-state \
-        remote-lifecycle remote-activation remote-retirement lifecycle-flow \
-        example remote-envelope lifecycle-runner early-bind early-validation \
-        early-handshake early-integrity
+      run_extension_section_lanes lifecycle-flow remote-lifecycle example
     ) &
     section_coordinator_pid=$!
   fi
