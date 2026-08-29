@@ -187,7 +187,8 @@ A source configuration reference is a bounded non-secret identifier or path refe
 Before an external invocation can open its runner-output staging file, core validates the effective state directory and its `state/procevent/` registry as canonical, same-user, non-link private directories with safe modes.
 Before an external result can be captured, core applies the same boundary checks to the effective state directory and its `state/procevent-inbox/` destination.
 These external-only checks refuse before a staging or capture write when a post-registration link, ownership, mode, or canonical-path substitution is detected, while the legacy four-argument built-in capture path retains its existing behavior.
-The host reads a regular mode-`0600` result directly from this home's `state/procevent-inbox/` and sends only bounded UTF-8 content.
+For `result.terminal` and `result.silent`, the live core runner passes the host an internal one-shot handoff that pins the exact active claim, inbox, and result identities before the host reads a regular mode-`0600` result and sends only bounded UTF-8 content.
+Public lifecycle entry, environment, paths, and caller-supplied descriptors cannot create that handoff or authorize capture; runner claim release and dead-owner reconciliation remove its pending or consumed reservation state from the claim's recorded, revalidated state root.
 A source failure becomes a small host-produced `firstmate.process-event-extension-error.v1` result, so missing packages, invalid responses, crashes, nonzero exits, and timeouts become actionable evidence rather than silent fallback.
 Unknown or malformed terminal and silent responses take the safe false path.
 
