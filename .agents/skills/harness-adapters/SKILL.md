@@ -58,8 +58,7 @@ A new tool remains undispatchable until the `verify` plan, its harness entry, ev
 {
   "operations": {
     "start": {
-      "default": ["references/common/dispatch.md"],
-      "model-or-effort": ["references/common/dispatch.md", "references/common/model-and-effort.md"],
+      "default": ["references/common/dispatch.md", "references/common/model-and-effort.md"],
       "trust-dialog": ["references/common/control-and-recovery.md"]
     },
     "trust": {"default": ["references/common/control-and-recovery.md"]},

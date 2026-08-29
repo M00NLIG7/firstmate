@@ -67,7 +67,7 @@ test_contract_covers_required_scenarios() {
   [ "$harnesses" = "claude codex cursor grok kimi muse opencode pi pi-signed" ] \
     || fail "supported harness identities are incomplete: $harnesses"
 
-  assert_plan start claude model-or-effort \
+  assert_plan start claude default \
     $'references/common/dispatch.md\nreferences/common/model-and-effort.md\nreferences/harness/claude.md'
   assert_plan start codex trust-dialog \
     $'references/common/control-and-recovery.md\nreferences/harness/codex.md'
