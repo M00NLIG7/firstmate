@@ -1,0 +1,5 @@
+ok - unknown-only protocol and capability versions refuse without downgrade
+ok - handshake request identity, exact fields, JSON, and process exit are validated before enablement
+not run - foreign-owner fixture requires chown privilege
+
+all extension-binding tests passed

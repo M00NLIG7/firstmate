@@ -1,0 +1,9 @@
+ok - group/world-writable package code is rejected
+ok - a non-executable manifest entrypoint is rejected
+ok - source-root traversal and package-tree symlinks are rejected
+ok - hard-linked package code is rejected
+ok - a project, task-copy, or operational-home package cannot register even when named explicitly
+ok - manifest entrypoint traversal is rejected before execution
+ok - manifest JSON rejects duplicate and unknown fields instead of widening into plugin hooks
+
+all extension-binding tests passed

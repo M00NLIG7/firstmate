@@ -1,0 +1,4 @@
+ok - remote receiver rejects malformed, truncated, traversal, link, hash, size, duplicate, and incomplete envelopes
+ok - failed activation cannot partially publish and retains exact transfer evidence
+
+all extension-binding tests passed

@@ -1,0 +1,6 @@
+ok - registration publication and binding retirement share one lifecycle boundary
+ok - public extension dispatch exposes no unlocked retirement entry
+ok - retirement worker ownership survives wrapper death and recovers exactly
+ok - signal interruption leaves lifecycle lock recovery to the next owner
+
+all extension-binding tests passed

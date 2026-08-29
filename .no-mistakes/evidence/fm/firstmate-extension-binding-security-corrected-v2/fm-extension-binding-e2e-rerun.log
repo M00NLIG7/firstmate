@@ -1,0 +1,42 @@
+ok - unknown extension conformance section selectors fail before setup
+ok - an absent home-local registry is inert, state-free, and ignores project/environment discovery
+ok - source configuration references cross one JSON envelope with no shell interpretation
+ok - the section coordinator propagates ordered failures and bounded cleanup
+ok - bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+ok - an exact request id is matched and supports idempotent replay
+ok - registration publication and binding retirement share one lifecycle boundary
+ok - public extension dispatch exposes no unlocked retirement entry
+ok - concurrent binds serialize adapter ownership through publication
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+not-autohandled: example-file (left for the handler; still unacknowledged)
+ok - package trust and manifest-required capability consent are separate explicit facts
+
+all extension-binding tests passed
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
+ok - retirement worker ownership survives wrapper death and recovers exactly
+ok - group/world-writable package code is rejected
+ok - a non-executable manifest entrypoint is rejected
+ok - the generic runner reuses one request id until that source sequence is durably captured
+ok - all registration owner transitions wait for the prior extension runner
+
+all extension-binding tests passed
+ok - source-root traversal and package-tree symlinks are rejected
+ok - remote receiver rejects malformed, truncated, traversal, link, hash, size, duplicate, and incomplete envelopes
+ok - local binding retirement requires its exact identity and disables invocation
+
+all extension-binding tests passed
+ok - unknown-only protocol and capability versions refuse without downgrade
+ok - hard-linked package code is rejected
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - handshake execution rejects and reaps foreground descendants
+
+all extension-binding tests passed
+ok - failed activation cannot partially publish and retains exact transfer evidence
+
+all extension-binding tests passed
+ok - a project, task-copy, or operational-home package cannot register even when named explicitly
+ok - timeout escalates through invocation-group cleanup and reaps descendants
+not ok - an isolated extension conformance section failed
+not-autohandled: remote-source (left for the handler; still unacknowledged)

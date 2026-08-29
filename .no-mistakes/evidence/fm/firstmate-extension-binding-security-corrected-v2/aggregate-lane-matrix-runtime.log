@@ -1,0 +1,6 @@
+ok - an exact request id is matched and supports idempotent replay
+ok - the generic runner reuses one request id until that source sequence is durably captured
+ok - timeout escalates through invocation-group cleanup and reaps descendants
+ok - a missing package executable refuses instead of falling back
+
+all extension-binding tests passed

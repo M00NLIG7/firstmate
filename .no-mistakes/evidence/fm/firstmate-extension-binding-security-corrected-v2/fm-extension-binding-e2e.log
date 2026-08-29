@@ -1,0 +1,68 @@
+ok - unknown extension conformance section selectors fail before setup
+ok - an absent home-local registry is inert, state-free, and ignores project/environment discovery
+ok - source configuration references cross one JSON envelope with no shell interpretation
+ok - the section coordinator propagates ordered failures and bounded cleanup
+ok - an exact request id is matched and supports idempotent replay
+ok - bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding
+ok - registration publication and binding retirement share one lifecycle boundary
+not-autohandled: example-file (left for the handler; still unacknowledged)
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+ok - public extension dispatch exposes no unlocked retirement entry
+ok - concurrent binds serialize adapter ownership through publication
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - package trust and manifest-required capability consent are separate explicit facts
+
+all extension-binding tests passed
+ok - the generic runner reuses one request id until that source sequence is durably captured
+ok - group/world-writable package code is rejected
+ok - retirement worker ownership survives wrapper death and recovers exactly
+ok - handshake execution rejects and reaps foreground descendants
+
+all extension-binding tests passed
+ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
+ok - a non-executable manifest entrypoint is rejected
+ok - unknown-only protocol and capability versions refuse without downgrade
+ok - source-root traversal and package-tree symlinks are rejected
+ok - all registration owner transitions wait for the prior extension runner
+
+all extension-binding tests passed
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - hard-linked package code is rejected
+ok - remote receiver rejects malformed, truncated, traversal, link, hash, size, duplicate, and incomplete envelopes
+ok - local binding retirement requires its exact identity and disables invocation
+
+all extension-binding tests passed
+ok - timeout escalates through invocation-group cleanup and reaps descendants
+ok - failed activation cannot partially publish and retains exact transfer evidence
+
+all extension-binding tests passed
+ok - a project, task-copy, or operational-home package cannot register even when named explicitly
+ok - binding mode and complete installed code-tree digest are revalidated
+ok - manifest entrypoint traversal is rejected before execution
+ok - signal interruption leaves lifecycle lock recovery to the next owner
+
+all extension-binding tests passed
+ok - a missing package executable refuses instead of falling back
+
+all extension-binding tests passed
+ok - manifest JSON rejects duplicate and unknown fields instead of widening into plugin hooks
+
+all extension-binding tests passed
+ok - the exact executable identity cannot change underneath a binding
+
+all extension-binding tests passed
+ok - malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, and foreground leaked-process responses are rejected
+ok - handshake request identity, exact fields, JSON, and process exit are validated before enablement
+ok - process cleanup never adopts a proven-unrelated same-user process
+
+all extension-binding tests passed
+not run - foreign-owner fixture requires chown privilege
+
+all extension-binding tests passed
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - post-registration inbox symlink substitution cannot redirect extension evidence
+ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
+
+all extension-binding tests passed
+not ok - an isolated extension conformance section failed

@@ -1,0 +1,5 @@
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - remote retirement refuses ambiguous drift and resumes an exact crash cut
+ok - remote retirement and refusal checks run against an isolated addressed home
+
+all extension-binding tests passed

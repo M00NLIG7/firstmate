@@ -1,0 +1,20 @@
+ok - unknown extension conformance section selectors fail before setup
+ok - an absent home-local registry is inert, state-free, and ignores project/environment discovery
+ok - source configuration references cross one JSON envelope with no shell interpretation
+ok - the section coordinator propagates ordered failures and bounded cleanup
+ok - registration publication and binding retirement share one lifecycle boundary
+ok - bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding
+ok - public extension dispatch exposes no unlocked retirement entry
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+ok - an exact request id is matched and supports idempotent replay
+not-autohandled: example-file (left for the handler; still unacknowledged)
+ok - concurrent binds serialize adapter ownership through publication
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - retirement worker ownership survives wrapper death and recovers exactly
+ok - package trust and manifest-required capability consent are separate explicit facts
+
+all extension-binding tests passed
+not ok - an isolated extension conformance section failed
+OUTER_EXIT=1
+not-autohandled: remote-source (left for the handler; still unacknowledged)

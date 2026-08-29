@@ -1,0 +1,5 @@
+ok - source configuration references cross one JSON envelope with no shell interpretation
+ok - malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, and foreground leaked-process responses are rejected
+ok - process cleanup never adopts a proven-unrelated same-user process
+
+all extension-binding tests passed

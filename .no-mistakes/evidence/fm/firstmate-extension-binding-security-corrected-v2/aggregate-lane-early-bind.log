@@ -1,0 +1,6 @@
+ok - an absent home-local registry is inert, state-free, and ignores project/environment discovery
+ok - bind computes a content-addressed package, negotiates v1, and publishes an inspectable binding
+ok - concurrent binds serialize adapter ownership through publication
+ok - package trust and manifest-required capability consent are separate explicit facts
+
+all extension-binding tests passed

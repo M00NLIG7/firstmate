@@ -1,0 +1,4 @@
+ok - binding mode and complete installed code-tree digest are revalidated
+ok - the exact executable identity cannot change underneath a binding
+
+all extension-binding tests passed
