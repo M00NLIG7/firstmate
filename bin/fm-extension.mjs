@@ -1494,11 +1494,13 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
   const claimToken = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN;
   const sourceId = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID;
   const sequence = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE;
+  const parentPid = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID;
   if (!activeLifecycleLock || (operation !== "result.terminal" && operation !== "result.silent")
       || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)
       || !/^[0-9]+$/.test(claimPid || "") || typeof claimIdentity !== "string"
       || !/^[A-Za-z0-9._-]{1,256}$/.test(claimToken || "")
-      || !/^[A-Za-z0-9._-]{1,64}$/.test(sourceId || "") || !/^[0-9]+$/.test(sequence || "")) return null;
+      || !/^[A-Za-z0-9._-]{1,64}$/.test(sourceId || "") || !/^[0-9]+$/.test(sequence || "")
+      || parentPid !== claimPid) return null;
   const match = resultFile.match(/^\.\/([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$/);
   if (!match) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
   if (match[1] !== sourceId || match[2] !== sequence) fail("path-unsafe", "captured result does not match its active claim");
@@ -1942,7 +1944,7 @@ async function retirePublishedTransfer(home, published, receipt) {
 
 async function assertLifecycleLockOwned() {
   if (!activeLifecycleLock) fail("lifecycle-lock-invalid", "retirement has no lifecycle lock ownership");
-  const { lockPath, ownerPath } = activeLifecycleLock;
+  const { lockPath, ownerPath, delegatedOwnerPid } = activeLifecycleLock;
   const lockInfo = await maybeLstat(lockPath);
   if (!lockInfo?.isSymbolicLink()) fail("lifecycle-lock-lost", "retirement lifecycle lock is no longer held");
   const target = await readlink(lockPath).catch(() => fail("lifecycle-lock-lost", "retirement lifecycle lock cannot be read"));
@@ -1958,7 +1960,7 @@ async function assertLifecycleLockOwned() {
     fail("lifecycle-lock-invalid", "retirement lifecycle lock pid is unsafe");
   }
   const pid = (await readFile(pidPath, "utf8")).trim();
-  if (pid !== String(process.pid)) fail("lifecycle-lock-lost", "retirement process does not own the lifecycle lock");
+  if (pid !== String(delegatedOwnerPid || process.pid)) fail("lifecycle-lock-lost", "retirement process does not own the lifecycle lock");
 }
 
 async function claimInheritedLifecycleLock(home) {
@@ -1972,7 +1974,12 @@ async function claimInheritedLifecycleLock(home) {
       || !path.basename(ownerPath).startsWith(`${path.basename(lockPath)}.owner.`)) {
     fail("lifecycle-lock-invalid", "retirement lifecycle lock identity is invalid");
   }
-  activeLifecycleLock = { lockPath, ownerPath };
+  const delegatedOwnerPid = mode === "process-event" ? process.env.FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID : null;
+  if (delegatedOwnerPid !== null && (!/^[0-9]+$/.test(delegatedOwnerPid)
+      || process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID !== delegatedOwnerPid)) {
+    fail("lifecycle-lock-invalid", "capture lifecycle handoff is invalid");
+  }
+  activeLifecycleLock = { lockPath, ownerPath, delegatedOwnerPid };
   await assertLifecycleLockOwned();
   return mode;
 }
@@ -2211,18 +2218,12 @@ async function runLifecycleProcessEvent(args) {
   const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
-  if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
   if (process.env.FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD === "1") env.FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD = "1";
-  const hasCaptureReservation = args.includes("--capture-reservation")
-    && process.env.FM_PROCEVENT_CAPTURE_INBOX_FD === "8";
-  const stdio = hasCaptureReservation
-    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", "ignore", "inherit"]
-    : ["ignore", "pipe", "pipe"];
   const child = spawn(command, ["extension-process-event", ...args], {
-    cwd: hasCaptureReservation ? process.cwd() : CODE_ROOT,
+    cwd: CODE_ROOT,
     env,
     shell: false,
-    stdio,
+    stdio: ["ignore", "pipe", "pipe"],
   });
   const stdout = [];
   const stderr = [];

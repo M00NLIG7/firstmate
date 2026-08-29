@@ -551,7 +551,8 @@ fm_procevent_capture_reservation_remove_claim() {  # <state> <claim-token>
   reservation=$(fm_procevent_capture_reservation_dir "$state")
   [ -d "$reservation" ] || return 0
   fm_procevent_private_directory_valid "$reservation" 1 || return 1
-  for record in "$reservation"/.extension-capture-"$token".*.json; do
+  for record in "$reservation"/.extension-capture-"$token".*.json \
+    "$reservation"/.extension-capture-"$token".*.consumed-*; do
     [ -e "$record" ] || continue
     [ -f "$record" ] && [ ! -L "$record" ] || return 1
     rm -f -- "$record" || return 1

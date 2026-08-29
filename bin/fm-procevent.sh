@@ -217,7 +217,7 @@ cleanup_extension_registration_invocations_locked() {  # <source-id>
 # sidecar, not the current adapter name alone, supplies every expected binding
 # field, so replacing a binding cannot reinterpret old evidence.
 extension_result_command() {  # <adapter> <operation> <result-file>
-  local adapter=$1 operation=$2 result=$3 owner_state reservation=''
+  local adapter=$1 operation=$2 result=$3 owner_state reservation='' owner
   fm_procevent_result_extension_load "$result"
   owner_state=$?
   [ "$owner_state" -eq 0 ] || return 1
@@ -233,7 +233,24 @@ extension_result_command() {  # <adapter> <operation> <result-file>
     --expect-capability-version "$FM_PROCEVENT_RESULT_EXTENSION_CAPABILITY_VERSION"
     --expect-package-digest "$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST"
     --expect-binding-digest "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST")
-  [ -z "$reservation" ] || command+=(--capture-reservation "$reservation")
+  if [ -n "$reservation" ]; then
+    extension_lifecycle_lock_acquire || return 1
+    owner=${FM_LOCK_OWNER_DIR:-}
+    [ -n "$owner" ] || { extension_lifecycle_lock_release; return 1; }
+    CDPATH='' cd -P -- /dev/fd/8 2>/dev/null || { extension_lifecycle_lock_release; return 1; }
+    FM_EXTENSION_RETIREMENT_MODE=process-event \
+      FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK" \
+      FM_EXTENSION_LIFECYCLE_OWNER="$owner" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$reservation" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$CLAIM_PID" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY="$(fm_pid_identity "$CLAIM_PID")" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN="$CLAIM_TOKEN" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID="$CLAIM_ID" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE="$(fm_procevent_result_sequence "$result")" \
+      FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID="$$" \
+      "$EXTENSION_HOST" "${command[@]:1}"
+    return $?
+  fi
   "${command[@]}"
 }
 
@@ -799,21 +816,6 @@ EOF
     publish_pending "$durable" >/dev/null
   fi
   [ "$extension_owner" -eq 1 ] || rm -f -- "$runner"
-  # The result is already durable, so retiring an ended source here cannot cost
-  # its captured output; if publication failed, later reconciliation can still
-  # announce that inbox result without a registration. Leaving the source armed
-  # would instead let every reconcile restart a source that only returns empty
-  # ended results.
-  if adapter_result_is_terminal "$adapter" "$durable"; then
-    if retire_owned_terminal_source "$id"; then
-      printf 'retired: %s (adapter classified the captured result terminal)\n' "$id"
-    else
-      printf 'cannot retire terminal source; it remains registered: %s\n' "$id" >&2
-    fi
-  fi
-  # Strictly after the terminal retirement above: a handling adapter re-arms its
-  # own next source, and retiring afterwards would drop that fresh registration
-  # and leave the source silently dead.
   if [ "$self_announcing" -eq 1 ]; then
     if adapter_autohandle "$adapter" "$id" "$durable"; then
       printf 'autohandled: %s\n' "$id"
@@ -835,6 +837,13 @@ EOF
     printf 'autohandled: %s\n' "$id"
   else
     printf 'not-autohandled: %s (left for the handler; still unacknowledged)\n' "$id" >&2
+  fi
+  if adapter_result_is_terminal "$adapter" "$durable"; then
+    if retire_owned_terminal_source "$id"; then
+      printf 'retired: %s (adapter classified the captured result terminal)\n' "$id"
+    else
+      printf 'cannot retire terminal source; it remains registered: %s\n' "$id" >&2
+    fi
   fi
   printf 'captured: %s\n' "$durable"
   if [ "$extension_owner" -eq 1 ]; then
@@ -1407,68 +1416,18 @@ cmd_extension_bind() {
 }
 
 cmd_extension_process_event() {
-  local owner reservation='' operation='' arg result='' binding_digest='' source_id sequence lock_held=0
-  local -a forwarded=()
+  local owner arg
   [ "$#" -ge 2 ] || die "extension-process-event requires process-event arguments"
-  operation=$2
-  case "$operation" in result.classify|result.terminal|result.silent) ;; *) operation='' ;; esac
-  while [ "$#" -gt 0 ]; do
-    arg=$1
-    shift
-    if [ "$arg" = --capture-reservation ]; then
-      [ -n "$operation" ] && [ -z "$reservation" ] && [ "$#" -gt 0 ] \
-        || die "invalid capture reservation"
-      reservation=$1
-      shift
-      case "$reservation" in
-        *[!a-f0-9]*|?????????????????????????????????????????????????????????????????*) die "invalid capture reservation" ;;
-        ????????????????????????????????????????????????????????????????) ;;
-        *) die "invalid capture reservation" ;;
-      esac
-      continue
-    fi
-    forwarded+=("$arg")
+  for arg in "$@"; do
+    [ "$arg" != --capture-reservation ] || die "capture reservation is internal"
   done
-  if [ -n "$reservation" ]; then
-    for ((arg=0; arg<${#forwarded[@]}; arg+=2)); do
-      case "${forwarded[arg]}" in
-        --result-file) result=${forwarded[arg + 1]-} ;;
-        --expect-binding-digest) binding_digest=${forwarded[arg + 1]-} ;;
-      esac
-    done
-    if [[ "$result" =~ ^\./([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$ ]] \
-      && fm_procevent_digest_valid "$binding_digest"; then
-      source_id=${BASH_REMATCH[1]}
-      sequence=${BASH_REMATCH[2]}
-    else
-      die "invalid capture reservation"
-    fi
-    [ "${FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD:-}" = 1 ] && lock_held=1
-    [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_acquire "$source_id" || die "cannot lock capture reservation source"
-    if ! fm_procevent_claim_load_locked "$source_id" 2>/dev/null \
-      || [ "$FM_PROCEVENT_CLAIM_HOME" != "$FM_HOME" ] \
-      || [ "$FM_PROCEVENT_CLAIM_TERMINAL" != active ] \
-      || ! fm_procevent_pid_state "$FM_PROCEVENT_CLAIM_PID" "$FM_PROCEVENT_CLAIM_IDENTITY"; then
-      [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_release "$source_id" 2>/dev/null || true
-      die "capture reservation has no active owner"
-    fi
-    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$FM_PROCEVENT_CLAIM_PID"
-    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY="$FM_PROCEVENT_CLAIM_IDENTITY"
-    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN="$FM_PROCEVENT_CLAIM_TOKEN"
-    export FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID="$source_id"
-    export FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE="$sequence"
-    [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_release "$source_id" 2>/dev/null || die "cannot release capture reservation source"
-  fi
   extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
   owner=${FM_LOCK_OWNER_DIR:-}
   [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
   export FM_EXTENSION_RETIREMENT_MODE=process-event
   export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
   export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
-  if [ -n "$reservation" ]; then
-    export FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$reservation"
-  fi
-  exec "$EXTENSION_HOST" process-event "${forwarded[@]}"
+  exec "$EXTENSION_HOST" process-event "$@"
 }
 
 unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
@@ -1476,7 +1435,7 @@ unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
   FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION \
   FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY \
   FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID \
-  FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE
+  FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID
 { exec 7<&-; } 2>/dev/null || true
 { exec 6<&-; } 2>/dev/null || true
 { exec 9<&-; } 2>/dev/null || true
