@@ -203,8 +203,7 @@ family_for_basename() {
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
     fm-crew-state.test.sh|fm-captain-hold-lifecycle.test.sh|\
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
-    fm-harness-adapter-references.test.sh|fm-kimi-harness.test.sh|fm-muse-harness.test.sh|\
-    fm-herdr-lab.test.sh|fm-lint.test.sh|\
+    fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-send-popup-settle.test.sh|fm-send-settle.test.sh|\
@@ -1205,9 +1204,6 @@ families_for_changed_path() {
     .agents/skills/quota-array-dispatch/SKILL.md)
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
-      ;;
-    .agents/skills/harness-adapters/SKILL.md|.agents/skills/harness-adapters/references/*)
-      printf '%s\n' pure-contract-unit
       ;;
     .agents/skills/*/SKILL.md)
       printf '%s\n' pure-contract-unit

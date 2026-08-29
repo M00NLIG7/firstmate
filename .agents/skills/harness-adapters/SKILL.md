@@ -41,6 +41,7 @@ Muse is verified only for crewmate and scout work, never a secondmate or primary
 
 `../../../bin/fm-harness.sh` prints firstmate's own harness from verified environment markers, then process ancestry.
 Only `FM_PI_HARNESS=pi-signed` at the launch boundary together with `PI_CODING_AGENT=true` selects Pi-signed; shared unmarked launcher ancestry remains Pi.
+`../../../bin/fm-spawn.sh` owns worker marker establishment, while the README launch command owns the signed-primary boundary.
 `../../../bin/fm-harness.sh crew` resolves `config/crew-harness`, where absent or `default` means firstmate's own harness.
 `../../../bin/fm-harness.sh secondmate` resolves `config/secondmate-harness` -> `config/crew-harness` -> firstmate's own harness.
 `../../../bin/fm-spawn.sh` re-resolves on every spawn, and an explicit per-spawn argument wins for that spawn.
@@ -51,7 +52,7 @@ A new adapter's verified marker and command name must land in `../../../bin/fm-h
 Every emitted plan appends the selected or recorded harness reference after the named common references.
 The `harness-adapter-routing-v1` object is the machine-readable and human-visible selection contract: choose the operation, choose the scenario within it, then append the selected harness reference.
 `default` is the normal scenario when no narrower scenario applies.
-Kimi and Muse establish their unsupported primary boundary in their selected harness reference.
+Kimi establishes its unsupported primary boundary in its selected harness reference; Muse follows Non-negotiable safety above.
 A new tool remains undispatchable until the `verify` plan, its harness entry, every named owner, and the live checks land.
 
 ```json harness-adapter-routing-v1

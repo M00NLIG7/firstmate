@@ -18,7 +18,7 @@ Verified on 2026-07-25 with Kimi Code CLI 0.29.1.
 | Slash submission | One Enter submits, with no popup swallow or settle hazard. |
 | Environment marker | None; detection uses process ancestry command name `kimi`. |
 | Composer | Bordered box with a bare `>` prompt glyph and no observed ghost or placeholder text. |
-| Effort | No reasoning-effort flag; requested effort is recorded in task metadata and omitted from launch. |
+| Effort | No verified reasoning-effort flag; `references/common/model-and-effort.md` owns unsupported-value handling. |
 
 ## Readiness-gated start
 

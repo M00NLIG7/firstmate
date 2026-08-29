@@ -1,7 +1,7 @@
 # Muse Code
 
 Verified 2026-08-05 on Muse Code 0.1.0-R708.1, build sha 427a430436.
-Muse is crew or scout only; the spawn refuses secondmates, and a detected Muse primary has no protocol beyond unknown.
+The router owns Muse's task-kind boundary.
 
 ## Operating facts
 
@@ -67,4 +67,4 @@ Inspect, never force past, that refusal.
 Muse 0.1.0 is day-zero beta; its hourly channel poll can replace the binary and process name.
 The captain accepted this, so Firstmate does not set `MUSE_NO_AUTO_UPDATE=1`; a fleet may set it without adapter change.
 Plugins report unavailable unless `MUSE_EXPERIMENTAL_PLUGINS=on`, so busy state uses logs.
-The compatibility dialect explicitly lacks `asyncRewake` and model reawakening, so it cannot provide primary supervision.
+The compatibility dialect explicitly lacks `asyncRewake` and model reawakening; the router owns the resulting primary boundary.
