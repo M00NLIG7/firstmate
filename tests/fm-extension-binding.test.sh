@@ -18,7 +18,7 @@ fi
 
 extension_segment=${FM_EXTENSION_BINDING_SEGMENT:-all}
 case "$extension_segment" in
-  all|coordinator|early-bind|early-validation|early-integrity|matrix|lifecycle-flow|lifecycle-lock|lifecycle-state|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass|coordinator-scheduler-block|coordinator-scheduler-late) ;;
+  all|coordinator|early-bind|early-validation|early-handshake|early-integrity|matrix|matrix-runtime|lifecycle-flow|lifecycle-lock|lifecycle-runner|lifecycle-state|lifecycle-invocation-cleanup|remote-envelope|remote-activation|remote-lifecycle|remote-retirement|example|coordinator-fail|coordinator-wait|coordinator-stubborn|coordinator-pass|coordinator-late-pass|coordinator-scheduler-block|coordinator-scheduler-late) ;;
   *) printf 'unknown extension-binding segment: %s\n' "$extension_segment" >&2; exit 64 ;;
 esac
 
@@ -43,6 +43,11 @@ active_runner_release=
 remote_active_release=
 unrelated_daemon_pid=
 unrelated_launcher_pid=
+signal_cleanup_host_pid=
+signal_cleanup_group_pid=
+crash_cleanup_host_pid=
+crash_cleanup_group_pid=
+crash_cleanup_release=
 section_coordinator_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
@@ -61,6 +66,11 @@ extension_test_cleanup() {
   [ -z "$remote_active_release" ] || touch "$remote_active_release" 2>/dev/null || true
   [ -z "$unrelated_daemon_pid" ] || kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
   [ -z "$unrelated_launcher_pid" ] || kill -KILL "$unrelated_launcher_pid" 2>/dev/null || true
+  [ -z "$signal_cleanup_host_pid" ] || kill -KILL "$signal_cleanup_host_pid" 2>/dev/null || true
+  [ -z "$signal_cleanup_group_pid" ] || kill -KILL -"$signal_cleanup_group_pid" 2>/dev/null || true
+  [ -z "$crash_cleanup_host_pid" ] || kill -KILL "$crash_cleanup_host_pid" 2>/dev/null || true
+  [ -z "$crash_cleanup_group_pid" ] || kill -KILL -"$crash_cleanup_group_pid" 2>/dev/null || true
+  [ -z "$crash_cleanup_release" ] || touch "$crash_cleanup_release" 2>/dev/null || true
   [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
   if [ -n "$section_coordinator_pid" ]; then
     kill -TERM "$section_coordinator_pid" 2>/dev/null || true
@@ -378,34 +388,40 @@ run_extension_section_lane() {
 }
 
 run_extension_section_lanes() {
-  local section section_pid result_file section_rc timeout_seconds deadline index remaining launched total maximum_sections
+  local section result_file section_rc timeout_seconds deadline index remaining launched total maximum_sections
+  local active maximum_concurrent
+  local -a sections=("$@")
   local -a section_pids=()
   local -a section_results=()
   local -a section_complete=()
   local section_result_root
-  timeout_seconds=${FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS:-30}
+  timeout_seconds=${FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS:-32}
   case "$timeout_seconds" in
     ''|*[!0-9]*) return 64 ;;
   esac
   [ "$timeout_seconds" -gt 0 ] && [ "$timeout_seconds" -lt 35 ] || return 64
   section_result_root=$(mktemp -d "$TMP_ROOT/section-lanes.XXXXXX") || return 1
-  total=$#
-  # The aggregate's validated isolated allowlist has twelve sections.
-  maximum_sections=12
+  total=${#sections[@]}
+  # Sixteen selectors are validated here. The default aggregate runs the
+  # original coverage in fifteen lanes; the new interruption crash cut keeps a
+  # dedicated focused command so the unchanged 35-second contract stays real.
+  maximum_sections=16
+  maximum_concurrent=12
   [ "$total" -le "$maximum_sections" ] || return 64
   launched=0
-  while [ "$launched" -lt "$total" ]; do
-    section=$1
-    shift
-    result_file="$section_result_root/${#section_pids[@]}.result"
+  active=0
+  while [ "$launched" -lt "$total" ] && [ "$active" -lt "$maximum_concurrent" ]; do
+    section=${sections[$launched]}
+    result_file="$section_result_root/$launched.result"
     run_extension_section_lane "$result_file" "$section" &
     section_pids+=("$!")
     section_results+=("$result_file")
     section_complete+=("")
     launched=$((launched + 1))
+    active=$((active + 1))
   done
   deadline=$((SECONDS + timeout_seconds))
-  remaining=${#section_pids[@]}
+  remaining=$total
   while [ "$remaining" -gt 0 ]; do
     for index in "${!section_pids[@]}"; do
       [ -n "${section_complete[$index]:-}" ] && continue
@@ -414,13 +430,14 @@ run_extension_section_lanes() {
       section_rc=$(cat "$result_file")
       case "$section_rc" in
         0)
-          section_complete[index]=1
-          remaining=$((remaining - 1))
           wait "${section_pids[$index]}" || {
             section_rc=$?
             terminate_section_lanes
             return "$section_rc"
           }
+          section_complete[index]=1
+          remaining=$((remaining - 1))
+          active=$((active - 1))
           ;;
         ''|*[!0-9]*)
           terminate_section_lanes
@@ -432,19 +449,22 @@ run_extension_section_lanes() {
           ;;
       esac
     done
+    while [ "$launched" -lt "$total" ] && [ "$active" -lt "$maximum_concurrent" ]; do
+      section=${sections[$launched]}
+      result_file="$section_result_root/$launched.result"
+      run_extension_section_lane "$result_file" "$section" &
+      section_pids+=("$!")
+      section_results+=("$result_file")
+      section_complete+=("")
+      launched=$((launched + 1))
+      active=$((active + 1))
+    done
     [ "$remaining" -eq 0 ] && break
     if [ "$SECONDS" -ge "$deadline" ]; then
       terminate_section_lanes
       return 124
     fi
     sleep 0.05
-  done
-  for section_pid in "${section_pids[@]}"; do
-    wait "$section_pid" || {
-      section_rc=$?
-      terminate_section_lanes
-      return "$section_rc"
-    }
   done
 }
 
@@ -496,10 +516,10 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
     (
       trap - EXIT HUP INT
       trap 'terminate_section_lanes; exit 143' TERM
-      run_extension_section_lanes lifecycle-lock remote-lifecycle remote-activation matrix \
-        early-validation \
-        remote-envelope early-bind early-integrity remote-retirement lifecycle-state \
-        lifecycle-flow example
+      run_extension_section_lanes matrix matrix-runtime lifecycle-lock lifecycle-state \
+        remote-lifecycle remote-activation remote-retirement lifecycle-flow \
+        example remote-envelope lifecycle-runner early-bind early-validation \
+        early-handshake early-integrity
     ) &
     section_coordinator_pid=$!
   fi
@@ -551,7 +571,8 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
   rm -f "$coordinator_scheduled" "$coordinator_release"
   if run_extension_section_lanes coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
     coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
-    coordinator-pass coordinator-pass coordinator-pass; then
+    coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass coordinator-pass \
+    coordinator-pass; then
     fail "the section coordinator accepted more than its bounded allowlist"
   fi
   if FM_EXTENSION_BINDING_COORDINATOR_TIMEOUT_SECONDS=2 \
@@ -734,7 +755,9 @@ PY
 H_MANIFEST_UNKNOWN="$HOMES/manifest-unknown"; new_home "$H_MANIFEST_UNKNOWN"
 expect_failure "fields must be exactly" bind_package "$H_MANIFEST_UNKNOWN" "$P_MANIFEST_UNKNOWN" ext-manifest-unknown
 pass "manifest JSON rejects duplicate and unknown fields instead of widening into plugin hooks"
+fi
 
+if section_enabled early-handshake; then
 P_PROTOCOL="$PACKAGES/protocol"
 make_package "$P_PROTOCOL" org.example.protocol ext-protocol
 python3 - "$P_PROTOCOL/firstmate-extension.json" <<'PY'
@@ -805,11 +828,11 @@ pass "the exact executable identity cannot change underneath a binding"
 fi
 
 # --- strict invocation matrix, replay, timeout, and process cleanup ----------
-if section_enabled matrix; then
+if section_enabled matrix matrix-runtime; then
 P_MATRIX="$PACKAGES/matrix"
 make_package "$P_MATRIX" org.example.matrix ext-matrix
 H_MATRIX="$HOMES/matrix"; new_home "$H_MATRIX"
-bind_package "$H_MATRIX" "$P_MATRIX" ext-matrix --timeout-ms 2000 >/dev/null
+bind_package "$H_MATRIX" "$P_MATRIX" ext-matrix --timeout-ms 5000 >/dev/null
 resolution=$(FM_HOME="$H_MATRIX" "$HOST" resolve-process-event ext-matrix)
 IFS=$'\t' read -r resolution_schema resolution_id resolution_version resolution_cap resolution_package resolution_binding resolution_extra <<< "$resolution"
 [ "$resolution_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$resolution_extra" ] \
@@ -826,6 +849,8 @@ invoke_matrix() {  # <config-ref> [request-id]
     --expect-binding-digest "$resolution_binding" ${args[@]+"${args[@]}"}
 }
 
+state_root="$H_MATRIX/state/extensions/org.example.matrix"
+if section_enabled matrix; then
 shell_sentinel="$TMP_ROOT/extension-shell-sentinel"
 literal_ref="\$(touch $shell_sentinel); one arg; *"
 literal_out=$(invoke_matrix "$literal_ref")
@@ -835,24 +860,12 @@ pass "source configuration references cross one JSON envelope with no shell inte
 
 matrix_cases="$TMP_ROOT/matrix-cases"
 mkdir -p "$matrix_cases"
-declare -a matrix_case_pids=()
 for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
-  (
-    trap - EXIT HUP INT TERM
-    rc=0
-    out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
-    printf '%s\n' "$rc" > "$matrix_cases/$scenario.rc"
-    printf '%s' "$out" > "$matrix_cases/$scenario.out"
-  ) &
-  matrix_case_pids+=("$!")
-  if [ "${#matrix_case_pids[@]}" -eq 4 ]; then
-    for matrix_case_pid in "${matrix_case_pids[@]}"; do wait "$matrix_case_pid"; done
-    matrix_case_pids=()
-  fi
+  rc=0
+  out=$(invoke_matrix "$scenario" 2>&1) || rc=$?
+  printf '%s\n' "$rc" > "$matrix_cases/$scenario.rc"
+  printf '%s' "$out" > "$matrix_cases/$scenario.out"
 done
-if [ "${#matrix_case_pids[@]}" -gt 0 ]; then
-  for matrix_case_pid in "${matrix_case_pids[@]}"; do wait "$matrix_case_pid"; done
-fi
 for scenario in malformed invalid-utf8 bom control multiple duplicate wrong-id unknown oversize stderr-oversize nonzero crash leak foreground-leak error-injection authority; do
   rc=$(cat "$matrix_cases/$scenario.rc")
   out=$(cat "$matrix_cases/$scenario.out")
@@ -875,7 +888,6 @@ done
 kill -0 "$rapid_pid" 2>/dev/null && fail "a foreground descendant escaped invocation-group cleanup"
 pass "malformed, invalid UTF-8, BOM, control, multiple, duplicate, unknown, oversized, crash, nonzero, stderr, and foreground leaked-process responses are rejected"
 
-state_root="$H_MATRIX/state/extensions/org.example.matrix"
 overlap_out="$TMP_ROOT/overlap.out"
 invoke_matrix overlap >"$overlap_out" &
 overlap_invoke_pid=$!
@@ -903,7 +915,9 @@ unrelated_launcher_pid=
 kill -KILL "$unrelated_daemon_pid" 2>/dev/null || true
 unrelated_daemon_pid=
 pass "process cleanup never adopts a proven-unrelated same-user process"
+fi
 
+if section_enabled matrix-runtime; then
 fixed_request="sha256:$(printf '1%.0s' $(seq 1 64))"
 out_one=$(invoke_matrix replay "$fixed_request")
 out_two=$(invoke_matrix replay "$fixed_request")
@@ -926,12 +940,25 @@ core_request_ids="$H_CORE_REPLAY/state/extensions/org.example.matrix/request-ids
 FM_HOME="$H_CORE_REPLAY" "$PROCEVENT" retire replay-source --if-owner "$core_token" >/dev/null
 pass "the generic runner reuses one request id until that source sequence is durably captured"
 
+P_TIMEOUT="$PACKAGES/timeout"
+make_package "$P_TIMEOUT" org.example.timeout ext-timeout
+H_TIMEOUT="$HOMES/timeout"; new_home "$H_TIMEOUT"
+bind_package "$H_TIMEOUT" "$P_TIMEOUT" ext-timeout --timeout-ms 500 >/dev/null
+timeout_resolution=$(FM_HOME="$H_TIMEOUT" "$HOST" resolve-process-event ext-timeout)
+IFS=$'\t' read -r timeout_schema timeout_id timeout_version timeout_cap timeout_package timeout_binding timeout_extra <<< "$timeout_resolution"
+[ "$timeout_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$timeout_extra" ] \
+  || fail "timeout resolution record is malformed: $timeout_resolution"
 rc=0
-out=$(invoke_matrix timeout 2>/dev/null) || rc=$?
+out=$(FM_HOME="$H_TIMEOUT" "$HOST" process-event ext-timeout source.poll \
+  --source-id timeout-source --config-ref timeout \
+  --expect-extension "$timeout_id" --expect-version "$timeout_version" \
+  --expect-capability-version "$timeout_cap" \
+  --expect-package-digest "$timeout_package" --expect-binding-digest "$timeout_binding" 2>/dev/null) || rc=$?
 [ "$rc" -ne 0 ] || fail "timed-out extension invocation succeeded"
 assert_contains "$out" '"code":"timeout"' "timeout did not produce deterministic bounded evidence"
-wait_for_file "$state_root/descendant.pid" || fail "timeout fixture never started its descendant"
-descendant=$(cat "$state_root/descendant.pid")
+timeout_state_root="$H_TIMEOUT/state/extensions/org.example.timeout"
+wait_for_file "$timeout_state_root/descendant.pid" || fail "timeout fixture never started its descendant"
+descendant=$(cat "$timeout_state_root/descendant.pid")
 for _ in $(seq 1 50); do
   kill -0 "$descendant" 2>/dev/null || break
   sleep 0.05
@@ -952,6 +979,7 @@ chmod 0555 "$missing_root"
 resolution_missing=$(FM_HOME="$H_MISSING" "$HOST" inspect org.example.missing 2>&1 || true)
 assert_contains "$resolution_missing" "manifest entrypoint is missing" "missing executable was not diagnosed"
 pass "a missing package executable refuses instead of falling back"
+fi
 fi
 
 # --- registration, invocation, unhandled capture, and binding retirement -----
@@ -1006,8 +1034,6 @@ fi
 
 # --- registration and retirement serialization plus lock recovery -------------
 if section_enabled lifecycle-lock; then
-P_FLOW="$PACKAGES/flow"
-make_package "$P_FLOW" org.example.flow ext-flow
 wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
 P_RETIRE_RACE="$PACKAGES/retire-race"
 race_marker="$TMP_ROOT/retire-race.marker"
@@ -1124,7 +1150,11 @@ assert_absent "$signal_lock" "registration left a recovered lifecycle lock behin
 FM_HOME="$H_SIGNAL_LOCK" "$PROCEVENT" retire signal-source --if-owner "$signal_owner" >/dev/null
 FM_HOME="$H_SIGNAL_LOCK" "$HOST" retire-binding org.example.signal-lock --if-binding-digest "$signal_binding_digest" >/dev/null
 pass "signal interruption leaves lifecycle lock recovery to the next owner"
+fi
 
+if section_enabled lifecycle-runner; then
+P_FLOW="$PACKAGES/flow"
+make_package "$P_FLOW" org.example.flow ext-flow
 H_ACTIVE_RUNNER="$HOMES/active-runner"; new_home "$H_ACTIVE_RUNNER"
 bind_package "$H_ACTIVE_RUNNER" "$P_FLOW" ext-flow >/dev/null
 active_runner_marker="$TMP_ROOT/active-runner.marker"
@@ -1216,6 +1246,121 @@ FM_HOME="$H_LEGACY" "$PROCEVENT" retire legacy-source --if-matches lavish -- /bi
 pass "legacy built-in registrations retain behavior and gain exact conditional retirement"
 fi
 
+# --- static launch barrier and signal/crash cleanup --------------------------
+if section_enabled lifecycle-invocation-cleanup; then
+P_INVOCATION_CLEANUP="$PACKAGES/invocation-cleanup"
+make_package "$P_INVOCATION_CLEANUP" org.example.invocation-cleanup ext-invocation-cleanup
+H_INVOCATION_CLEANUP="$HOMES/invocation-cleanup"; new_home "$H_INVOCATION_CLEANUP"
+cleanup_bind=$(bind_package "$H_INVOCATION_CLEANUP" "$P_INVOCATION_CLEANUP" ext-invocation-cleanup)
+cleanup_binding_digest=$(printf '%s\n' "$cleanup_bind" | sed -n 's/^binding-digest: //p')
+cleanup_resolution=$(FM_HOME="$H_INVOCATION_CLEANUP" "$HOST" resolve-process-event ext-invocation-cleanup)
+IFS=$'\t' read -r cleanup_schema cleanup_id cleanup_version cleanup_cap cleanup_package cleanup_binding cleanup_extra <<< "$cleanup_resolution"
+[ "$cleanup_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$cleanup_extra" ] \
+  || fail "cleanup resolution record is malformed: $cleanup_resolution"
+
+invoke_cleanup() {  # <config-ref> [host command...]
+  local config_ref=$1
+  shift
+  FM_HOME="$H_INVOCATION_CLEANUP" "$@" process-event ext-invocation-cleanup source.poll \
+    --source-id invocation-cleanup-source --config-ref "$config_ref" \
+    --expect-extension "$cleanup_id" --expect-version "$cleanup_version" \
+    --expect-capability-version "$cleanup_cap" \
+    --expect-package-digest "$cleanup_package" --expect-binding-digest "$cleanup_binding"
+}
+
+first_invocation_owner() {  # <home>
+  local candidate
+  for candidate in "$1/state/extension-invocations"/*.owner.json; do
+    [ -f "$candidate" ] || continue
+    printf '%s\n' "$candidate"
+    return 0
+  done
+  return 1
+}
+
+wait_for_invocation_owner() {  # <home>
+  local candidate
+  for _ in $(seq 1 200); do
+    candidate=$(first_invocation_owner "$1" 2>/dev/null || true)
+    [ -n "$candidate" ] && { printf '%s\n' "$candidate"; return 0; }
+    sleep 0.01
+  done
+  return 1
+}
+
+owner_group_pid() {  # <owner-file>
+  node -e 'const fs=require("fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(value.phase!=="group"||!Number.isSafeInteger(value.group_pid))process.exit(1);process.stdout.write(String(value.group_pid));' "$1"
+}
+
+guarded_out=$(invoke_cleanup guarded node --disallow-code-generation-from-strings "$HOST")
+assert_contains "$guarded_out" "external evidence: guarded" \
+  "the tracked static launch barrier failed under Node's no-dynamic-code guard"
+pass "extension launch uses a tracked static core barrier without dynamic code evaluation"
+
+signal_state="$H_INVOCATION_CLEANUP/state/extensions/org.example.invocation-cleanup"
+rm -f "$signal_state/descendant.pid"
+FM_HOME="$H_INVOCATION_CLEANUP" "$HOST" process-event ext-invocation-cleanup source.poll \
+  --source-id invocation-cleanup-source --config-ref timeout \
+  --expect-extension "$cleanup_id" --expect-version "$cleanup_version" \
+  --expect-capability-version "$cleanup_cap" \
+  --expect-package-digest "$cleanup_package" --expect-binding-digest "$cleanup_binding" \
+  > "$TMP_ROOT/invocation-signal.out" 2>&1 &
+signal_cleanup_host_pid=$!
+wait_for_file "$signal_state/descendant.pid" || fail "signal cleanup fixture never started its descendant"
+signal_owner=$(wait_for_invocation_owner "$H_INVOCATION_CLEANUP") \
+  || fail "signal cleanup fixture published no invocation owner"
+signal_cleanup_group_pid=$(owner_group_pid "$signal_owner") \
+  || fail "signal cleanup fixture published no exact process group"
+kill -TERM "$signal_cleanup_host_pid" 2>/dev/null || fail "cannot interrupt the active extension host"
+signal_cleanup_rc=0
+wait "$signal_cleanup_host_pid" || signal_cleanup_rc=$?
+signal_cleanup_host_pid=
+[ "$signal_cleanup_rc" -ne 0 ] || fail "interrupted extension host unexpectedly succeeded"
+if kill -0 -"$signal_cleanup_group_pid" 2>/dev/null; then
+  fail "interrupted extension host exited before its exact process group was gone"
+fi
+signal_descendant=$(cat "$signal_state/descendant.pid")
+kill -0 "$signal_descendant" 2>/dev/null && fail "signal cleanup left the extension descendant alive"
+signal_cleanup_group_pid=
+if first_invocation_owner "$H_INVOCATION_CLEANUP" >/dev/null 2>&1; then
+  fail "successful signal cleanup retained stale invocation ownership"
+fi
+pass "signal interruption proves exact invocation-group extinction before host exit"
+
+crash_marker="$TMP_ROOT/invocation-crash.marker"
+crash_cleanup_release="$TMP_ROOT/invocation-crash.release"
+crash_config="active-block|$crash_marker|$crash_cleanup_release"
+FM_HOME="$H_INVOCATION_CLEANUP" "$HOST" process-event ext-invocation-cleanup source.poll \
+  --source-id invocation-cleanup-source --config-ref "$crash_config" \
+  --expect-extension "$cleanup_id" --expect-version "$cleanup_version" \
+  --expect-capability-version "$cleanup_cap" \
+  --expect-package-digest "$cleanup_package" --expect-binding-digest "$cleanup_binding" \
+  > "$TMP_ROOT/invocation-crash.out" 2>&1 &
+crash_cleanup_host_pid=$!
+wait_for_file "$crash_marker" || fail "crash cleanup fixture never entered extension code"
+crash_owner=$(wait_for_invocation_owner "$H_INVOCATION_CLEANUP") \
+  || fail "crash cleanup fixture published no invocation owner"
+crash_cleanup_group_pid=$(owner_group_pid "$crash_owner") \
+  || fail "crash cleanup fixture published no exact process group"
+crash_entry_pid=$(cat "$crash_marker")
+kill -KILL "$crash_cleanup_host_pid" 2>/dev/null || fail "cannot stop the extension host at the crash cut"
+wait "$crash_cleanup_host_pid" 2>/dev/null || true
+crash_cleanup_host_pid=
+kill -0 -"$crash_cleanup_group_pid" 2>/dev/null \
+  || fail "host crash did not leave the tracked invocation group for recovery"
+FM_HOME="$H_INVOCATION_CLEANUP" "$HOST" retire-binding org.example.invocation-cleanup \
+  --if-binding-digest "$cleanup_binding_digest" >/dev/null
+if kill -0 -"$crash_cleanup_group_pid" 2>/dev/null; then
+  fail "binding retirement completed while its tracked invocation group survived"
+fi
+kill -0 "$crash_entry_pid" 2>/dev/null && fail "binding retirement left the crashed host's extension process alive"
+crash_cleanup_group_pid=
+crash_cleanup_release=
+assert_absent "$H_INVOCATION_CLEANUP/config/extensions.d/org.example.invocation-cleanup.json" \
+  "identity-safe retirement retained the recovered binding"
+pass "host-crash recovery retires only after exact invocation-group extinction"
+fi
+
 # --- independent remote envelope, lifecycle, and retirement paths -----------
 if section_enabled remote-envelope remote-activation remote-lifecycle remote-retirement; then
 wrong_binding_digest="sha256:$(printf '0%.0s' {1..64})"
@@ -1233,12 +1378,12 @@ REMOTE_SSH_COUNT="$TMP_ROOT/remote-ssh.count"
 mkdir -p "$H_REMOTE_CONTROL/data" "$H_REMOTE" "$REMOTE_ROOT/bin"
 printf 'fixture\n' > "$REMOTE_ROOT/AGENTS.md"
 for remote_file in \
-  fm-extension.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh fm-procevent-lavish.sh \
+  fm-extension.mjs fm-extension-launch-barrier.mjs fm-extension.sh fm-procevent.sh fm-procevent-lib.sh fm-procevent-lavish.sh \
   fm-pr-lib.sh fm-wake-lib.sh fm-remote-entrypoint.sh fm-remote-job-lib.sh \
   fm-remote-job-worker.sh; do
   cp "$ROOT/bin/$remote_file" "$REMOTE_ROOT/bin/$remote_file"
 done
-chmod +x "$REMOTE_ROOT/bin"/fm-*.sh "$REMOTE_ROOT/bin/fm-extension.mjs"
+chmod +x "$REMOTE_ROOT/bin"/fm-*.sh "$REMOTE_ROOT/bin/fm-extension.mjs" "$REMOTE_ROOT/bin/fm-extension-launch-barrier.mjs"
 git -C "$REMOTE_ROOT" init -q -b main
 git -C "$REMOTE_ROOT" config user.email test@example.com
 git -C "$REMOTE_ROOT" config user.name Test

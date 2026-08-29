@@ -173,7 +173,7 @@ EXTENSION_HOST="$SCRIPT_DIR/fm-extension.mjs"
 EXTENSION_LIFECYCLE_LOCK="$REG/.extension-binding-lifecycle.lock"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,142p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,/^set -u$/p' "${BASH_SOURCE[0]}" | sed '$d; s/^# \{0,1\}//'; exit 2; }
 
 adapter_script() { printf '%s/bin/fm-procevent-%s.sh\n' "$FM_ROOT" "$1"; }
 
@@ -185,6 +185,31 @@ extension_lifecycle_lock_acquire() {
 
 extension_lifecycle_lock_release() {
   fm_lock_release "$EXTENSION_LIFECYCLE_LOCK"
+}
+
+run_extension_invocation_cleanup() {  # [cleanup selector...]
+  [ -x "$EXTENSION_HOST" ] && [ ! -L "$EXTENSION_HOST" ] || return 1
+  if [ -n "${FM_STATE_OVERRIDE:-}" ]; then
+    FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+      "$EXTENSION_HOST" cleanup-invocations "$@" >/dev/null 2>&1
+  else
+    FM_HOME="$FM_HOME" "$EXTENSION_HOST" cleanup-invocations "$@" >/dev/null 2>&1
+  fi
+}
+
+cleanup_extension_binding_invocations() {  # <binding-digest>
+  run_extension_invocation_cleanup --binding-digest "$1"
+}
+
+cleanup_extension_registration_invocations_locked() {  # <source-id>
+  local owner_state
+  fm_procevent_extension_registration_load_locked "$STATE" "$1"
+  owner_state=$?
+  case "$owner_state" in
+    0) cleanup_extension_binding_invocations "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" ;;
+    1) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # Invoke one captured result through its exact extension owner. The immutable
@@ -843,6 +868,11 @@ cmd_reconcile() {
         fm_procevent_claim_state_locked "$id"
         claim_state=$?
         if [ "$claim_state" -eq 1 ]; then
+          if ! cleanup_extension_registration_invocations_locked "$id"; then
+            uncertain=$((uncertain + 1))
+            fm_procevent_source_lock_release "$id"
+            continue
+          fi
           fm_procevent_source_lock_release "$id"
           detach_runner "$id"
           started=$((started + 1))
@@ -876,6 +906,7 @@ cmd_reconcile() {
             stop_state=$?
           fi
           if [ "$stop_state" -eq 0 ] \
+            && cleanup_extension_registration_invocations_locked "$id" \
             && fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" 2>/dev/null; then
             rm -f -- "$(staging_file "$id" "$token")"
             rm -f -- "$(runner_file "$id")"
@@ -980,6 +1011,7 @@ cmd_handled() {
 
 cmd_retire() {
   local id=${1-} condition=${2-} adapter='' sep='' expected_owner='' owner='' pid='' token='' identity='' stop_state owner_state
+  local extension_binding_digest=''
   fm_procevent_source_id_valid "$id" || die "source id must be path-safe: $id"
   case "$condition" in
     '') [ "$#" -eq 1 ] || usage ;;
@@ -1035,6 +1067,7 @@ cmd_retire() {
           fm_procevent_source_lock_release "$id"
           die "source registration does not match the expected owner: $id"
         fi
+        extension_binding_digest=$FM_PROCEVENT_EXTENSION_BINDING_DIGEST
         ;;
     esac
   elif [ "$condition" = --if-owner ] \
@@ -1058,12 +1091,21 @@ cmd_retire() {
         fm_procevent_source_lock_release "$id"
         die "cannot confirm runner identity; source remains registered: $id"
       fi
+      if [ -n "$extension_binding_digest" ] \
+        && ! cleanup_extension_binding_invocations "$extension_binding_digest"; then
+        fm_procevent_source_lock_release "$id"
+        die "cannot prove external adapter cleanup; source remains registered: $id"
+      fi
       if ! fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token"; then
         fm_procevent_source_lock_release "$id"
         die "cannot release source ownership: $id"
       fi
       rm -f -- "$(staging_file "$id" "$token")"
     fi
+  elif [ -n "$extension_binding_digest" ] \
+    && ! cleanup_extension_binding_invocations "$extension_binding_digest"; then
+    fm_procevent_source_lock_release "$id"
+    die "cannot prove external adapter cleanup; source remains registered: $id"
   fi
   rm -f -- "$(source_file "$id")"
   rm -f -- "$(runner_file "$id")"
@@ -1085,6 +1127,9 @@ sweep_add_id() {
 
 sweep_relevant_state() {
   local path owner
+  for path in "$STATE/extension-invocations"/*.owner.json; do
+    [ -e "$path" ] && return 0
+  done
   for path in "$REG"/*.source "$REG"/*.runner; do
     if [ -e "$path" ] || [ -L "$path" ]; then
       return 0
@@ -1197,6 +1242,9 @@ cmd_sweep_home() {
       failed=$((failed + 1))
     fi
   done <<< "$SWEEP_IDS"
+  if ! run_extension_invocation_cleanup; then
+    failed=$((failed + 1))
+  fi
   if [ "$failed" -ne 0 ] || sweep_relevant_state; then
     printf 'error: process-event home sweep incomplete: attempted=%s failed=%s\n' "$attempted" "$failed" >&2
     return 1

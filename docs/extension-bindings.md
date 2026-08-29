@@ -106,7 +106,9 @@ Logs must use stderr.
 
 Each JSON envelope is limited to 65,536 bytes, extension stderr is limited to 8,192 bytes, and a raw process-event result is limited to 32,768 bytes so it can be carried into later classification requests.
 The parser rejects malformed UTF-8, a byte-order mark, duplicate object keys, unknown fields, unescaped controls, unpaired surrogates, multiple documents, and trailing bytes.
-A host-created process group belongs to exactly one extension invocation. A timeout, output-bound violation, failed response, or successful parent that leaves that group live sends `TERM`, escalates to `KILL`, and rejects the invocation until that exact group is gone.
+A tracked static core launch barrier publishes one exact host-created process group before the host releases package code, without `eval`, generated source, a shell, or a package-controlled bootstrap.
+A timeout, output-bound violation, failed response, host interruption, or successful parent that leaves that group live sends `TERM`, escalates to `KILL`, and rejects the invocation until that exact group is proved gone.
+If the host dies first, its private identity-bound cleanup record keeps source reconciliation, home cleanup, and binding retirement from releasing ownership until a later core invocation proves that exact group extinct; an uncertain or reused live identity is retained and never signalled.
 Extension children must remain foreground members of their invocation group and be owned and reaped by the live entrypoint. Starting another session or process group, changing process groups, double-forking, reparenting, or surviving the entrypoint response violates this protocol contract.
 Trusted same-user code is not an operating-system sandbox: deliberate process-group escape is outside this protocol guarantee. The host never infers ownership from process-table scans or signals contemporaneous same-user processes outside the exact invocation group.
 Extension stderr and failure diagnostics are never copied into a wake or authority-bearing record.

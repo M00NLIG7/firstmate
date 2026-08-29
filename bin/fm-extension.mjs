@@ -14,6 +14,7 @@
 //   fm-extension.mjs verify [extension-id]
 //   fm-extension.mjs resolve-process-event <adapter>
 //   fm-extension.mjs process-event <adapter> <operation> [internal options]
+//   fm-extension.mjs cleanup-invocations [--source-id <id> | --binding-digest <sha256:digest>]
 //
 // bind      Validate a package, copy its complete tree into this home's
 //           content-addressed read-only package store, perform the protocol
@@ -79,6 +80,7 @@ import { TextDecoder } from "node:util";
 
 const SELF = fileURLToPath(import.meta.url);
 const CODE_ROOT = path.dirname(path.dirname(SELF));
+const LAUNCH_BARRIER = path.join(CODE_ROOT, "bin", "fm-extension-launch-barrier.mjs");
 const MANIFEST_NAME = "firstmate-extension.json";
 const HOST_PROTOCOLS = [1];
 const PROCESS_EVENT_CAPABILITY = "process-event-adapter";
@@ -91,6 +93,9 @@ const REQUEST_SCHEMA = "firstmate.extension-request.v1";
 const RESPONSE_SCHEMA = "firstmate.extension-response.v1";
 const RESOLUTION_SCHEMA = "fm-extension-process-event-resolution.v1";
 const ERROR_EVIDENCE_SCHEMA = "firstmate.process-event-extension-error.v1";
+const INVOCATION_OWNER_SCHEMA = "firstmate.extension-invocation-owner.v1";
+const INVOCATION_READY_SCHEMA = "firstmate.extension-invocation-ready.v1";
+const INVOCATION_RELEASE_SCHEMA = "firstmate.extension-invocation-release.v1";
 const MAX_JSON_BYTES = 65536;
 const MAX_RESULT_BYTES = 32768;
 const MAX_STDERR_BYTES = 8192;
@@ -109,6 +114,8 @@ const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 3600000;
 const TERMINATE_GRACE_MS = 250;
 const CLEANUP_WAIT_MS = 2000;
+const LAUNCH_READY_WAIT_MS = 5000;
+const INVOCATION_POLL_MS = 20;
 const CONSENT_NAMES = ["network", "credential-store", "task-metadata", "artifact-references"];
 const RESPONSE_ERROR_CODES = new Set(["invalid-request", "incompatible", "conflict", "unavailable", "internal"]);
 const ID_RE = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
@@ -850,9 +857,11 @@ function childEnvironment(binding, statePath = "") {
   return env;
 }
 
-let activeChild = null;
+let activeInvocation = null;
 let terminatingForSignal = false;
+let signalCleanupFailureHold = null;
 let activeLifecycleLock = null;
+let cachedSelfIdentity = null;
 
 function groupAlive(pid) {
   if (!pid || process.platform === "win32") return false;
@@ -864,11 +873,20 @@ function groupAlive(pid) {
   }
 }
 
-function signalProcessGroup(child, signal) {
-  if (!child || !child.pid) return;
+function pidAlive(pid) {
+  if (!pid) return false;
   try {
-    if (process.platform === "win32") child.kill(signal);
-    else process.kill(-child.pid, signal);
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function signalProcessGroup(invocation, signal) {
+  if (!invocation?.pid) return;
+  try {
+    process.kill(-invocation.pid, signal);
   } catch {}
 }
 
@@ -876,37 +894,439 @@ async function sleep(milliseconds) {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function cleanupProcessGroup(child) {
-  if (!child || !child.pid || !groupAlive(child.pid)) return;
-  signalProcessGroup(child, "SIGTERM");
-  const termUntil = Date.now() + TERMINATE_GRACE_MS;
-  while (Date.now() < termUntil && groupAlive(child.pid)) await sleep(20);
-  if (groupAlive(child.pid)) signalProcessGroup(child, "SIGKILL");
-  const killUntil = Date.now() + CLEANUP_WAIT_MS;
-  while (Date.now() < killUntil && groupAlive(child.pid)) await sleep(20);
-  if (groupAlive(child.pid)) fail("process-cleanup-failed", "extension process group survived TERM and KILL");
+async function capturedProcessOutput(command, args, maxBytes = 8192) {
+  const child = spawn(command, args, {
+    env: { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C" },
+    shell: false,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const chunks = [];
+  let bytes = 0;
+  child.stdout.on("data", (chunk) => {
+    bytes += chunk.length;
+    if (bytes <= maxBytes) chunks.push(chunk);
+  });
+  const outcome = await new Promise((resolve) => {
+    child.once("error", () => resolve({ code: 125, signal: null }));
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  });
+  if (outcome.signal || outcome.code !== 0 || bytes === 0 || bytes > maxBytes) {
+    fail("process-identity-uncertain", "cannot inspect extension process identity");
+  }
+  return Buffer.concat(chunks).toString("utf8").trim();
 }
 
-async function runExtensionProcess(packageInfo, binding, verb, request, timeoutMs, statePath = "") {
-  const requestBytes = Buffer.from(`${canonicalJson(request)}\n`, "utf8");
-  if (requestBytes.length > MAX_JSON_BYTES) fail("request-oversized", `extension request exceeds ${MAX_JSON_BYTES} bytes`);
-  const entryInfo = await lstat(packageInfo.entrypoint).catch(() => fail("entrypoint-missing", "bound extension entrypoint is missing"));
-  if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || entryInfo.nlink !== 1 || entryInfo.uid !== currentUid()) {
-    fail("entrypoint-invalid", "bound extension entrypoint identity is unsafe");
+async function pidIdentity(pid) {
+  if (process.platform === "linux") {
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => fail("process-identity-uncertain", "cannot inspect extension process identity"));
+    const cmdline = await readFile(`/proc/${pid}/cmdline`).catch(() => fail("process-identity-uncertain", "cannot inspect extension process identity"));
+    const close = stat.lastIndexOf(")");
+    const fields = close >= 0 ? stat.slice(close + 1).trim().split(/\s+/u) : [];
+    if (fields.length < 20 || !/^[0-9]+$/u.test(fields[19]) || cmdline.length === 0) {
+      fail("process-identity-uncertain", "cannot inspect extension process identity");
+    }
+    return `linux-starttime=${fields[19]} cmdline-hex=${cmdline.toString("hex")}`;
   }
+  return capturedProcessOutput("/bin/ps", ["-p", String(pid), "-o", "lstart=", "-o", "command="]);
+}
+
+async function selfIdentity() {
+  if (!cachedSelfIdentity) {
+    cachedSelfIdentity = `host-token:${makeRequestId()}`;
+    // The private generation token gives recovery a direct PID-reuse check
+    // without a process-table fork on every normal invocation.
+    process.title = `firstmate-extension-host ${cachedSelfIdentity}`;
+  }
+  return cachedSelfIdentity;
+}
+
+async function processGroupId(pid) {
+  const output = await capturedProcessOutput("/bin/ps", ["-p", String(pid), "-o", "pgid="]);
+  if (!/^[0-9]+$/u.test(output)) fail("process-identity-uncertain", "cannot inspect extension process group");
+  return Number(output);
+}
+
+async function processIdentityState(pid, expected) {
+  if (!pidAlive(pid)) return 1;
+  if (expected.startsWith("host-token:")) {
+    try {
+      if (process.platform === "linux") {
+        const cmdline = await readFile(`/proc/${pid}/cmdline`);
+        return cmdline.includes(Buffer.from(expected, "utf8")) ? 0 : 2;
+      }
+      const command = await capturedProcessOutput("/bin/ps", ["-p", String(pid), "-o", "command="]);
+      return command.includes(expected) ? 0 : 2;
+    } catch {
+      return pidAlive(pid) ? 2 : 1;
+    }
+  }
+  let actual;
+  try {
+    actual = await pidIdentity(pid);
+  } catch {
+    return pidAlive(pid) ? 2 : 1;
+  }
+  return actual === expected ? 0 : 2;
+}
+
+async function barrierProcessGroupState(pid, expectedIdentity) {
+  const token = expectedIdentity.slice("barrier-token:".length);
+  try {
+    if (process.platform === "linux") {
+      const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+      const cmdline = await readFile(`/proc/${pid}/cmdline`);
+      const close = stat.lastIndexOf(")");
+      const fields = close >= 0 ? stat.slice(close + 1).trim().split(/\s+/u) : [];
+      const argv = cmdline.toString("utf8").split("\0").filter(Boolean);
+      if (fields.length < 3 || Number(fields[2]) !== pid || !argv.includes(LAUNCH_BARRIER) || !argv.includes(token)) return 2;
+      return 0;
+    }
+    const output = await capturedProcessOutput("/bin/ps", ["-p", String(pid), "-o", "pgid=", "-o", "command="]);
+    const match = output.match(/^\s*([0-9]+)\s+(.+)$/su);
+    if (!match || Number(match[1]) !== pid || !match[2].includes(LAUNCH_BARRIER) || !match[2].includes(token)) return 2;
+    return 0;
+  } catch {
+    return pidAlive(pid) ? 2 : (groupAlive(pid) ? 3 : 1);
+  }
+}
+
+async function processGroupState(pid, expectedIdentity = null, trustedChild = false) {
+  if (!pidAlive(pid)) return groupAlive(pid) ? 3 : 1;
+  if (expectedIdentity?.startsWith("barrier-token:")) return barrierProcessGroupState(pid, expectedIdentity);
+  if (expectedIdentity) {
+    let actual;
+    try {
+      actual = await pidIdentity(pid);
+    } catch {
+      return pidAlive(pid) ? 2 : (groupAlive(pid) ? 3 : 1);
+    }
+    if (actual !== expectedIdentity) return 2;
+  } else if (!trustedChild) {
+    return 2;
+  }
+  let pgid;
+  try {
+    pgid = await processGroupId(pid);
+  } catch {
+    return pidAlive(pid) ? 2 : (groupAlive(pid) ? 3 : 1);
+  }
+  return pgid === pid ? 0 : 2;
+}
+
+async function cleanupExactProcessGroup(invocation) {
+  if (!invocation?.pid) return;
+  let state = await processGroupState(invocation.pid, invocation.groupIdentity, invocation.trustedChild === true);
+  if (state === 1) return;
+  if (state === 2) fail("process-cleanup-failed", "extension process group identity cannot be proved");
+  signalProcessGroup(invocation, "SIGTERM");
+  const termUntil = Date.now() + TERMINATE_GRACE_MS;
+  while (Date.now() < termUntil && groupAlive(invocation.pid)) await sleep(INVOCATION_POLL_MS);
+  if (groupAlive(invocation.pid)) signalProcessGroup(invocation, "SIGKILL");
+  const killUntil = Date.now() + CLEANUP_WAIT_MS;
+  while (Date.now() < killUntil && groupAlive(invocation.pid)) await sleep(INVOCATION_POLL_MS);
+  if (groupAlive(invocation.pid)) fail("process-cleanup-failed", "extension process group survived TERM and KILL");
+}
+
+async function invocationRoot(home, create = false) {
+  const stateRoot = effectiveStateRoot(home);
+  const root = path.join(stateRoot, "extension-invocations");
+  const info = await maybeLstat(root);
+  // Preserve built-in parity: an absent cleanup registry costs one bounded
+  // lstat and does not require or canonicalize unrelated state directories.
+  if (!info && !create) return root;
+  if (process.env.FM_STATE_OVERRIDE) {
+    const stateInfo = await maybeLstat(stateRoot);
+    if (!stateInfo) fail("path-unsafe", "extension state root is unavailable");
+    await assertOwnedSafeDirectory(stateRoot, "extension state root");
+  } else if (create) {
+    await ensureHomePrivatePath(home, ["state"]);
+  }
+  if (!info) await ensureDirectory(root, 0o700, "state/extension-invocations", true);
+  else await assertOwnedSafeDirectory(root, "state/extension-invocations", true);
+  return root;
+}
+
+function invocationPaths(root, token) {
+  const name = token.slice("sha256:".length);
+  return {
+    ownerFile: path.join(root, `${name}.owner.json`),
+    ownerPublish: path.join(root, `${name}.owner.json.publish`),
+    ownerTemporary: path.join(root, `${name}.owner.json.tmp`),
+    readyFile: path.join(root, `${name}.ready.json`),
+    readyTemporary: path.join(root, `${name}.ready.json.tmp`),
+    releaseFile: path.join(root, `${name}.release.json`),
+    releasePublish: path.join(root, `${name}.release.json.publish`),
+  };
+}
+
+async function readPrivateJson(file, label) {
+  const info = await maybeLstat(file);
+  if (!info) return null;
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1 || info.uid !== currentUid() || modeOf(info) !== 0o600) {
+    fail("process-cleanup-failed", `${label} is not one private host-owned file`);
+  }
+  if (info.size === 0 || info.size > MAX_JSON_BYTES) fail("process-cleanup-failed", `${label} has an invalid size`);
+  return parseStrictJson(await readFile(file), label);
+}
+
+function validateInvocationOwner(value) {
+  exactKeys(value, [
+    "schema", "token", "phase", "host_pid", "host_identity", "group_pid", "group_identity",
+    "extension_id", "binding_digest", "request_id", "source_id", "operation",
+  ], "extension invocation owner");
+  if (value.schema !== INVOCATION_OWNER_SCHEMA || !DIGEST_RE.test(value.token) || !DIGEST_RE.test(value.binding_digest)
+      || !REQUEST_ID_RE.test(value.request_id)) fail("process-cleanup-failed", "extension invocation owner identity is invalid");
+  integerIn(value.host_pid, 2, 2147483647, "extension invocation host_pid");
+  boundedString(value.host_identity, 8192, "extension invocation host_identity");
+  boundedString(value.extension_id, 128, "extension invocation extension_id", ID_RE);
+  if (value.source_id !== null) boundedString(value.source_id, 64, "extension invocation source_id", /^[A-Za-z0-9._-]+$/u);
+  if (!["handshake", "source.poll", "result.classify", "result.terminal", "result.silent"].includes(value.operation)) {
+    fail("process-cleanup-failed", "extension invocation operation is invalid");
+  }
+  if (value.phase === "reserved") {
+    if (value.group_pid !== null || value.group_identity !== null) fail("process-cleanup-failed", "reserved invocation unexpectedly names a process group");
+  } else if (value.phase === "group") {
+    integerIn(value.group_pid, 2, 2147483647, "extension invocation group_pid");
+    boundedString(value.group_identity, 8192, "extension invocation group_identity");
+  } else {
+    fail("process-cleanup-failed", "extension invocation phase is invalid");
+  }
+  return value;
+}
+
+function validateInvocationReady(value, token) {
+  exactKeys(value, ["schema", "token", "group_pid", "group_identity"], "extension invocation readiness");
+  if (value.schema !== INVOCATION_READY_SCHEMA || value.token !== token) fail("process-cleanup-failed", "extension invocation readiness identity is invalid");
+  integerIn(value.group_pid, 2, 2147483647, "extension invocation ready group_pid");
+  boundedString(value.group_identity, 8192, "extension invocation ready group_identity");
+  return value;
+}
+
+function validateInvocationRelease(value, token) {
+  exactKeys(value, ["schema", "token"], "extension invocation release");
+  if (value.schema !== INVOCATION_RELEASE_SCHEMA || value.token !== token) {
+    fail("process-cleanup-failed", "extension invocation release identity is invalid");
+  }
+  return value;
+}
+
+async function writePrivateJsonExclusive(file, value) {
+  const temporary = `${file}.publish`;
+  const handle = await open(temporary, "wx", 0o600)
+    .catch(() => fail("process-cleanup-failed", "cannot stage extension invocation ownership"));
+  try {
+    await handle.writeFile(`${canonicalJson(value)}\n`, "utf8");
+  } finally {
+    await handle.close();
+  }
+  await chmod(temporary, 0o600);
+  try {
+    await link(temporary, file);
+    await unlink(temporary);
+  } catch {
+    await rm(temporary, { force: true });
+    fail("process-cleanup-failed", "cannot publish extension invocation ownership");
+  }
+}
+
+async function replaceInvocationOwner(invocation, value) {
+  const current = validateInvocationOwner(await readPrivateJson(invocation.ownerFile, "extension invocation owner"));
+  if (current.token !== invocation.token || current.phase !== "reserved" || current.host_pid !== process.pid
+      || current.host_identity !== invocation.hostIdentity) {
+    fail("process-cleanup-failed", "extension invocation owner changed before group publication");
+  }
+  const handle = await open(invocation.ownerTemporary, "wx", 0o600)
+    .catch(() => fail("process-cleanup-failed", "cannot stage extension invocation ownership"));
+  try {
+    await handle.writeFile(`${canonicalJson(value)}\n`, "utf8");
+  } finally {
+    await handle.close();
+  }
+  await chmod(invocation.ownerTemporary, 0o600);
+  const rechecked = validateInvocationOwner(await readPrivateJson(invocation.ownerFile, "extension invocation owner"));
+  if (rechecked.token !== invocation.token || rechecked.phase !== "reserved" || rechecked.host_identity !== invocation.hostIdentity) {
+    await rm(invocation.ownerTemporary, { force: true });
+    fail("process-cleanup-failed", "extension invocation owner changed during group publication");
+  }
+  await rename(invocation.ownerTemporary, invocation.ownerFile);
+}
+
+async function clearInvocationFiles(invocation) {
+  const ownerValue = await readPrivateJson(invocation.ownerFile, "extension invocation owner");
+  if (ownerValue) {
+    const owner = validateInvocationOwner(ownerValue);
+    if (owner.token !== invocation.token) fail("process-cleanup-failed", "extension invocation owner changed before cleanup");
+  }
+  const readyValue = await readPrivateJson(invocation.readyFile, "extension invocation readiness");
+  if (readyValue) validateInvocationReady(readyValue, invocation.token);
+  const releaseValue = await readPrivateJson(invocation.releaseFile, "extension invocation release");
+  if (releaseValue) validateInvocationRelease(releaseValue, invocation.token);
+  for (const file of [
+    invocation.releaseFile, invocation.releasePublish, invocation.readyFile, invocation.readyTemporary,
+    invocation.ownerTemporary, invocation.ownerPublish, invocation.ownerFile,
+  ]) {
+    await rm(file, { force: true });
+  }
+}
+
+async function finalizeInvocation(invocation) {
+  if (!invocation) return;
+  if (!invocation.cleanupPromise) {
+    invocation.cleanupPromise = (async () => {
+      await cleanupExactProcessGroup(invocation);
+      await clearInvocationFiles(invocation);
+    })();
+  }
+  await invocation.cleanupPromise;
+  if (activeInvocation === invocation) activeInvocation = null;
+}
+
+async function reserveInvocation(home, record, verb, request, statePath) {
+  if (process.platform === "win32") fail("platform-unsupported", "extension launch cleanup requires POSIX process groups");
+  const root = await invocationRoot(home, true);
+  const token = makeRequestId();
+  const paths = invocationPaths(root, token);
+  const hostIdentity = await selfIdentity();
+  const sourceId = request?.input?.source_id || null;
+  const owner = {
+    schema: INVOCATION_OWNER_SCHEMA,
+    token,
+    phase: "reserved",
+    host_pid: process.pid,
+    host_identity: hostIdentity,
+    group_pid: null,
+    group_identity: null,
+    extension_id: record.binding.extension_id,
+    binding_digest: record.bindingDigest,
+    request_id: request.request_id,
+    source_id: sourceId,
+    operation: verb === "handshake" ? "handshake" : request.operation,
+  };
+  await writePrivateJsonExclusive(paths.ownerFile, owner);
   let child;
   try {
-    child = spawn(packageInfo.entrypoint, [verb], {
-      cwd: packageInfo.root,
-      detached: process.platform !== "win32",
-      env: childEnvironment(binding, statePath),
+    const barrierNodeArgs = process.execArgv.includes("--disallow-code-generation-from-strings")
+      ? ["--disallow-code-generation-from-strings"]
+      : [];
+    child = spawn(process.execPath, [
+      ...barrierNodeArgs,
+      LAUNCH_BARRIER,
+      token,
+      paths.ownerFile,
+      paths.readyFile,
+      paths.releaseFile,
+      String(process.pid),
+      record.packageInfo.entrypoint,
+      record.packageInfo.root,
+      verb,
+    ], {
+      cwd: record.packageInfo.root,
+      detached: true,
+      env: childEnvironment(record.binding, statePath),
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
   } catch {
+    await clearInvocationFiles({ ...paths, token });
     fail("entrypoint-missing", "bound extension entrypoint could not be started");
   }
-  activeChild = child;
+  const invocation = {
+    ...paths,
+    token,
+    hostIdentity,
+    child,
+    pid: child.pid,
+    groupIdentity: null,
+    trustedChild: true,
+    cleanupPromise: null,
+  };
+  activeInvocation = invocation;
+  return { invocation, owner };
+}
+
+async function publishInvocationGroup(invocation, owner) {
+  const deadline = Date.now() + LAUNCH_READY_WAIT_MS;
+  let ready = null;
+  while (Date.now() < deadline) {
+    const value = await readPrivateJson(invocation.readyFile, "extension invocation readiness");
+    if (value) {
+      ready = validateInvocationReady(value, invocation.token);
+      break;
+    }
+    if (!pidAlive(invocation.pid)) fail("entrypoint-missing", "extension launch barrier exited before publishing ownership");
+    await sleep(INVOCATION_POLL_MS);
+  }
+  if (!ready) fail("timeout", "extension launch barrier did not publish ownership in time");
+  if (ready.group_pid !== invocation.pid) fail("process-cleanup-failed", "extension launch barrier published a different process group");
+  // The tracked barrier is the exact detached child this host just created.
+  // Package code cannot run until after this ready record is accepted and the
+  // one-shot release is published, so its self-captured identity is the safe
+  // recovery identity without another contended process-table round trip.
+  invocation.groupIdentity = ready.group_identity;
+  invocation.trustedChild = false;
+  const groupOwner = { ...owner, phase: "group", group_pid: ready.group_pid, group_identity: ready.group_identity };
+  await replaceInvocationOwner(invocation, groupOwner);
+  await writePrivateJsonExclusive(invocation.releaseFile, { schema: INVOCATION_RELEASE_SCHEMA, token: invocation.token });
+}
+
+async function cleanupRecordedInvocations(home, { sourceId = null, bindingDigest = null } = {}) {
+  const root = await invocationRoot(home, false);
+  const info = await maybeLstat(root);
+  if (!info) return 0;
+  await assertOwnedSafeDirectory(root, "state/extension-invocations", true);
+  const names = await readdir(root);
+  const ownerNames = names.filter((name) => /^[0-9a-f]{64}\.owner\.json$/u.test(name)).sort();
+  let cleaned = 0;
+  for (const name of ownerNames) {
+    const ownerFile = path.join(root, name);
+    const owner = validateInvocationOwner(await readPrivateJson(ownerFile, "extension invocation owner"));
+    if (sourceId !== null && owner.source_id !== sourceId) continue;
+    if (bindingDigest !== null && owner.binding_digest !== bindingDigest) continue;
+    const paths = invocationPaths(root, owner.token);
+    const hostState = await processIdentityState(owner.host_pid, owner.host_identity);
+    if (hostState === 0) fail("process-cleanup-failed", "an extension invocation host is still active");
+    if (hostState === 2) fail("process-cleanup-failed", "extension invocation host identity cannot be proved stale");
+    let groupPid = owner.group_pid;
+    let groupIdentity = owner.group_identity;
+    if (owner.phase === "reserved") {
+      const readyValue = await readPrivateJson(paths.readyFile, "extension invocation readiness");
+      if (!readyValue) fail("process-cleanup-failed", "an interrupted extension launch has not published exact group ownership");
+      const ready = validateInvocationReady(readyValue, owner.token);
+      groupPid = ready.group_pid;
+      groupIdentity = ready.group_identity;
+    }
+    const invocation = { ...paths, token: owner.token, pid: groupPid, groupIdentity, trustedChild: false, cleanupPromise: null };
+    await cleanupExactProcessGroup(invocation);
+    await clearInvocationFiles(invocation);
+    cleaned += 1;
+  }
+  const remaining = await readdir(root);
+  const known = new Set();
+  for (const name of remaining.filter((entry) => /^[0-9a-f]{64}\.owner\.json$/u.test(entry))) {
+    const stem = name.slice(0, -".owner.json".length);
+    known.add(`${stem}.owner.json`);
+    known.add(`${stem}.owner.json.publish`);
+    known.add(`${stem}.owner.json.tmp`);
+    known.add(`${stem}.ready.json`);
+    known.add(`${stem}.ready.json.tmp`);
+    known.add(`${stem}.release.json`);
+    known.add(`${stem}.release.json.publish`);
+  }
+  for (const name of remaining) {
+    if (!known.has(name)) fail("process-cleanup-failed", `unexpected extension invocation cleanup artifact: ${name}`);
+  }
+  return cleaned;
+}
+
+async function runExtensionProcess(home, record, verb, request, timeoutMs, statePath = "") {
+  const requestBytes = Buffer.from(`${canonicalJson(request)}\n`, "utf8");
+  if (requestBytes.length > MAX_JSON_BYTES) fail("request-oversized", `extension request exceeds ${MAX_JSON_BYTES} bytes`);
+  const entryInfo = await lstat(record.packageInfo.entrypoint).catch(() => fail("entrypoint-missing", "bound extension entrypoint is missing"));
+  if (!entryInfo.isFile() || entryInfo.isSymbolicLink() || entryInfo.nlink !== 1 || entryInfo.uid !== currentUid()) {
+    fail("entrypoint-invalid", "bound extension entrypoint identity is unsafe");
+  }
+  const { invocation, owner } = await reserveInvocation(home, record, verb, request, statePath);
+  const { child } = invocation;
   let stdoutBytes = 0;
   let stderrBytes = 0;
   const stdout = [];
@@ -918,8 +1338,8 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     if (forcedCode) return;
     forcedCode = code;
     forcedMessage = message;
-    signalProcessGroup(child, "SIGTERM");
-    killTimer = setTimeout(() => signalProcessGroup(child, "SIGKILL"), TERMINATE_GRACE_MS);
+    signalProcessGroup(invocation, "SIGTERM");
+    killTimer = setTimeout(() => signalProcessGroup(invocation, "SIGKILL"), TERMINATE_GRACE_MS);
   };
 
   const completion = new Promise((resolve, reject) => {
@@ -939,6 +1359,12 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
     child.once("close", (code, signal) => resolve({ code, signal }));
   });
 
+  try {
+    await publishInvocationGroup(invocation, owner);
+  } catch (error) {
+    await finalizeInvocation(invocation);
+    throw error;
+  }
   const timeout = setTimeout(() => forceStop("timeout", `extension ${verb} exceeded ${timeoutMs} ms`), timeoutMs);
   child.stdin.on("error", () => {});
   child.stdin.end(requestBytes);
@@ -949,15 +1375,13 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
   } catch (error) {
     clearTimeout(timeout);
     if (killTimer) clearTimeout(killTimer);
-    await cleanupProcessGroup(child).catch(() => {});
-    activeChild = null;
+    await finalizeInvocation(invocation);
     throw error;
   }
   clearTimeout(timeout);
   if (killTimer) clearTimeout(killTimer);
-  const leakedProcessGroup = !forcedCode && groupAlive(child.pid);
-  if (forcedCode || leakedProcessGroup) await cleanupProcessGroup(child);
-  activeChild = null;
+  const leakedProcessGroup = !forcedCode && groupAlive(invocation.pid);
+  await finalizeInvocation(invocation);
   if (forcedCode) fail(forcedCode, forcedMessage);
   if (leakedProcessGroup) fail("process-leak", `extension ${verb} left a background process in its invocation group`);
   if (outcome.signal || outcome.code !== 0) fail("process-failed", `extension ${verb} exited nonzero`);
@@ -967,12 +1391,15 @@ async function runExtensionProcess(packageInfo, binding, verb, request, timeoutM
 async function handleSignal(signal) {
   if (terminatingForSignal) return;
   terminatingForSignal = true;
-  if (activeChild) {
-    signalProcessGroup(activeChild, "SIGTERM");
-    await sleep(TERMINATE_GRACE_MS);
-    signalProcessGroup(activeChild, "SIGKILL");
+  try {
+    await finalizeInvocation(activeInvocation);
+    process.exit(signal === "SIGTERM" ? 143 : 130);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "extension process cleanup failed";
+    process.stderr.write(`error[process-cleanup-failed]: ${message}\n`);
+    process.exitCode = 1;
+    signalCleanupFailureHold ||= setInterval(() => {}, 1000);
   }
-  process.exit(signal === "SIGTERM" ? 143 : 130);
 }
 
 process.on("SIGTERM", () => { void handleSignal("SIGTERM"); });
@@ -996,7 +1423,7 @@ function validateHandshakeResponse(response, request, binding) {
   }
 }
 
-async function handshake(record, statePath = "") {
+async function handshake(home, record, statePath = "") {
   const binding = record.binding;
   const request = {
     schema: HANDSHAKE_REQUEST_SCHEMA,
@@ -1011,7 +1438,7 @@ async function handshake(record, statePath = "") {
       adapter_names: binding.capabilities[0].adapter_names,
     },
   };
-  const response = await runExtensionProcess(record.packageInfo, binding, "handshake", request, HANDSHAKE_TIMEOUT_MS, statePath);
+  const response = await runExtensionProcess(home, record, "handshake", request, HANDSHAKE_TIMEOUT_MS, statePath);
   validateHandshakeResponse(response, request, binding);
 }
 
@@ -1121,7 +1548,7 @@ async function invokeProcessEvent(home, adapter, operation, options) {
   const record = selectAdapter(bindings, adapter);
   assertExpectedRecord(record, options);
   const statePath = await ensureExtensionState(home, record.binding);
-  await handshake(record, statePath);
+  await handshake(home, record, statePath);
   let input;
   if (operation === "source.poll") {
     const sourceId = boundedString(options["--source-id"], 64, "source id", /^[A-Za-z0-9._-]+$/);
@@ -1147,7 +1574,7 @@ async function invokeProcessEvent(home, adapter, operation, options) {
     operation,
     input,
   };
-  const response = await runExtensionProcess(record.packageInfo, record.binding, "invoke", request, record.binding.timeout_ms, statePath);
+  const response = await runExtensionProcess(home, record, "invoke", request, record.binding.timeout_ms, statePath);
   return validateOperationResult(operation, validateResponseEnvelope(response, request));
 }
 
@@ -1280,12 +1707,16 @@ async function cmdBindFrom(args, stagedRoot) {
     },
     timeout_ms: parsed.timeoutMs,
   };
-  const record = { binding, packageInfo: installed.packageInfo };
+  const record = {
+    binding,
+    bindingDigest: digestBytes(Buffer.from(prettyJson(binding), "utf8")),
+    packageInfo: installed.packageInfo,
+  };
   const statePath = await ensureExtensionState(home, binding);
   let publishedBinding = "";
   let publishedBytes = null;
   try {
-    await handshake(record, statePath);
+    await handshake(home, record, statePath);
     const registry = await ensureHomePrivatePath(home, ["config", "extensions.d"]);
     const destination = path.join(registry, `${binding.extension_id}.json`);
     if (await maybeLstat(destination)) fail("binding-exists", `binding already exists for extension: ${binding.extension_id}`);
@@ -1295,7 +1726,7 @@ async function cmdBindFrom(args, stagedRoot) {
     publishedBytes = bytes;
     const loaded = (await loadBindings(home, { packages: true })).find((candidate) => candidate.binding.extension_id === binding.extension_id);
     if (!loaded) fail("binding-write-failed", "binding was not readable after publication");
-    await handshake(loaded, statePath);
+    await handshake(home, loaded, statePath);
     process.stdout.write(`bound: ${binding.extension_id}@${binding.extension_version}\n`);
     process.stdout.write(`binding: ${destination}\n`);
     process.stdout.write(`binding-digest: ${loaded.bindingDigest}\n`);
@@ -1761,6 +2192,7 @@ async function runInheritedLifecycleRetirement(args) {
 }
 
 async function bindingRetirementPreflight(home, bindingDigest) {
+  await cleanupRecordedInvocations(home, { bindingDigest });
   const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
   const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
@@ -1786,6 +2218,20 @@ async function bindingRetirementPreflight(home, bindingDigest) {
     const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
     fail("binding-in-use", diagnostic || "binding retirement process-event preflight refused");
   }
+}
+
+async function cmdCleanupInvocations(args) {
+  let sourceId = null;
+  let bindingDigest = null;
+  if (args.length !== 0) {
+    if (args.length !== 2) fail("usage", "cleanup-invocations accepts one optional identity selector");
+    if (args[0] === "--source-id") sourceId = boundedString(args[1], 64, "source id", /^[A-Za-z0-9._-]+$/u);
+    else if (args[0] === "--binding-digest" && DIGEST_RE.test(args[1])) bindingDigest = args[1];
+    else fail("usage", "cleanup-invocations requires --source-id <id> or --binding-digest <sha256:digest>");
+  }
+  const home = await activeHome();
+  const cleaned = await cleanupRecordedInvocations(home, { sourceId, bindingDigest });
+  process.stdout.write(`cleaned-invocations: ${cleaned}\n`);
 }
 
 async function cmdList(args) {
@@ -1826,7 +2272,7 @@ async function cmdVerify(args) {
   }
   for (const record of bindings) {
     const statePath = await ensureExtensionState(home, record.binding);
-    await handshake(record, statePath);
+    await handshake(home, record, statePath);
     process.stdout.write(`verified: ${record.binding.extension_id}@${record.binding.extension_version} ${record.binding.package_digest}\n`);
   }
 }
@@ -1838,7 +2284,7 @@ async function cmdResolveProcessEvent(args) {
   const bindings = await loadBindings(home, { packages: true });
   const record = selectAdapter(bindings, adapter);
   const statePath = await ensureExtensionState(home, record.binding);
-  await handshake(record, statePath);
+  await handshake(home, record, statePath);
   const fields = [
     RESOLUTION_SCHEMA,
     record.binding.extension_id,
@@ -1910,6 +2356,7 @@ async function main() {
     case "verify": await cmdVerify(args); break;
     case "resolve-process-event": await cmdResolveProcessEvent(args); break;
     case "process-event": await cmdProcessEvent(args); break;
+    case "cleanup-invocations": await cmdCleanupInvocations(args); break;
     case "":
     case undefined:
     case "help":
