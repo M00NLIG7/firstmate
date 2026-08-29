@@ -57,6 +57,8 @@ crash_cleanup_group_pid=
 crash_cleanup_release=
 crash_silent_start_pid=
 crash_silent_runner_pid=
+override_crash_start_pid=
+override_crash_runner_pid=
 section_coordinator_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
@@ -89,6 +91,8 @@ extension_test_cleanup() {
   [ -z "$crash_cleanup_release" ] || touch "$crash_cleanup_release" 2>/dev/null || true
   [ -z "$crash_silent_start_pid" ] || kill -TERM "$crash_silent_start_pid" 2>/dev/null || true
   [ -z "$crash_silent_runner_pid" ] || kill -TERM -"$crash_silent_runner_pid" 2>/dev/null || true
+  [ -z "$override_crash_start_pid" ] || kill -TERM "$override_crash_start_pid" 2>/dev/null || true
+  [ -z "$override_crash_runner_pid" ] || kill -TERM -"$override_crash_runner_pid" 2>/dev/null || true
   [ -z "$handshake_orphan_pid" ] || kill -KILL "$handshake_orphan_pid" 2>/dev/null || true
   if [ -n "$section_coordinator_pid" ]; then
     kill -TERM "$section_coordinator_pid" 2>/dev/null || true
@@ -1423,6 +1427,38 @@ pass "caller environment, descriptors, and lifecycle entry cannot forge capture 
 reservation_records=$(find "$STATE_OVERRIDE/procevent-capture-reservations" -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')
 [ "$reservation_records" -eq 0 ] || fail "completed extension capture left residual reservation state"
 pass "extension capture reservations are bounded to their runner lifecycle"
+override_crash_marker="$TMP_ROOT/override-crash.marker"
+override_crash_release="$TMP_ROOT/override-crash.release"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow override-crash-source \
+  --config-ref "silent-block|$override_crash_marker|$override_crash_release" >/dev/null
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start override-crash-source > "$TMP_ROOT/override-crash-start.out" 2>&1 &
+override_crash_start_pid=$!
+wait_for_file "$override_crash_marker" || fail "overridden-state crash fixture never reached its reservation handoff"
+override_crash_claim="$TMP_ROOT/claims/override-crash-source.claim"
+assert_present "$override_crash_claim" "overridden-state crash fixture did not retain its claim"
+override_crash_runner_pid=$(sed -n '2p' "$override_crash_claim")
+override_crash_token=$(sed -n '3p' "$override_crash_claim")
+override_crash_records=$(find "$STATE_OVERRIDE/procevent-capture-reservations" -type f \
+  -name ".extension-capture-$override_crash_token.*" -print | wc -l | tr -d '[:space:]')
+[ "$override_crash_records" -eq 2 ] || fail "overridden-state crash fixture did not create both immediate reservations"
+mkdir -p "$H_STATE_OVERRIDE/state/procevent-capture-reservations"
+chmod 0700 "$H_STATE_OVERRIDE/state" "$H_STATE_OVERRIDE/state/procevent-capture-reservations"
+override_crash_decoy="$H_STATE_OVERRIDE/state/procevent-capture-reservations/.extension-capture-$override_crash_token.decoy.json"
+printf 'decoy\n' > "$override_crash_decoy"
+chmod 0600 "$override_crash_decoy"
+kill -KILL -"$override_crash_runner_pid" 2>/dev/null || fail "could not terminate overridden-state runner"
+wait "$override_crash_start_pid" 2>/dev/null || true
+override_crash_start_pid=
+override_crash_runner_pid=
+FM_HOME="$H_STATE_OVERRIDE" "$PROCEVENT" reconcile >/dev/null
+assert_absent "$override_crash_claim" "reconcile retained a dead overridden-state claim"
+override_crash_records=$(find "$STATE_OVERRIDE/procevent-capture-reservations" -type f \
+  -name ".extension-capture-$override_crash_token.*" -print -quit)
+[ -z "$override_crash_records" ] || fail "reconcile left reservations in the recorded overridden state root"
+assert_present "$override_crash_decoy" "reconcile removed reservations from the current default state root"
+pass "crash recovery revalidates and cleans only the recorded state root"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" register-extension ext-flow inbox-swap-source --config-ref good >/dev/null
 mkdir "$TMP_ROOT/inbox-link-target"

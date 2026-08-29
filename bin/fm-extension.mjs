@@ -1575,11 +1575,17 @@ async function inheritedCaptureCapability(home) {
   let claimText;
   try { claimText = decoder.decode(claimBytes); } catch { fail("json-invalid", "capture claim descriptor is not valid UTF-8"); }
   const claimLines = claimText.split("\n");
-  if (claimLines.pop() !== "" || claimLines.length !== 7) fail("path-unsafe", "capture claim descriptor is malformed");
-  const [claimHome, claimPid, claimToken, claimIdentity, claimRegistry, claimRegistryIdentity, claimState] = claimLines;
+  if (claimLines.pop() !== "" || (claimLines.length !== 7 && claimLines.length !== 12)) fail("path-unsafe", "capture claim descriptor is malformed");
+  const [claimHome, claimPid, claimToken, claimIdentity, claimRegistry, claimRegistryIdentity, claimState,
+    claimStateRoot, claimStateDevice, claimStateInode, claimStateOwner, claimStateMode] = claimLines;
   if (claimHome !== home || !/^[0-9]+$/.test(claimPid) || !/^[A-Za-z0-9._-]{1,256}$/.test(claimToken)
       || !claimIdentity || !claimRegistry.startsWith("/") || !claimRegistryIdentity.includes(":") || claimState !== "active") {
     fail("path-unsafe", "capture claim descriptor is invalid");
+  }
+  if (claimLines.length === 12 && (!claimStateRoot.startsWith("/") || !/^[0-9]+$/.test(claimStateDevice)
+      || !/^[0-9]+$/.test(claimStateInode) || !/^[0-9]+$/.test(claimStateOwner)
+      || !/^[0-7]+$/.test(claimStateMode) || (Number.parseInt(claimStateMode, 8) & 0o22) !== 0)) {
+    fail("path-unsafe", "capture claim state root is invalid");
   }
   const capability = parseStrictJson(capabilityBytes, "capture capability");
   exactKeys(capability, ["schema", "token", "operation", "source_id", "sequence", "binding_digest", "claim_home", "claim_pid", "claim_identity", "claim_token", "claim_device", "claim_inode", "inbox_device", "inbox_inode", "result_device", "result_inode"], "capture capability");
