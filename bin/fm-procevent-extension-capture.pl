@@ -3,7 +3,6 @@ use warnings;
 use Cwd qw(getcwd);
 use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDWR);
 use JSON::PP qw(encode_json);
-use MIME::Base64 qw(encode_base64);
 
 my ($registry_fd, $inbox_fd, $reservation_fd, $id, $adapter, $extension_id, $extension_version, $capability_version,
     $package_digest, $binding_digest, $claim_token, $runner_name, $output_name,
@@ -62,10 +61,10 @@ sub random_token {
   return unpack('H*', $bytes);
 }
 sub write_reservation {
-  my ($token, $operation, $content, $inbox_stat, $result_stat) = @_;
+  my ($token, $operation, $inbox_stat, $result_stat) = @_;
   chdir($reservation_dir) or fail('cannot enter capture reservation directory');
   getcwd() eq $reservation_root or fail('capture reservation directory changed');
-  my $reservation = open_new(".extension-capture-$token.json");
+  my $reservation = open_new(".extension-capture-$claim_token.$token.json");
   my $record = encode_json({
     schema => 'fm-procevent-capture-reservation.v1', token => $token,
     operation => $operation, source_id => $id, sequence => $sequence,
@@ -73,7 +72,6 @@ sub write_reservation {
     result_device => "$result_stat->[0]", result_inode => "$result_stat->[1]",
     claim_pid => "$runner_pid", claim_identity => $claim_identity,
     claim_token => $claim_token, binding_digest => $binding_digest,
-    content_b64 => encode_base64($content, ''),
   }) . "\n";
   write_all($reservation, $record);
   close($reservation) or fail('cannot close capture reservation');
@@ -151,14 +149,6 @@ seek($stage, 0, 0) or fail("cannot rewind staged output");
 copy_all($stage, $result);
 close($result) or fail("cannot close result");
 seek($stage, 0, 0) or fail("cannot rewind staged output");
-my $content = '';
-while (1) {
-  my $read = sysread($stage, my $buffer, 65536);
-  defined $read or fail('cannot read staged output');
-  last if $read == 0;
-  $content .= $buffer;
-}
-length($content) <= 32768 or fail('captured result exceeds reservation limit');
 my $adapter_file = open_new($adapter_tmp);
 write_all($adapter_file, "$adapter\n");
 close($adapter_file) or fail("cannot close adapter evidence");
@@ -174,7 +164,7 @@ my @result_stat = stat("$prefix.result");
 my @reservations;
 for my $operation ('result.terminal', 'result.silent') {
   my $token = random_token();
-  write_reservation($token, $operation, $content, \@inbox_stat, \@result_stat);
+  write_reservation($token, $operation, \@inbox_stat, \@result_stat);
   push(@reservations, $token);
 }
 close($stage) or fail("cannot close staged output");

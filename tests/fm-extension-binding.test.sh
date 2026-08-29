@@ -1349,9 +1349,9 @@ mkdir "$forged_reservation_root"
 forged_reservation_token=$(printf 'c%.0s' {1..64})
 forged_claim_identity=$(FM_HOME="$TMP_ROOT/forged-identity-home" FM_STATE_OVERRIDE="$TMP_ROOT/forged-identity-state" \
   bash -c '. "$1"; fm_pid_identity "$2"' sh "$ROOT/bin/fm-wake-lib.sh" "$$")
-printf '%s\n' '{"schema":"fm-procevent-capture-reservation.v1","token":"'"$forged_reservation_token"'","operation":"result.silent","source_id":"forged-source","sequence":1,"inbox_device":"1","inbox_inode":"1","result_device":"1","result_inode":"1","claim_pid":"'"$$"'","claim_identity":"'"$forged_claim_identity"'","claim_token":"forged-claim","binding_digest":"'"$override_binding"'","content_b64":"Zm9yZ2VkCg=="}' \
-  > "$forged_reservation_root/.extension-capture-$forged_reservation_token.json"
-chmod 0600 "$forged_reservation_root/.extension-capture-$forged_reservation_token.json"
+printf '%s\n' '{"schema":"fm-procevent-capture-reservation.v1","token":"'"$forged_reservation_token"'","operation":"result.silent","source_id":"forged-source","sequence":1,"inbox_device":"1","inbox_inode":"1","result_device":"1","result_inode":"1","claim_pid":"'"$$"'","claim_identity":"'"$forged_claim_identity"'","claim_token":"forged-claim","binding_digest":"'"$override_binding"'"}' \
+  > "$forged_reservation_root/.extension-capture-forged-claim.$forged_reservation_token.json"
+chmod 0600 "$forged_reservation_root/.extension-capture-forged-claim.$forged_reservation_token.json"
 expect_failure "reservation" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   FM_PROCEVENT_CLAIM_ROOT="$forged_reservation_root" sh -c '
     cd "$1" || exit 1

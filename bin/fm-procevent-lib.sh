@@ -396,6 +396,9 @@ fm_procevent_claim_acquire_locked() {
               status=1
             fi
           fi
+          if [ "$status" -eq 0 ] && [ "$old_home" = "$home" ]; then
+            fm_procevent_capture_reservation_remove_claim "${FM_STATE_OVERRIDE:-$old_home/state}" "$old_token" || status=1
+          fi
           [ "$status" -ne 0 ] || rm -f -- "$claim" || status=1
         else
           status=1
@@ -449,9 +452,9 @@ fm_procevent_claim_mark_terminal_locked() {
   fi
 }
 
-# fm_procevent_claim_release_locked <source-id> <home> <pid> <token>
+# fm_procevent_claim_release_locked <source-id> <home> <pid> <token> [state]
 fm_procevent_claim_release_locked() {
-  local id=$1 home=$2 pid=$3 token=$4 claim
+  local id=$1 home=$2 pid=$3 token=$4 state=${5:-"$home/state"} claim
   fm_procevent_source_id_valid "$id" || return 1
   claim=$(fm_procevent_claim_path "$id")
   [ -e "$claim" ] || return 0
@@ -459,6 +462,7 @@ fm_procevent_claim_release_locked() {
     && [ "$FM_PROCEVENT_CLAIM_HOME" = "$home" ] \
     && [ "$FM_PROCEVENT_CLAIM_PID" = "$pid" ] \
     && [ "$FM_PROCEVENT_CLAIM_TOKEN" = "$token" ]; then
+    fm_procevent_capture_reservation_remove_claim "$state" "$token" || return 1
     rm -f -- "$claim"
     return $?
   fi
@@ -539,6 +543,19 @@ fm_procevent_capture_reservation_prepare() {
   fi
   fm_procevent_private_directory_valid "$reservation" 1 || return 1
   printf '%s\n' "$reservation"
+}
+
+fm_procevent_capture_reservation_remove_claim() {  # <state> <claim-token>
+  local state=$1 token=$2 reservation record
+  case "$token" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
+  reservation=$(fm_procevent_capture_reservation_dir "$state")
+  [ -d "$reservation" ] || return 0
+  fm_procevent_private_directory_valid "$reservation" 1 || return 1
+  for record in "$reservation"/.extension-capture-"$token".*.json; do
+    [ -e "$record" ] || continue
+    [ -f "$record" ] && [ ! -L "$record" ] || return 1
+    rm -f -- "$record" || return 1
+  done
 }
 
 # fm_procevent_capture <state> <source-id> <adapter> <output-file>

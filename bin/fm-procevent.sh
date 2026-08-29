@@ -502,7 +502,9 @@ publish_result() {  # <result-file>
     # caller already wrote (1) settle it; only an unrecordable silence (2)
     # falls through and announces, because a silence nothing remembers would
     # otherwise be re-evaluated on every reconcile forever.
+    export FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD=1
     if adapter_result_is_silent "$adapter" "$result"; then
+      unset FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD
       fm_procevent_mark_handled "$STATE" "$id" "$seq"
       case "$?" in
         0|1)
@@ -511,6 +513,7 @@ publish_result() {  # <result-file>
           ;;
       esac
     fi
+    unset FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD
     if fm_wake_append check "procevent:$id:$seq" "check: $line"; then
       status=0
     fi
@@ -652,7 +655,7 @@ cmd_start() {
       fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
       return 0
     fi
-    fm_procevent_claim_release_locked "$CLAIM_ID" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN" 2>/dev/null || true
+    fm_procevent_claim_release_locked "$CLAIM_ID" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN" "$STATE" 2>/dev/null || true
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
@@ -676,6 +679,7 @@ cmd_start() {
       || die "cannot retain the external capture reservation boundary"
     exec 6<"$reservation_dir" || die "cannot retain the external capture reservation boundary"
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
+    export FM_PROCEVENT_CAPTURE_INBOX_FD=8
     runner="$id.runner"
   else
     runner=$(runner_file "$id")
@@ -834,8 +838,7 @@ EOF
   fi
   printf 'captured: %s\n' "$durable"
   if [ "$extension_owner" -eq 1 ]; then
-    rm -f -- "$reservation_dir/.extension-capture-$reservation_terminal.json" \
-      "$reservation_dir/.extension-capture-$reservation_silent.json"
+    fm_procevent_capture_reservation_remove_claim "$STATE" "$CLAIM_TOKEN" || true
   fi
 }
 
@@ -859,7 +862,7 @@ retire_owned_terminal_source() {  # <source-id>
     && [ "$current_identity" = "$CLAIM_REG_IDENTITY" ] \
     && fm_procevent_claim_mark_terminal_locked "$id" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN"; then
     if rm -f -- "$registration" && [ ! -e "$registration" ] && [ ! -L "$registration" ]; then
-      fm_procevent_claim_release_locked "$id" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN" || status=1
+      fm_procevent_claim_release_locked "$id" "$CLAIM_HOME" "$CLAIM_PID" "$CLAIM_TOKEN" "$STATE" || status=1
     else
       status=1
     fi
@@ -909,7 +912,7 @@ cmd_reconcile() {
     stop_state=$?
     case "$stop_state" in
       0|1)
-        if fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" 2>/dev/null; then
+        if fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" "$STATE" 2>/dev/null; then
           rm -f -- "$(staging_file "$id" "$token")"
           rm -f -- "$(runner_file "$id")"
           stopped=$((stopped + 1))
@@ -949,7 +952,7 @@ cmd_reconcile() {
             && rm -f -- "$(source_file "$id")" \
             && [ ! -e "$(source_file "$id")" ] \
             && [ ! -L "$(source_file "$id")" ] \
-            && fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" 2>/dev/null; then
+            && fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" "$STATE" 2>/dev/null; then
             stopped=$((stopped + 1))
           else
             uncertain=$((uncertain + 1))
@@ -971,7 +974,7 @@ cmd_reconcile() {
           fi
           if [ "$stop_state" -eq 0 ] \
             && cleanup_extension_registration_invocations_locked "$id" \
-            && fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" 2>/dev/null; then
+            && fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" "$STATE" 2>/dev/null; then
             rm -f -- "$(staging_file "$id" "$token")"
             rm -f -- "$(runner_file "$id")"
             fm_procevent_source_lock_release "$id"
@@ -1160,7 +1163,7 @@ cmd_retire() {
         fm_procevent_source_lock_release "$id"
         die "cannot prove external adapter cleanup; source remains registered: $id"
       fi
-      if ! fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token"; then
+      if ! fm_procevent_claim_release_locked "$id" "$owner" "$pid" "$token" "$STATE"; then
         fm_procevent_source_lock_release "$id"
         die "cannot release source ownership: $id"
       fi
@@ -1404,7 +1407,7 @@ cmd_extension_bind() {
 }
 
 cmd_extension_process_event() {
-  local owner reservation='' operation='' arg
+  local owner reservation='' operation='' arg result='' binding_digest='' source_id sequence lock_held=0
   local -a forwarded=()
   [ "$#" -ge 2 ] || die "extension-process-event requires process-event arguments"
   operation=$2
@@ -1426,6 +1429,36 @@ cmd_extension_process_event() {
     fi
     forwarded+=("$arg")
   done
+  if [ -n "$reservation" ]; then
+    for ((arg=0; arg<${#forwarded[@]}; arg+=2)); do
+      case "${forwarded[arg]}" in
+        --result-file) result=${forwarded[arg + 1]-} ;;
+        --expect-binding-digest) binding_digest=${forwarded[arg + 1]-} ;;
+      esac
+    done
+    if [[ "$result" =~ ^\./([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$ ]] \
+      && fm_procevent_digest_valid "$binding_digest"; then
+      source_id=${BASH_REMATCH[1]}
+      sequence=${BASH_REMATCH[2]}
+    else
+      die "invalid capture reservation"
+    fi
+    [ "${FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD:-}" = 1 ] && lock_held=1
+    [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_acquire "$source_id" || die "cannot lock capture reservation source"
+    if ! fm_procevent_claim_load_locked "$source_id" 2>/dev/null \
+      || [ "$FM_PROCEVENT_CLAIM_HOME" != "$FM_HOME" ] \
+      || [ "$FM_PROCEVENT_CLAIM_TERMINAL" != active ] \
+      || ! fm_procevent_pid_state "$FM_PROCEVENT_CLAIM_PID" "$FM_PROCEVENT_CLAIM_IDENTITY"; then
+      [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_release "$source_id" 2>/dev/null || true
+      die "capture reservation has no active owner"
+    fi
+    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$FM_PROCEVENT_CLAIM_PID"
+    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY="$FM_PROCEVENT_CLAIM_IDENTITY"
+    export FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN="$FM_PROCEVENT_CLAIM_TOKEN"
+    export FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID="$source_id"
+    export FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE="$sequence"
+    [ "$lock_held" -eq 1 ] || fm_procevent_source_lock_release "$source_id" 2>/dev/null || die "cannot release capture reservation source"
+  fi
   extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
   owner=${FM_LOCK_OWNER_DIR:-}
   [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
@@ -1440,10 +1473,12 @@ cmd_extension_process_event() {
 
 unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
   FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL \
-  FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION
+  FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION \
+  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY \
+  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID \
+  FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE
 { exec 7<&-; } 2>/dev/null || true
 { exec 6<&-; } 2>/dev/null || true
-{ exec 8<&-; } 2>/dev/null || true
 { exec 9<&-; } 2>/dev/null || true
 
 case "${1-}" in

@@ -55,7 +55,7 @@
 // mutation, or stronger-operation capability.
 
 import { spawn } from "node:child_process";
-import { constants as fsConstants } from "node:fs";
+import { constants as fsConstants, fstat } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -76,7 +76,7 @@ import {
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { TextDecoder } from "node:util";
+import { TextDecoder, promisify } from "node:util";
 
 const SELF = fileURLToPath(import.meta.url);
 const CODE_ROOT = path.dirname(path.dirname(SELF));
@@ -125,6 +125,7 @@ const SEMVER_RE = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1
 const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const REQUEST_ID_RE = /^sha256:[0-9a-f]{64}$/;
 const decoder = new TextDecoder("utf-8", { fatal: true });
+const fstatAsync = promisify(fstat);
 
 class HostError extends Error {
   constructor(code, message) {
@@ -1488,14 +1489,23 @@ function validateOperationResult(operation, result) {
 
 async function consumeCaptureReservation(home, resultFile, operation, expected) {
   const token = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION;
+  const claimPid = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID;
+  const claimIdentity = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY;
+  const claimToken = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN;
+  const sourceId = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID;
+  const sequence = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE;
   if (!activeLifecycleLock || (operation !== "result.terminal" && operation !== "result.silent")
-      || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return null;
+      || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)
+      || !/^[0-9]+$/.test(claimPid || "") || typeof claimIdentity !== "string"
+      || !/^[A-Za-z0-9._-]{1,256}$/.test(claimToken || "")
+      || !/^[A-Za-z0-9._-]{1,64}$/.test(sourceId || "") || !/^[0-9]+$/.test(sequence || "")) return null;
   const match = resultFile.match(/^\.\/([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$/);
   if (!match) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
+  if (match[1] !== sourceId || match[2] !== sequence) fail("path-unsafe", "captured result does not match its active claim");
   const reservationRoot = path.join(effectiveStateRoot(home), "procevent-capture-reservations");
   await assertOwnedSafeDirectory(reservationRoot, "process-event capture reservation root", true);
-  const pending = path.join(reservationRoot, `.extension-capture-${token}.json`);
-  const consumed = path.join(reservationRoot, `.extension-capture-${token}.consumed-${makeRequestId().slice(7)}`);
+  const pending = path.join(reservationRoot, `.extension-capture-${claimToken}.${token}.json`);
+  const consumed = path.join(reservationRoot, `.extension-capture-${claimToken}.${token}.consumed-${makeRequestId().slice(7)}`);
   try {
     await rename(pending, consumed);
   } catch {
@@ -1508,26 +1518,42 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
       fail("path-unsafe", "captured result reservation is unsafe");
     }
     const record = new StrictJsonParser((await readFile(consumed)).toString("utf8"), "captured result reservation").parse();
-    exactKeys(record, ["schema", "token", "operation", "source_id", "sequence", "inbox_device", "inbox_inode", "result_device", "result_inode", "claim_pid", "claim_identity", "claim_token", "binding_digest", "content_b64"], "captured result reservation");
+    exactKeys(record, ["schema", "token", "operation", "source_id", "sequence", "inbox_device", "inbox_inode", "result_device", "result_inode", "claim_pid", "claim_identity", "claim_token", "binding_digest"], "captured result reservation");
     if (record.schema !== CAPTURE_RESERVATION_SCHEMA || record.token !== token || record.operation !== operation
         || record.source_id !== match[1] || String(record.sequence) !== match[2]
         || record.binding_digest !== expected["--expect-binding-digest"]
-        || !/^[0-9]+$/.test(record.claim_pid) || typeof record.claim_identity !== "string"
+        || record.claim_pid !== claimPid || record.claim_identity !== claimIdentity || record.claim_token !== claimToken
         || !/^[A-Za-z0-9._-]{1,256}$/.test(record.claim_token) || !/^[0-9]+$/.test(record.inbox_device)
         || !/^[0-9]+$/.test(record.inbox_inode) || !/^[0-9]+$/.test(record.result_device)
-        || !/^[0-9]+$/.test(record.result_inode) || typeof record.content_b64 !== "string") {
+        || !/^[0-9]+$/.test(record.result_inode)) {
       fail("path-unsafe", "captured result reservation does not match this invocation");
     }
-    if (await processIdentityState(Number(record.claim_pid), record.claim_identity) !== 0) {
+    if (await processIdentityState(Number(claimPid), claimIdentity) !== 0) {
       fail("process-identity-uncertain", "captured result owner is no longer active");
     }
-    const bytes = Buffer.from(record.content_b64, "base64");
-    if (bytes.length > MAX_RESULT_BYTES || bytes.toString("base64") !== record.content_b64) {
-      fail("request-oversized", "captured result reservation content is invalid");
+    const inboxInfo = await fstatAsync(8).catch(() => fail("path-unsafe", "captured result inbox descriptor is unavailable"));
+    if (!inboxInfo.isDirectory() || String(inboxInfo.dev) !== record.inbox_device || String(inboxInfo.ino) !== record.inbox_inode) {
+      fail("path-unsafe", "captured result inbox descriptor does not match its reservation");
     }
-    let content;
-    try { content = decoder.decode(bytes); } catch { fail("json-invalid", "captured extension result is not valid UTF-8"); }
-    return { sourceId: record.source_id, sequence: Number(record.sequence), content };
+    let handle;
+    try {
+      handle = await open(`./${match[1]}.${match[2]}.result`, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      const resultInfo = await handle.stat();
+      if (!resultInfo.isFile() || resultInfo.nlink !== 1 || resultInfo.uid !== currentUid() || modeOf(resultInfo) !== 0o600
+          || String(resultInfo.dev) !== record.result_device || String(resultInfo.ino) !== record.result_inode
+          || resultInfo.size > MAX_RESULT_BYTES) {
+        fail("path-unsafe", "captured result does not match its reservation");
+      }
+      const bytes = await handle.readFile();
+      let content;
+      try { content = decoder.decode(bytes); } catch { fail("json-invalid", "captured extension result is not valid UTF-8"); }
+      return { sourceId: record.source_id, sequence: Number(record.sequence), content };
+    } catch (error) {
+      if (error instanceof HostError) throw error;
+      fail("path-unsafe", "captured result is unavailable through its pinned inbox");
+    } finally {
+      await handle?.close().catch(() => {});
+    }
   } finally {
     await unlink(consumed).catch(() => {});
   }
@@ -2186,11 +2212,17 @@ async function runLifecycleProcessEvent(args) {
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  if (process.env.FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD === "1") env.FM_PROCEVENT_CAPTURE_SOURCE_LOCK_HELD = "1";
+  const hasCaptureReservation = args.includes("--capture-reservation")
+    && process.env.FM_PROCEVENT_CAPTURE_INBOX_FD === "8";
+  const stdio = hasCaptureReservation
+    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", "ignore", "inherit"]
+    : ["ignore", "pipe", "pipe"];
   const child = spawn(command, ["extension-process-event", ...args], {
-    cwd: CODE_ROOT,
+    cwd: hasCaptureReservation ? process.cwd() : CODE_ROOT,
     env,
     shell: false,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio,
   });
   const stdout = [];
   const stderr = [];
