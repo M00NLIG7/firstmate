@@ -55,7 +55,7 @@
 // mutation, or stronger-operation capability.
 
 import { spawn } from "node:child_process";
-import { constants as fsConstants, fstatSync, readFileSync, statSync } from "node:fs";
+import { constants as fsConstants } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -96,8 +96,7 @@ const ERROR_EVIDENCE_SCHEMA = "firstmate.process-event-extension-error.v1";
 const INVOCATION_OWNER_SCHEMA = "firstmate.extension-invocation-owner.v1";
 const INVOCATION_READY_SCHEMA = "firstmate.extension-invocation-ready.v1";
 const INVOCATION_RELEASE_SCHEMA = "firstmate.extension-invocation-release.v1";
-const PINNED_CAPTURE_AUTHORITY_FD = 7;
-const PINNED_CAPTURE_FD = 8;
+const CAPTURE_RESERVATION_SCHEMA = "fm-procevent-capture-reservation.v1";
 const MAX_JSON_BYTES = 65536;
 const MAX_RESULT_BYTES = 32768;
 const MAX_STDERR_BYTES = 8192;
@@ -1487,93 +1486,68 @@ function validateOperationResult(operation, result) {
   fail("operation-unsupported", `unsupported process-event operation: ${operation}`);
 }
 
-function hasPinnedCaptureDirectory() {
+async function consumeCaptureReservation(home, resultFile, operation, expected) {
+  const token = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION;
+  if (!activeLifecycleLock || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return null;
+  const match = resultFile.match(/^\.\/([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$/);
+  if (!match) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
+  const reservationRoot = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  if (typeof reservationRoot !== "string" || !path.isAbsolute(reservationRoot)) {
+    fail("path-unsafe", "captured result reservation root is unavailable");
+  }
+  await assertOwnedSafeDirectory(reservationRoot, "process-event capture reservation root", true);
+  const pending = path.join(reservationRoot, `.extension-capture-${token}.json`);
+  const consumed = path.join(reservationRoot, `.extension-capture-${token}.consumed-${makeRequestId().slice(7)}`);
   try {
-    const pinned = fstatSync(PINNED_CAPTURE_FD);
-    const current = statSync(".");
-    return pinned.isDirectory() && current.isDirectory()
-      && pinned.dev === current.dev && pinned.ino === current.ino;
+    await rename(pending, consumed);
   } catch {
-    return false;
+    fail("path-unsafe", "captured result reservation is unavailable");
+  }
+  try {
+    const info = await maybeLstat(consumed);
+    if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1
+        || info.uid !== currentUid() || modeOf(info) !== 0o600 || info.size > MAX_JSON_BYTES) {
+      fail("path-unsafe", "captured result reservation is unsafe");
+    }
+    const record = new StrictJsonParser((await readFile(consumed)).toString("utf8"), "captured result reservation").parse();
+    exactKeys(record, ["schema", "token", "operation", "source_id", "sequence", "inbox_device", "inbox_inode", "result_device", "result_inode", "claim_pid", "claim_identity", "claim_token", "binding_digest", "content_b64"], "captured result reservation");
+    if (record.schema !== CAPTURE_RESERVATION_SCHEMA || record.token !== token || record.operation !== operation
+        || record.source_id !== match[1] || String(record.sequence) !== match[2]
+        || record.binding_digest !== expected["--expect-binding-digest"]
+        || !/^[0-9]+$/.test(record.claim_pid) || typeof record.claim_identity !== "string"
+        || !/^[A-Za-z0-9._-]{1,256}$/.test(record.claim_token) || !/^[0-9]+$/.test(record.inbox_device)
+        || !/^[0-9]+$/.test(record.inbox_inode) || !/^[0-9]+$/.test(record.result_device)
+        || !/^[0-9]+$/.test(record.result_inode) || typeof record.content_b64 !== "string") {
+      fail("path-unsafe", "captured result reservation does not match this invocation");
+    }
+    if (await processIdentityState(Number(record.claim_pid), record.claim_identity) !== 0) {
+      fail("process-identity-uncertain", "captured result owner is no longer active");
+    }
+    const bytes = Buffer.from(record.content_b64, "base64");
+    if (bytes.length > MAX_RESULT_BYTES || bytes.toString("base64") !== record.content_b64) {
+      fail("request-oversized", "captured result reservation content is invalid");
+    }
+    let content;
+    try { content = decoder.decode(bytes); } catch { fail("json-invalid", "captured extension result is not valid UTF-8"); }
+    return { sourceId: record.source_id, sequence: Number(record.sequence), content };
+  } finally {
+    await unlink(consumed).catch(() => {});
   }
 }
 
-function hasPinnedCaptureAuthority() {
-  try {
-    const authority = fstatSync(PINNED_CAPTURE_AUTHORITY_FD);
-    return authority.isFile() && authority.nlink === 0
-      && authority.uid === currentUid() && modeOf(authority) === 0o600;
-  } catch {
-    return false;
-  }
-}
-
-function pinnedCaptureAuthorityDigest() {
-  if (!hasPinnedCaptureAuthority()) return null;
-  try {
-    const authority = readFileSync(PINNED_CAPTURE_AUTHORITY_FD);
-    return authority.length === 32 ? createHash("sha256").update(authority).digest("hex") : null;
-  } catch {
-    return null;
-  }
-}
-
-async function readCapturedResult(home, resultFile) {
-  const authorityDigest = activeLifecycleLock ? pinnedCaptureAuthorityDigest() : null;
-  const pinned = authorityDigest !== null && hasPinnedCaptureDirectory();
-  const absolute = pinned ? resultFile : path.resolve(resultFile);
+async function readCapturedResult(home, resultFile, operation, expected) {
+  const reserved = await consumeCaptureReservation(home, resultFile, operation, expected);
+  if (reserved) return reserved;
+  const absolute = path.resolve(resultFile);
   const inbox = path.join(effectiveStateRoot(home), "procevent-inbox");
-  if (pinned) {
-    if (!/^\.\/[A-Za-z0-9._-]+\.result$/.test(absolute)) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
-  } else {
-    if (!isInside(inbox, absolute) || path.dirname(absolute) !== inbox) fail("path-unsafe", "captured result must be directly inside this home's process-event inbox");
-    const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
-    if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
-  }
-  let bytes;
-  if (pinned) {
-    let resultHandle;
-    try {
-      resultHandle = await open(absolute, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-    } catch {
-      fail("link-unsafe", "captured result cannot be opened without following links");
-    }
-    try {
-      const info = await resultHandle.stat();
-      if (!info.isFile() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
-      if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
-      if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
-      const authorityPath = `${absolute.slice(0, -".result".length)}.authority`;
-      let authorityHandle;
-      try {
-        authorityHandle = await open(authorityPath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      } catch {
-        fail("path-unsafe", "captured result lacks its pinned capture authority");
-      }
-      try {
-        const authorityInfo = await authorityHandle.stat();
-        if (!authorityInfo.isFile() || authorityInfo.nlink !== 1
-            || authorityInfo.uid !== currentUid() || modeOf(authorityInfo) !== 0o600 || authorityInfo.size !== 72) {
-          fail("path-unsafe", "captured result lacks its pinned capture authority");
-        }
-        const declaredAuthority = (await authorityHandle.readFile()).toString("utf8");
-        if (declaredAuthority !== `sha256:${authorityDigest}\n`) {
-          fail("path-unsafe", "captured result does not match its pinned capture authority");
-        }
-      } finally {
-        await authorityHandle.close();
-      }
-      bytes = await resultHandle.readFile();
-    } finally {
-      await resultHandle.close();
-    }
-  } else {
-    const info = await maybeLstat(absolute);
-    if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
-    if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
-    if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
-    bytes = await readFile(absolute);
-  }
+  if (!isInside(inbox, absolute) || path.dirname(absolute) !== inbox) fail("path-unsafe", "captured result must be directly inside this home's process-event inbox");
+  const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
+  if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
+  const info = await maybeLstat(absolute);
+  if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
+  if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
+  if (info.size > MAX_RESULT_BYTES) fail("request-oversized", `captured extension result exceeds ${MAX_RESULT_BYTES} bytes`);
+  const bytes = await readFile(absolute);
   let content;
   try {
     content = decoder.decode(bytes);
@@ -1634,7 +1608,7 @@ async function invokeProcessEvent(home, adapter, operation, options) {
     input = { source_id: sourceId, config_ref: configRef };
   } else {
     if (!options["--result-file"]) fail("usage", `${operation} requires --result-file`);
-    const captured = await readCapturedResult(home, options["--result-file"]);
+    const captured = await readCapturedResult(home, options["--result-file"], operation, options);
     input = { source_id: captured.sourceId, sequence: captured.sequence, content: captured.content };
   }
   const requestId = options["--request-id"] || makeRequestId();
@@ -2214,15 +2188,11 @@ async function runLifecycleProcessEvent(args) {
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
-  const pinnedResult = hasPinnedCaptureAuthority() && hasPinnedCaptureDirectory();
-  const stdio = pinnedResult
-    ? ["ignore", "pipe", "pipe", "ignore", "ignore", "ignore", "ignore", PINNED_CAPTURE_AUTHORITY_FD, PINNED_CAPTURE_FD]
-    : ["ignore", "pipe", "pipe"];
   const child = spawn(command, ["extension-process-event", ...args], {
-    cwd: pinnedResult ? process.cwd() : CODE_ROOT,
+    cwd: CODE_ROOT,
     env,
     shell: false,
-    stdio,
+    stdio: ["ignore", "pipe", "pipe"],
   });
   const stdout = [];
   const stderr = [];

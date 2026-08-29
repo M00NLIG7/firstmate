@@ -217,18 +217,25 @@ cleanup_extension_registration_invocations_locked() {  # <source-id>
 # sidecar, not the current adapter name alone, supplies every expected binding
 # field, so replacing a binding cannot reinterpret old evidence.
 extension_result_command() {  # <adapter> <operation> <result-file>
-  local adapter=$1 operation=$2 result=$3 owner_state
+  local adapter=$1 operation=$2 result=$3 owner_state reservation=''
   fm_procevent_result_extension_load "$result"
   owner_state=$?
   [ "$owner_state" -eq 0 ] || return 1
   [ -x "$EXTENSION_HOST" ] && [ ! -L "$EXTENSION_HOST" ] || return 1
-  "$EXTENSION_HOST" process-event "$adapter" "$operation" \
-    --result-file "$result" \
-    --expect-extension "$FM_PROCEVENT_RESULT_EXTENSION_ID" \
-    --expect-version "$FM_PROCEVENT_RESULT_EXTENSION_VERSION" \
-    --expect-capability-version "$FM_PROCEVENT_RESULT_EXTENSION_CAPABILITY_VERSION" \
-    --expect-package-digest "$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST" \
-    --expect-binding-digest "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST"
+  case "$operation" in
+    result.classify) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY:-} ;;
+    result.terminal) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL:-} ;;
+    result.silent) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_SILENT:-} ;;
+  esac
+  local -a command=("$EXTENSION_HOST" process-event "$adapter" "$operation"
+    --result-file "$result"
+    --expect-extension "$FM_PROCEVENT_RESULT_EXTENSION_ID"
+    --expect-version "$FM_PROCEVENT_RESULT_EXTENSION_VERSION"
+    --expect-capability-version "$FM_PROCEVENT_RESULT_EXTENSION_CAPABILITY_VERSION"
+    --expect-package-digest "$FM_PROCEVENT_RESULT_EXTENSION_PACKAGE_DIGEST"
+    --expect-binding-digest "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST")
+  [ -z "$reservation" ] || command+=(--capture-reservation "$reservation")
+  "${command[@]}"
 }
 
 # Ask the source's own adapter whether a captured result ends the source. Exit 0
@@ -650,7 +657,7 @@ cmd_start() {
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
-  local runner inbox capture_authority
+  local runner inbox reservation_dir
   if [ "$extension_owner" -eq 1 ]; then
     fm_procevent_extension_staging_prepare "$STATE" \
       || die "cannot safely prepare the external registry staging boundary"
@@ -666,15 +673,10 @@ cmd_start() {
     [ "$(pwd -P)" = "$inbox" ] \
       || die "cannot durably capture the extension result"
     exec 8<. || die "cannot retain the external capture boundary"
-    capture_authority=$(mktemp ".capture-authority.XXXXXXXX") \
-      || die "cannot create external capture authority"
-    if ! dd if=/dev/urandom of="$capture_authority" bs=32 count=1 2>/dev/null \
-      || ! chmod 0600 "$capture_authority" \
-      || ! exec 7<"$capture_authority" \
-      || ! rm -f -- "$capture_authority"; then
-      rm -f -- "$capture_authority"
-      die "cannot retain external capture authority"
-    fi
+    reservation_dir=$(fm_procevent_claim_root)
+    [ -d "$reservation_dir" ] && [ ! -L "$reservation_dir" ] \
+      || die "cannot retain the external capture reservation boundary"
+    exec 6<"$reservation_dir" || die "cannot retain the external capture reservation boundary"
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
     runner="$id.runner"
   else
@@ -689,23 +691,29 @@ cmd_start() {
     printf '%s\n' "$$" > "$runner" 2>/dev/null || true
     chmod 0600 "$runner" 2>/dev/null || true
   fi
-  local truncated=0 capture_state durable
+  local truncated=0 capture_state durable reservation_classify reservation_terminal reservation_silent
   if [ "$extension_owner" -eq 1 ]; then
     capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
-      9 8 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
+      9 8 6 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
       "$FM_PROCEVENT_EXTENSION_VERSION" "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
       "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" \
-      "$CLAIM_TOKEN" "$runner" "$out" "$$" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \
+      "$CLAIM_TOKEN" "$runner" "$out" "$$" "$(fm_pid_identity "$$")" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \
       || die "cannot safely stage the extension result"
-    IFS=$'\t' read -r capture_state durable rc truncated <<EOF
+    IFS=$'\t' read -r capture_state durable rc truncated reservation_classify reservation_terminal reservation_silent <<EOF
 $capture_state
 EOF
     exec 9<&-
+    exec 6<&-
     case "$capture_state" in
       captured|no-result) ;;
       failure) die "external source invocation failed: $id" ;;
       *) die "cannot safely stage the extension result" ;;
     esac
+    if [ "$capture_state" = captured ]; then
+      FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY=$reservation_classify
+      FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL=$reservation_terminal
+      FM_PROCEVENT_CAPTURE_RESERVATION_SILENT=$reservation_silent
+    fi
   else
     [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
     (umask 077; : > "$out") || die "cannot stage output"
@@ -1395,16 +1403,47 @@ cmd_extension_bind() {
 }
 
 cmd_extension_process_event() {
-  local owner
+  local owner reservation='' operation='' arg
+  local -a forwarded=()
   [ "$#" -ge 2 ] || die "extension-process-event requires process-event arguments"
+  operation=$2
+  case "$operation" in result.classify|result.terminal|result.silent) ;; *) operation='' ;; esac
+  while [ "$#" -gt 0 ]; do
+    arg=$1
+    shift
+    if [ "$arg" = --capture-reservation ]; then
+      [ -n "$operation" ] && [ -z "$reservation" ] && [ "$#" -gt 0 ] \
+        || die "invalid capture reservation"
+      reservation=$1
+      shift
+      case "$reservation" in
+        *[!a-f0-9]*|?????????????????????????????????????????????????????????????????*) die "invalid capture reservation" ;;
+        ????????????????????????????????????????????????????????????????) ;;
+        *) die "invalid capture reservation" ;;
+      esac
+      continue
+    fi
+    forwarded+=("$arg")
+  done
   extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
   owner=${FM_LOCK_OWNER_DIR:-}
   [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
   export FM_EXTENSION_RETIREMENT_MODE=process-event
   export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
   export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
-  exec "$EXTENSION_HOST" process-event "$@"
+  if [ -n "$reservation" ]; then
+    export FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$reservation"
+  fi
+  exec "$EXTENSION_HOST" process-event "${forwarded[@]}"
 }
+
+unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
+  FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL \
+  FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION
+{ exec 7<&-; } 2>/dev/null || true
+{ exec 6<&-; } 2>/dev/null || true
+{ exec 8<&-; } 2>/dev/null || true
+{ exec 9<&-; } 2>/dev/null || true
 
 case "${1-}" in
   register)           shift; cmd_register "$@" ;;
