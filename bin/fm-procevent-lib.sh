@@ -466,6 +466,62 @@ fm_procevent_claim_release_locked() {
 
 # --- durable capture and publication ----------------------------------------
 
+fm_procevent_path_normalize() {
+  local path=${1-} part
+  local -a parts normalized=()
+  [ -n "$path" ] || return 1
+  case "$path" in
+    /*) ;;
+    *) path="$(pwd -P)/$path" ;;
+  esac
+  IFS=/ read -r -a parts <<< "$path"
+  for part in "${parts[@]}"; do
+    case "$part" in
+      ''|.) ;;
+      ..) [ "${#normalized[@]}" -gt 0 ] && unset 'normalized[${#normalized[@]}-1]' ;;
+      *) normalized+=("$part") ;;
+    esac
+  done
+  printf '/%s\n' "$(IFS=/; printf '%s' "${normalized[*]}")"
+}
+
+fm_procevent_directory_owned_by_current_user() {
+  local owner
+  if [ "$(uname)" = Darwin ]; then
+    owner=$(stat -f %u "$1" 2>/dev/null)
+  else
+    owner=$(stat -c %u "$1" 2>/dev/null)
+  fi
+  [ "$owner" = "$(id -u)" ]
+}
+
+fm_procevent_private_directory_valid() {
+  local directory=$1 exact_mode=$2 canonical normalized mode
+  [ -d "$directory" ] && [ ! -L "$directory" ] || return 1
+  fm_procevent_directory_owned_by_current_user "$directory" || return 1
+  mode=$(fm_pr_file_mode "$directory") || return 1
+  case "$mode" in ''|*[!0-7]*) return 1 ;; esac
+  if [ "$exact_mode" = 1 ]; then
+    [ "$mode" = 700 ] || return 1
+  elif [ $((8#$mode & 8#022)) -ne 0 ]; then
+    return 1
+  fi
+  canonical=$(cd -P -- "$directory" && pwd -P) || return 1
+  normalized=$(fm_procevent_path_normalize "$directory") || return 1
+  [ "$canonical" = "$normalized" ]
+}
+
+fm_procevent_capture_inbox_prepare() {
+  local state=$1 inbox
+  fm_procevent_private_directory_valid "$state" 0 || return 1
+  inbox=$(fm_procevent_inbox_dir "$state")
+  if [ ! -e "$inbox" ] && [ ! -L "$inbox" ]; then
+    (umask 077; mkdir "$inbox") || return 1
+  fi
+  fm_procevent_private_directory_valid "$inbox" 1 || return 1
+  printf '%s\n' "$inbox"
+}
+
 # fm_procevent_capture <state> <source-id> <adapter> <output-file>
 #   [<extension-id> <extension-version> <capability-version> <package-digest> <binding-digest>]
 # Atomically store the completed output at 0600 and print its durable path. The
@@ -487,16 +543,21 @@ fm_procevent_capture() {
     fm_procevent_digest_valid "$package_digest" || return 1
     fm_procevent_digest_valid "$binding_digest" || return 1
   fi
-  inbox=$(fm_procevent_inbox_dir "$state")
-  (umask 077; mkdir -p "$inbox") || return 1
+  inbox=$(fm_procevent_capture_inbox_prepare "$state") || return 1
   seq=1
   while [ -e "$inbox/$id.$seq.result" ]; do seq=$((seq + 1)); done
   dest="$inbox/$id.$seq.result"
   adapter_dest="$inbox/$id.$seq.adapter"
+  [ ! -e "$dest" ] && [ ! -L "$dest" ] \
+    && [ ! -e "$adapter_dest" ] && [ ! -L "$adapter_dest" ] || return 1
   tmp=$(umask 077; mktemp "$inbox/.capture.XXXXXX") || return 1
   adapter_tmp=$(umask 077; mktemp "$inbox/.adapter.XXXXXX") || { rm -f -- "$tmp"; return 1; }
   if [ "$#" -eq 9 ]; then
     extension_dest="$inbox/$id.$seq.extension"
+    [ ! -e "$extension_dest" ] && [ ! -L "$extension_dest" ] || {
+      rm -f -- "$tmp" "$adapter_tmp"
+      return 1
+    }
     extension_tmp=$(umask 077; mktemp "$inbox/.extension.XXXXXX") \
       || { rm -f -- "$tmp" "$adapter_tmp"; return 1; }
   fi

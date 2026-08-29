@@ -1220,6 +1220,18 @@ chmod 0600 "$TMP_ROOT/override-outside/override-source.1.result"
 chmod 0600 "$TMP_ROOT/override-outside/override-source.1.adapter" "$TMP_ROOT/override-outside/override-source.1.extension"
 expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" classify "$TMP_ROOT/override-outside/override-source.1.result"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow inbox-swap-source --config-ref good >/dev/null
+mkdir "$TMP_ROOT/inbox-link-target"
+mv "$STATE_OVERRIDE/procevent-inbox" "$TMP_ROOT/override-real-inbox"
+ln -s "$TMP_ROOT/inbox-link-target" "$STATE_OVERRIDE/procevent-inbox"
+expect_failure "cannot durably capture the extension result" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start inbox-swap-source
+[ -z "$(find "$TMP_ROOT/inbox-link-target" -mindepth 1 -print -quit)" ] \
+  || fail "a post-registration inbox symlink received extension evidence"
+rm "$STATE_OVERRIDE/procevent-inbox"
+mv "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
+pass "post-registration inbox symlink substitution cannot redirect extension evidence"
 mv "$STATE_OVERRIDE/procevent-inbox" "$TMP_ROOT/override-real-inbox"
 ln -s "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
 expect_failure "traverses a symbolic link" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
