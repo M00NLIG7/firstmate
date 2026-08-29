@@ -8,7 +8,7 @@
 set -u
 
 if [ "${FM_HARNESS_ADAPTER_INSTRUCTION_EVAL:-0}" != 1 ]; then
-  echo "skip: set FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 to run the local instruction evaluation"
+  echo "skip: set FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 and FM_HARNESS_ADAPTER_LOCAL_MODEL=<model> to run the local instruction evaluation"
   exit 0
 fi
 
@@ -27,10 +27,7 @@ curl -fsS --max-time 2 http://127.0.0.1:11434/api/tags > "$TMP_ROOT/tags.json" \
   || fail "local Ollama is unavailable at 127.0.0.1:11434; no remote provider fallback is allowed"
 
 MODEL=${FM_HARNESS_ADAPTER_LOCAL_MODEL:-}
-if [ -z "$MODEL" ]; then
-  MODEL=$(jq -r '[.models[].name | select(test("embedding"; "i") | not)][0] // empty' "$TMP_ROOT/tags.json")
-fi
-[ -n "$MODEL" ] || fail "no local non-embedding Ollama model is available"
+[ -n "$MODEL" ] || fail "FM_HARNESS_ADAPTER_LOCAL_MODEL must name an explicit local evaluator"
 jq -e --arg model "$MODEL" '.models | any(.name == $model)' "$TMP_ROOT/tags.json" >/dev/null \
   || fail "requested local Ollama model is unavailable: $MODEL"
 
