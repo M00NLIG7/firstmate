@@ -1,8 +1,85 @@
 use strict;
 use warnings;
 use Cwd qw(getcwd);
-use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDWR);
+use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDONLY O_RDWR);
 use JSON::PP qw(encode_json);
+use POSIX qw(dup2);
+
+if (@ARGV && $ARGV[0] eq 'handoff') {
+  shift @ARGV;
+  my ($inbox_fd, $reservation_fd, $claim_path, $claim_home, $id, $claim_token, $claim_pid,
+      $claim_identity, $binding_digest, $reservation_token, $operation, $result_name, $host, @command) = @ARGV;
+  die "missing handoff command\n" unless @command && shift(@command) eq "--";
+  die "invalid handoff\n" unless defined $inbox_fd && $inbox_fd =~ /\A\d+\z/
+    && defined $reservation_fd && $reservation_fd =~ /\A\d+\z/
+    && defined $claim_path && $claim_path =~ m{\A/}
+    && defined $claim_home && $claim_home =~ m{\A/}
+    && defined $id && $id =~ /\A[A-Za-z0-9._-]{1,64}\z/
+    && defined $claim_token && $claim_token =~ /\A[A-Za-z0-9._-]{1,256}\z/
+    && defined $claim_pid && $claim_pid =~ /\A\d+\z/
+    && defined $claim_identity && length($claim_identity)
+    && defined $binding_digest && $binding_digest =~ /\Asha256:[a-f0-9]{64}\z/
+    && defined $reservation_token && $reservation_token =~ /\A[a-f0-9]{64}\z/
+    && defined $operation && ($operation eq 'result.terminal' || $operation eq 'result.silent')
+    && defined $result_name && $result_name =~ /\A\.\/[A-Za-z0-9._-]{1,64}\.\d+\.result\z/
+    && defined $host && $host =~ m{\A/};
+  my ($result_id, $sequence) = $result_name =~ /\A\.\/([A-Za-z0-9._-]{1,64})\.(\d+)\.result\z/;
+  die "invalid handoff\n" unless $result_id eq $id && getppid() == $claim_pid;
+  open(my $inbox, "<&=$inbox_fd") or die "cannot retain inbox\n";
+  chdir($inbox) or die "cannot enter inbox\n";
+  my $inbox_root = getcwd();
+  my @inbox_stat = stat($inbox);
+  die "unsafe inbox\n" unless @inbox_stat && -d _ && !-l _ && $inbox_stat[4] == $< && ($inbox_stat[2] & 07777) == 0700;
+  sysopen(my $result, "$id.$sequence.result", O_RDONLY | O_NOFOLLOW) or die "cannot open result\n";
+  my @result_stat = stat($result);
+  die "unsafe result\n" unless @result_stat && -f _ && !-l _ && $result_stat[4] == $<
+    && ($result_stat[2] & 07777) == 0600 && $result_stat[3] == 1;
+  sysopen(my $claim, $claim_path, O_RDONLY | O_NOFOLLOW) or die "cannot open claim\n";
+  my @claim_stat = stat($claim);
+  die "unsafe claim\n" unless @claim_stat && -f _ && !-l _ && $claim_stat[4] == $<
+    && ($claim_stat[2] & 07777) == 0600 && $claim_stat[3] == 1 && $claim_stat[7] <= 4096;
+  my $claim_bytes = '';
+  while (1) {
+    my $read = sysread($claim, my $buffer, 4096);
+    defined $read or die "cannot read claim\n";
+    last if $read == 0;
+    $claim_bytes .= $buffer;
+    die "claim too large\n" if length($claim_bytes) > 4096;
+  }
+  my @claim_lines = split(/\n/, $claim_bytes, -1);
+  die "invalid claim\n" unless pop(@claim_lines) eq '' && @claim_lines == 7;
+  die "claim changed\n" unless $claim_lines[0] eq $claim_home && $claim_lines[1] eq $claim_pid
+    && $claim_lines[2] eq $claim_token && $claim_lines[3] eq $claim_identity && $claim_lines[6] eq 'active';
+  open(my $reservation, "<&=$reservation_fd") or die "cannot retain reservation root\n";
+  chdir($reservation) or die "cannot enter reservation root\n";
+  my @reservation_stat = stat($reservation);
+  die "unsafe reservation root\n" unless @reservation_stat && -d _ && !-l _ && $reservation_stat[4] == $< && ($reservation_stat[2] & 07777) == 0700;
+  my $capability_name = ".extension-capture-capability-$claim_token.$reservation_token";
+  sysopen(my $capability, $capability_name, O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0600) or die "cannot create capability\n";
+  my $record = encode_json({
+    schema => 'fm-procevent-capture-capability.v1', token => $reservation_token,
+    operation => $operation, source_id => $id, sequence => 0 + $sequence, binding_digest => $binding_digest,
+    claim_home => $claim_home, claim_pid => "$claim_pid", claim_identity => $claim_identity, claim_token => $claim_token,
+    claim_device => "$claim_stat[0]", claim_inode => "$claim_stat[1]",
+    inbox_device => "$inbox_stat[0]", inbox_inode => "$inbox_stat[1]",
+    result_device => "$result_stat[0]", result_inode => "$result_stat[1]",
+  }) . "\n";
+  my $offset = 0;
+  while ($offset < length($record)) {
+    my $written = syswrite($capability, $record, length($record) - $offset, $offset);
+    defined $written && $written > 0 or die "cannot write capability\n";
+    $offset += $written;
+  }
+  seek($capability, 0, 0) or die "cannot rewind capability\n";
+  unlink($capability_name) or die "cannot unlink capability\n";
+  dup2(fileno($claim), 6) >= 0 or die "cannot install claim descriptor\n";
+  dup2(fileno($capability), 7) >= 0 or die "cannot install capability descriptor\n";
+  dup2(fileno($result), 9) >= 0 or die "cannot install result descriptor\n";
+  chdir($inbox) or die "cannot restore inbox\n";
+  delete @ENV{grep { /^FM_PROCEVENT_INTERNAL_CAPTURE_/ } keys %ENV};
+  exec {$host} $host, @command;
+  die "cannot execute host\n";
+}
 
 my ($registry_fd, $inbox_fd, $reservation_fd, $id, $adapter, $extension_id, $extension_version, $capability_version,
     $package_digest, $binding_digest, $claim_token, $runner_name, $output_name,

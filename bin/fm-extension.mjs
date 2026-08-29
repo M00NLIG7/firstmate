@@ -1488,19 +1488,9 @@ function validateOperationResult(operation, result) {
 }
 
 async function consumeCaptureReservation(home, resultFile, operation, expected) {
-  const token = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION;
-  const claimPid = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID;
-  const claimIdentity = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY;
-  const claimToken = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN;
-  const sourceId = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID;
-  const sequence = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE;
-  const parentPid = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID;
-  if (!activeLifecycleLock || (operation !== "result.terminal" && operation !== "result.silent")
-      || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)
-      || !/^[0-9]+$/.test(claimPid || "") || typeof claimIdentity !== "string"
-      || !/^[A-Za-z0-9._-]{1,256}$/.test(claimToken || "")
-      || !/^[A-Za-z0-9._-]{1,64}$/.test(sourceId || "") || !/^[0-9]+$/.test(sequence || "")
-      || parentPid !== claimPid) return null;
+  const capability = activeLifecycleLock?.captureCapability;
+  if (!capability || (operation !== "result.terminal" && operation !== "result.silent")) return null;
+  const { token, claimPid, claimIdentity, claimToken, sourceId, sequence } = capability;
   const match = resultFile.match(/^\.\/([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$/);
   if (!match) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
   if (match[1] !== sourceId || match[2] !== sequence) fail("path-unsafe", "captured result does not match its active claim");
@@ -1519,7 +1509,7 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
         || info.uid !== currentUid() || modeOf(info) !== 0o600 || info.size > MAX_JSON_BYTES) {
       fail("path-unsafe", "captured result reservation is unsafe");
     }
-    const record = new StrictJsonParser((await readFile(consumed)).toString("utf8"), "captured result reservation").parse();
+    const record = parseStrictJson(await readFile(consumed), "captured result reservation");
     exactKeys(record, ["schema", "token", "operation", "source_id", "sequence", "inbox_device", "inbox_inode", "result_device", "result_inode", "claim_pid", "claim_identity", "claim_token", "binding_digest"], "captured result reservation");
     if (record.schema !== CAPTURE_RESERVATION_SCHEMA || record.token !== token || record.operation !== operation
         || record.source_id !== match[1] || String(record.sequence) !== match[2]
@@ -1530,6 +1520,11 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
         || !/^[0-9]+$/.test(record.result_inode)) {
       fail("path-unsafe", "captured result reservation does not match this invocation");
     }
+    if (record.binding_digest !== capability.bindingDigest || record.source_id !== capability.sourceId
+        || String(record.sequence) !== capability.sequence || record.result_device !== capability.resultDevice
+        || record.result_inode !== capability.resultInode) {
+      fail("path-unsafe", "captured result reservation does not match its capability");
+    }
     if (await processIdentityState(Number(claimPid), claimIdentity) !== 0) {
       fail("process-identity-uncertain", "captured result owner is no longer active");
     }
@@ -1537,28 +1532,79 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
     if (!inboxInfo.isDirectory() || String(inboxInfo.dev) !== record.inbox_device || String(inboxInfo.ino) !== record.inbox_inode) {
       fail("path-unsafe", "captured result inbox descriptor does not match its reservation");
     }
-    let handle;
     try {
-      handle = await open(`./${match[1]}.${match[2]}.result`, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      const resultInfo = await handle.stat();
+      const resultInfo = await fstatAsync(9);
       if (!resultInfo.isFile() || resultInfo.nlink !== 1 || resultInfo.uid !== currentUid() || modeOf(resultInfo) !== 0o600
           || String(resultInfo.dev) !== record.result_device || String(resultInfo.ino) !== record.result_inode
           || resultInfo.size > MAX_RESULT_BYTES) {
         fail("path-unsafe", "captured result does not match its reservation");
       }
-      const bytes = await handle.readFile();
+      const bytes = await readFile(9);
       let content;
       try { content = decoder.decode(bytes); } catch { fail("json-invalid", "captured extension result is not valid UTF-8"); }
       return { sourceId: record.source_id, sequence: Number(record.sequence), content };
     } catch (error) {
       if (error instanceof HostError) throw error;
       fail("path-unsafe", "captured result is unavailable through its pinned inbox");
-    } finally {
-      await handle?.close().catch(() => {});
     }
   } finally {
     await unlink(consumed).catch(() => {});
   }
+}
+
+async function inheritedCaptureCapability(home) {
+  const [claimInfo, capabilityInfo, resultInfo] = await Promise.all([
+    fstatAsync(6).catch(() => null),
+    fstatAsync(7).catch(() => null),
+    fstatAsync(9).catch(() => null),
+  ]);
+  if (!claimInfo && !capabilityInfo && !resultInfo) return null;
+  if (!claimInfo || !capabilityInfo || !resultInfo || !claimInfo.isFile() || !capabilityInfo.isFile() || !resultInfo.isFile()
+      || claimInfo.uid !== currentUid() || capabilityInfo.uid !== currentUid()
+      || modeOf(claimInfo) !== 0o600 || modeOf(capabilityInfo) !== 0o600
+      || claimInfo.nlink !== 1 || capabilityInfo.nlink !== 0
+      || resultInfo.uid !== currentUid() || modeOf(resultInfo) !== 0o600 || resultInfo.nlink !== 1
+      || claimInfo.size === 0 || claimInfo.size > MAX_JSON_BYTES
+      || capabilityInfo.size === 0 || capabilityInfo.size > MAX_JSON_BYTES) {
+    fail("path-unsafe", "capture handoff descriptors are unsafe");
+  }
+  const [claimBytes, capabilityBytes] = await Promise.all([
+    readFile(6).catch(() => fail("path-unsafe", "capture claim descriptor is unavailable")),
+    readFile(7).catch(() => fail("path-unsafe", "capture capability descriptor is unavailable")),
+  ]);
+  let claimText;
+  try { claimText = decoder.decode(claimBytes); } catch { fail("json-invalid", "capture claim descriptor is not valid UTF-8"); }
+  const claimLines = claimText.split("\n");
+  if (claimLines.pop() !== "" || claimLines.length !== 7) fail("path-unsafe", "capture claim descriptor is malformed");
+  const [claimHome, claimPid, claimToken, claimIdentity, claimRegistry, claimRegistryIdentity, claimState] = claimLines;
+  if (claimHome !== home || !/^[0-9]+$/.test(claimPid) || !/^[A-Za-z0-9._-]{1,256}$/.test(claimToken)
+      || !claimIdentity || !claimRegistry.startsWith("/") || !claimRegistryIdentity.includes(":") || claimState !== "active") {
+    fail("path-unsafe", "capture claim descriptor is invalid");
+  }
+  const capability = parseStrictJson(capabilityBytes, "capture capability");
+  exactKeys(capability, ["schema", "token", "operation", "source_id", "sequence", "binding_digest", "claim_home", "claim_pid", "claim_identity", "claim_token", "claim_device", "claim_inode", "inbox_device", "inbox_inode", "result_device", "result_inode"], "capture capability");
+  if (capability.schema !== "fm-procevent-capture-capability.v1" || !/^[a-f0-9]{64}$/.test(capability.token)
+      || (capability.operation !== "result.terminal" && capability.operation !== "result.silent")
+      || !/^[A-Za-z0-9._-]{1,64}$/.test(capability.source_id) || !Number.isSafeInteger(capability.sequence) || capability.sequence < 0
+      || !DIGEST_RE.test(capability.binding_digest) || capability.claim_home !== claimHome
+      || capability.claim_pid !== claimPid || capability.claim_identity !== claimIdentity || capability.claim_token !== claimToken
+      || String(claimInfo.dev) !== capability.claim_device || String(claimInfo.ino) !== capability.claim_inode
+      || !/^[0-9]+$/.test(capability.inbox_device) || !/^[0-9]+$/.test(capability.inbox_inode)
+      || !/^[0-9]+$/.test(capability.result_device) || !/^[0-9]+$/.test(capability.result_inode)) {
+      fail("path-unsafe", "capture capability does not match its active claim");
+  }
+  if (String(resultInfo.dev) !== capability.result_device || String(resultInfo.ino) !== capability.result_inode) {
+    fail("path-unsafe", "capture result descriptor does not match its capability");
+  }
+  if (await processIdentityState(Number(claimPid), claimIdentity) !== 0) {
+    fail("process-identity-uncertain", "capture claim owner is no longer active");
+  }
+  const inboxInfo = await fstatAsync(8).catch(() => fail("path-unsafe", "capture inbox descriptor is unavailable"));
+  if (!inboxInfo.isDirectory() || String(inboxInfo.dev) !== capability.inbox_device || String(inboxInfo.ino) !== capability.inbox_inode) {
+    fail("path-unsafe", "capture inbox descriptor does not match its capability");
+  }
+  return { token: capability.token, operation: capability.operation, sourceId: capability.source_id, sequence: String(capability.sequence),
+    bindingDigest: capability.binding_digest, claimPid, claimIdentity, claimToken, resultDevice: capability.result_device, resultInode: capability.result_inode };
 }
 
 async function readCapturedResult(home, resultFile, operation, expected) {
@@ -1974,12 +2020,9 @@ async function claimInheritedLifecycleLock(home) {
       || !path.basename(ownerPath).startsWith(`${path.basename(lockPath)}.owner.`)) {
     fail("lifecycle-lock-invalid", "retirement lifecycle lock identity is invalid");
   }
-  const delegatedOwnerPid = mode === "process-event" ? process.env.FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID : null;
-  if (delegatedOwnerPid !== null && (!/^[0-9]+$/.test(delegatedOwnerPid)
-      || process.env.FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID !== delegatedOwnerPid)) {
-    fail("lifecycle-lock-invalid", "capture lifecycle handoff is invalid");
-  }
-  activeLifecycleLock = { lockPath, ownerPath, delegatedOwnerPid };
+  const captureCapability = mode === "process-event" ? await inheritedCaptureCapability(home) : null;
+  const delegatedOwnerPid = captureCapability?.claimPid || null;
+  activeLifecycleLock = { lockPath, ownerPath, delegatedOwnerPid, captureCapability };
   await assertLifecycleLockOwned();
   return mode;
 }

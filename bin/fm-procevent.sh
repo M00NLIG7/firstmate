@@ -217,7 +217,7 @@ cleanup_extension_registration_invocations_locked() {  # <source-id>
 # sidecar, not the current adapter name alone, supplies every expected binding
 # field, so replacing a binding cannot reinterpret old evidence.
 extension_result_command() {  # <adapter> <operation> <result-file>
-  local adapter=$1 operation=$2 result=$3 owner_state reservation='' owner
+  local adapter=$1 operation=$2 result=$3 owner_state reservation='' owner claim_path
   fm_procevent_result_extension_load "$result"
   owner_state=$?
   [ "$owner_state" -eq 0 ] || return 1
@@ -237,18 +237,14 @@ extension_result_command() {  # <adapter> <operation> <result-file>
     extension_lifecycle_lock_acquire || return 1
     owner=${FM_LOCK_OWNER_DIR:-}
     [ -n "$owner" ] || { extension_lifecycle_lock_release; return 1; }
-    CDPATH='' cd -P -- /dev/fd/8 2>/dev/null || { extension_lifecycle_lock_release; return 1; }
+    claim_path=$(fm_procevent_claim_path "$CLAIM_ID") || { extension_lifecycle_lock_release; return 1; }
     FM_EXTENSION_RETIREMENT_MODE=process-event \
       FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK" \
       FM_EXTENSION_LIFECYCLE_OWNER="$owner" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$reservation" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$CLAIM_PID" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY="$(fm_pid_identity "$CLAIM_PID")" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN="$CLAIM_TOKEN" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID="$CLAIM_ID" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE="$(fm_procevent_result_sequence "$result")" \
-      FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID="$$" \
-      "$EXTENSION_HOST" "${command[@]:1}"
+      perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" handoff \
+        8 6 "$claim_path" "$CLAIM_HOME" "$CLAIM_ID" "$CLAIM_TOKEN" "$CLAIM_PID" \
+        "$(fm_pid_identity "$CLAIM_PID")" "$FM_PROCEVENT_RESULT_EXTENSION_BINDING_DIGEST" "$reservation" \
+        "$operation" "$result" "$EXTENSION_HOST" -- "${command[@]:1}"
     return $?
   fi
   "${command[@]}"
@@ -722,7 +718,6 @@ cmd_start() {
 $capture_state
 EOF
     exec 9<&-
-    exec 6<&-
     case "$capture_state" in
       captured|no-result) ;;
       failure) die "external source invocation failed: $id" ;;
@@ -848,6 +843,7 @@ EOF
   printf 'captured: %s\n' "$durable"
   if [ "$extension_owner" -eq 1 ]; then
     fm_procevent_capture_reservation_remove_claim "$STATE" "$CLAIM_TOKEN" || true
+    exec 6<&-
   fi
 }
 
@@ -1432,12 +1428,10 @@ cmd_extension_process_event() {
 
 unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
   FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL \
-  FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION \
-  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY \
-  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID \
-  FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID
+  FM_PROCEVENT_CAPTURE_RESERVATION_SILENT
 { exec 7<&-; } 2>/dev/null || true
 { exec 6<&-; } 2>/dev/null || true
+{ exec 8<&-; } 2>/dev/null || true
 { exec 9<&-; } 2>/dev/null || true
 
 case "${1-}" in

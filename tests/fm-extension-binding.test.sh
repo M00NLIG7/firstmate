@@ -1344,6 +1344,23 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
       --expect-package-digest "$7" --expect-binding-digest "$8"
   ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
   "$override_cap" "$override_package" "$override_binding"
+expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$(printf 'd%.0s' {1..64})" \
+  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$$" \
+  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_IDENTITY=forged-identity \
+  FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_TOKEN=forged-claim \
+  FM_PROCEVENT_INTERNAL_CAPTURE_SOURCE_ID=forged-source \
+  FM_PROCEVENT_INTERNAL_CAPTURE_SEQUENCE=1 \
+  FM_PROCEVENT_INTERNAL_CAPTURE_PARENT_PID="$$" sh -c '
+    cd "$1" || exit 1
+    exec 6<.
+    exec 7<.
+    exec 8<.
+    exec "$2" extension-process-event "$3" result.silent --result-file ./forged-source.1.result \
+      --expect-extension "$4" --expect-version "$5" --expect-capability-version "$6" \
+      --expect-package-digest "$7" --expect-binding-digest "$8"
+  ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
+  "$override_cap" "$override_package" "$override_binding"
 forged_reservation_root="$TMP_ROOT/forged-capture-reservations"
 mkdir "$forged_reservation_root"
 forged_reservation_token=$(printf 'c%.0s' {1..64})
