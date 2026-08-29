@@ -129,10 +129,15 @@ Bounded output from the 2026-08-29 local run:
 
 ```text
 ok - local model ambient-router-gemma4:e4b selected every operation scenario and all nine harness identities
-# native loader not claimed: claude 2.1.220 (Claude Code) is installed
-# native loader not claimed: codex 0.147.0-alpha.6+local.4 is installed
-# native loader not claimed: opencode 1.14.48 is installed
-# native loader not claimed: pi 0.84.0 is installed
+# native loader not claimed: claude 2.1.220 (Claude Code) is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: codex 0.147.0-alpha.6+local.4 is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: opencode 1.14.48 is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: pi 0.84.0 is installed, but this harness-neutral evaluation does not exercise its provider transport
+# unverified native loader: pi-signed is not installed on this machine
+# unverified native loader: grok is not installed on this machine
+# unverified native loader: kimi is not installed on this machine
+# unverified native loader: cursor is not installed on this machine
+# unverified native loader: muse is not installed on this machine
 # installed native tools recorded without overstating loader coverage: 4
 # unavailable native tools: pi-signed grok kimi cursor muse
 ```
