@@ -313,6 +313,7 @@ fm_procevent_claim_load_locked() {  # <source-id>
   case "$terminal" in active|terminal) ;; *) return 1 ;; esac
   if [ -n "$state_root" ]; then
     case "$state_root" in /*) ;; *) return 1 ;; esac
+    fm_procevent_claim_state_root_field_valid "$state_root" || return 1
     case "$state_device" in ''|*[!0-9]*) return 1 ;; esac
     case "$state_inode" in ''|*[!0-9]*) return 1 ;; esac
     case "$state_owner" in ''|*[!0-9]*) return 1 ;; esac
@@ -335,11 +336,18 @@ fm_procevent_claim_load_locked() {  # <source-id>
   FM_PROCEVENT_CLAIM_STATE_MODE=$state_mode
 }
 
+fm_procevent_claim_state_root_field_valid() {  # <canonical-state-root>
+  local value=$1 LC_ALL=C
+  case "$value" in *[[:cntrl:]]*) return 1 ;; esac
+  return 0
+}
+
 fm_procevent_claim_state_root_identity() {  # <state-root>
   local state=$1 canonical device inode owner mode
   fm_procevent_private_directory_valid "$state" 0 || return 1
   canonical=$(cd -P -- "$state" && pwd -P) || return 1
   [ "$canonical" = "$(fm_procevent_path_normalize "$state")" ] || return 1
+  fm_procevent_claim_state_root_field_valid "$canonical" || return 1
   device=$(fm_pr_file_device "$canonical") || return 1
   inode=$(fm_pr_file_inode "$canonical") || return 1
   owner=$(id -u) || return 1

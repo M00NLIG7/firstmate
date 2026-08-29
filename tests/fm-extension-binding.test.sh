@@ -1427,6 +1427,28 @@ pass "caller environment, descriptors, and lifecycle entry cannot forge capture 
 reservation_records=$(find "$STATE_OVERRIDE/procevent-capture-reservations" -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')
 [ "$reservation_records" -eq 0 ] || fail "completed extension capture left residual reservation state"
 pass "extension capture reservations are bounded to their runner lifecycle"
+state_path_decoy="$H_STATE_OVERRIDE/state/procevent-capture-reservations/.extension-capture-control-path-decoy.json"
+mkdir -p "${state_path_decoy%/*}"
+chmod 0700 "$H_STATE_OVERRIDE/state" "${state_path_decoy%/*}"
+printf 'decoy\n' > "$state_path_decoy"
+chmod 0600 "$state_path_decoy"
+for control_kind in tab newline; do
+  case "$control_kind" in
+    tab) control_state="$TMP_ROOT/control-state"$'\t'"tab" ;;
+    newline) control_state="$TMP_ROOT/control-state"$'\n'"newline" ;;
+  esac
+  control_source="control-${control_kind}-state-source"
+  mkdir -p "$control_state"
+  chmod 0700 "$control_state"
+  FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$control_state" \
+    "$PROCEVENT" register lavish "$control_source" -- /bin/echo control >/dev/null
+  expect_failure "cannot acquire source ownership" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$control_state" \
+    "$PROCEVENT" start "$control_source"
+  assert_absent "$TMP_ROOT/claims/$control_source.claim" "control-byte state root created a malformed claim"
+  assert_absent "$control_state/procevent-capture-reservations" "control-byte state root created reservation state"
+  assert_present "$state_path_decoy" "control-byte state root touched unrelated reservation state"
+done
+pass "control-byte state roots cannot serialize claims or reservations"
 override_crash_marker="$TMP_ROOT/override-crash.marker"
 override_crash_release="$TMP_ROOT/override-crash.release"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \

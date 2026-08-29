@@ -51,7 +51,7 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   die "claim changed\n" unless $claim_lines[0] eq $claim_home && $claim_lines[1] eq $claim_pid
     && $claim_lines[2] eq $claim_token && $claim_lines[3] eq $claim_identity && $claim_lines[6] eq 'active';
   if (@claim_lines == 12) {
-    die "invalid claim\n" unless $claim_lines[7] =~ m{\A/} && $claim_lines[8] =~ /\A\d+\z/
+    die "invalid claim\n" unless $claim_lines[7] =~ m{\A/} && $claim_lines[7] !~ /[\x00-\x1f\x7f]/ && $claim_lines[8] =~ /\A\d+\z/
       && $claim_lines[9] =~ /\A\d+\z/ && $claim_lines[10] =~ /\A\d+\z/
       && $claim_lines[11] =~ /\A[0-7]+\z/ && (oct($claim_lines[11]) & 0022) == 0;
   }

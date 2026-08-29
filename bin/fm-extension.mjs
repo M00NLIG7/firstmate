@@ -1582,7 +1582,7 @@ async function inheritedCaptureCapability(home) {
       || !claimIdentity || !claimRegistry.startsWith("/") || !claimRegistryIdentity.includes(":") || claimState !== "active") {
     fail("path-unsafe", "capture claim descriptor is invalid");
   }
-  if (claimLines.length === 12 && (!claimStateRoot.startsWith("/") || !/^[0-9]+$/.test(claimStateDevice)
+  if (claimLines.length === 12 && (!claimStateRoot.startsWith("/") || /[\u0000-\u001f\u007f]/.test(claimStateRoot) || !/^[0-9]+$/.test(claimStateDevice)
       || !/^[0-9]+$/.test(claimStateInode) || !/^[0-9]+$/.test(claimStateOwner)
       || !/^[0-7]+$/.test(claimStateMode) || (Number.parseInt(claimStateMode, 8) & 0o22) !== 0)) {
     fail("path-unsafe", "capture claim state root is invalid");
