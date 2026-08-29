@@ -172,7 +172,7 @@ my @inbox_stat = stat($inbox_dir);
 my @result_stat = stat("$prefix.result");
 @inbox_stat && @result_stat or fail('cannot stat captured result');
 my @reservations;
-for my $operation ('result.classify', 'result.terminal', 'result.silent') {
+for my $operation ('result.terminal', 'result.silent') {
   my $token = random_token();
   write_reservation($token, $operation, $content, \@inbox_stat, \@result_stat);
   push(@reservations, $token);

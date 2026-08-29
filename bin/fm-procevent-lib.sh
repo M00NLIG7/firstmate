@@ -37,6 +37,7 @@ fm_procevent_claim_root() {
 
 fm_procevent_registry_dir() { printf '%s\n' "$1/procevent"; }
 fm_procevent_inbox_dir()    { printf '%s\n' "$1/procevent-inbox"; }
+fm_procevent_capture_reservation_dir() { printf '%s\n' "$1/procevent-capture-reservations"; }
 
 # A source id names a private file and a bounded wake slug, so it is held to the
 # same path-safe shape as a task id. Adapters derive it from canonical source
@@ -527,6 +528,17 @@ fm_procevent_extension_staging_prepare() {
   fm_procevent_private_directory_valid "$state" 0 || return 1
   registry=$(fm_procevent_registry_dir "$state")
   fm_procevent_private_directory_valid "$registry" 1
+}
+
+fm_procevent_capture_reservation_prepare() {
+  local state=$1 reservation
+  fm_procevent_private_directory_valid "$state" 0 || return 1
+  reservation=$(fm_procevent_capture_reservation_dir "$state")
+  if [ ! -e "$reservation" ] && [ ! -L "$reservation" ]; then
+    (umask 077; mkdir "$reservation") || return 1
+  fi
+  fm_procevent_private_directory_valid "$reservation" 1 || return 1
+  printf '%s\n' "$reservation"
 }
 
 # fm_procevent_capture <state> <source-id> <adapter> <output-file>

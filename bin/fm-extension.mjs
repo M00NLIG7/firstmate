@@ -1488,13 +1488,11 @@ function validateOperationResult(operation, result) {
 
 async function consumeCaptureReservation(home, resultFile, operation, expected) {
   const token = process.env.FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION;
-  if (!activeLifecycleLock || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return null;
+  if (!activeLifecycleLock || (operation !== "result.terminal" && operation !== "result.silent")
+      || typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token)) return null;
   const match = resultFile.match(/^\.\/([A-Za-z0-9._-]{1,64})\.([0-9]+)\.result$/);
   if (!match) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
-  const reservationRoot = process.env.FM_PROCEVENT_CLAIM_ROOT;
-  if (typeof reservationRoot !== "string" || !path.isAbsolute(reservationRoot)) {
-    fail("path-unsafe", "captured result reservation root is unavailable");
-  }
+  const reservationRoot = path.join(effectiveStateRoot(home), "procevent-capture-reservations");
   await assertOwnedSafeDirectory(reservationRoot, "process-event capture reservation root", true);
   const pending = path.join(reservationRoot, `.extension-capture-${token}.json`);
   const consumed = path.join(reservationRoot, `.extension-capture-${token}.consumed-${makeRequestId().slice(7)}`);

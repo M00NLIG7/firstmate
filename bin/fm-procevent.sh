@@ -223,7 +223,6 @@ extension_result_command() {  # <adapter> <operation> <result-file>
   [ "$owner_state" -eq 0 ] || return 1
   [ -x "$EXTENSION_HOST" ] && [ ! -L "$EXTENSION_HOST" ] || return 1
   case "$operation" in
-    result.classify) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY:-} ;;
     result.terminal) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL:-} ;;
     result.silent) reservation=${FM_PROCEVENT_CAPTURE_RESERVATION_SILENT:-} ;;
   esac
@@ -673,8 +672,7 @@ cmd_start() {
     [ "$(pwd -P)" = "$inbox" ] \
       || die "cannot durably capture the extension result"
     exec 8<. || die "cannot retain the external capture boundary"
-    reservation_dir=$(fm_procevent_claim_root)
-    [ -d "$reservation_dir" ] && [ ! -L "$reservation_dir" ] \
+    reservation_dir=$(fm_procevent_capture_reservation_prepare "$STATE") \
       || die "cannot retain the external capture reservation boundary"
     exec 6<"$reservation_dir" || die "cannot retain the external capture reservation boundary"
     FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
@@ -691,7 +689,7 @@ cmd_start() {
     printf '%s\n' "$$" > "$runner" 2>/dev/null || true
     chmod 0600 "$runner" 2>/dev/null || true
   fi
-  local truncated=0 capture_state durable reservation_classify reservation_terminal reservation_silent
+  local truncated=0 capture_state durable reservation_terminal reservation_silent
   if [ "$extension_owner" -eq 1 ]; then
     capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
       9 8 6 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
@@ -699,7 +697,7 @@ cmd_start() {
       "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" \
       "$CLAIM_TOKEN" "$runner" "$out" "$$" "$(fm_pid_identity "$$")" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \
       || die "cannot safely stage the extension result"
-    IFS=$'\t' read -r capture_state durable rc truncated reservation_classify reservation_terminal reservation_silent <<EOF
+    IFS=$'\t' read -r capture_state durable rc truncated reservation_terminal reservation_silent <<EOF
 $capture_state
 EOF
     exec 9<&-
@@ -710,7 +708,6 @@ EOF
       *) die "cannot safely stage the extension result" ;;
     esac
     if [ "$capture_state" = captured ]; then
-      FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY=$reservation_classify
       FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL=$reservation_terminal
       FM_PROCEVENT_CAPTURE_RESERVATION_SILENT=$reservation_silent
     fi
@@ -836,6 +833,10 @@ EOF
     printf 'not-autohandled: %s (left for the handler; still unacknowledged)\n' "$id" >&2
   fi
   printf 'captured: %s\n' "$durable"
+  if [ "$extension_owner" -eq 1 ]; then
+    rm -f -- "$reservation_dir/.extension-capture-$reservation_terminal.json" \
+      "$reservation_dir/.extension-capture-$reservation_silent.json"
+  fi
 }
 
 # Retire a source this runner owns because its adapter classified the captured
@@ -1438,7 +1439,7 @@ cmd_extension_process_event() {
 }
 
 unset FM_PROCEVENT_CAPTURE_PINNED_INBOX FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX \
-  FM_PROCEVENT_CAPTURE_RESERVATION_CLASSIFY FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL \
+  FM_PROCEVENT_CAPTURE_RESERVATION_TERMINAL \
   FM_PROCEVENT_CAPTURE_RESERVATION_SILENT FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION
 { exec 7<&-; } 2>/dev/null || true
 { exec 6<&-; } 2>/dev/null || true

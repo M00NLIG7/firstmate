@@ -1344,6 +1344,23 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
       --expect-package-digest "$7" --expect-binding-digest "$8"
   ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
   "$override_cap" "$override_package" "$override_binding"
+forged_reservation_root="$TMP_ROOT/forged-capture-reservations"
+mkdir "$forged_reservation_root"
+forged_reservation_token=$(printf 'c%.0s' {1..64})
+forged_claim_identity=$(FM_HOME="$TMP_ROOT/forged-identity-home" FM_STATE_OVERRIDE="$TMP_ROOT/forged-identity-state" \
+  bash -c '. "$1"; fm_pid_identity "$2"' sh "$ROOT/bin/fm-wake-lib.sh" "$$")
+printf '%s\n' '{"schema":"fm-procevent-capture-reservation.v1","token":"'"$forged_reservation_token"'","operation":"result.silent","source_id":"forged-source","sequence":1,"inbox_device":"1","inbox_inode":"1","result_device":"1","result_inode":"1","claim_pid":"'"$$"'","claim_identity":"'"$forged_claim_identity"'","claim_token":"forged-claim","binding_digest":"'"$override_binding"'","content_b64":"Zm9yZ2VkCg=="}' \
+  > "$forged_reservation_root/.extension-capture-$forged_reservation_token.json"
+chmod 0600 "$forged_reservation_root/.extension-capture-$forged_reservation_token.json"
+expect_failure "reservation" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  FM_PROCEVENT_CLAIM_ROOT="$forged_reservation_root" sh -c '
+    cd "$1" || exit 1
+    exec "$2" extension-process-event "$3" result.silent --result-file ./forged-source.1.result \
+      --expect-extension "$4" --expect-version "$5" --expect-capability-version "$6" \
+      --expect-package-digest "$7" --expect-binding-digest "$8" \
+      --capture-reservation "$9"
+  ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
+  "$override_cap" "$override_package" "$override_binding" "$forged_reservation_token"
 printf 'forged adapter\n' > "$TMP_ROOT/forged-pinned-result/forged-source.1.adapter"
 chmod 0600 "$TMP_ROOT/forged-pinned-result/forged-source.1.adapter"
 expect_failure "cannot durably" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
@@ -1354,6 +1371,9 @@ expect_failure "cannot durably" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRID
 assert_absent "$TMP_ROOT/forged-pinned-result/forged-source.1.handled" \
   "caller environment forged a handled acknowledgement"
 pass "caller environment, descriptors, and lifecycle entry cannot forge capture authority"
+reservation_records=$(find "$STATE_OVERRIDE/procevent-capture-reservations" -type f -print 2>/dev/null | wc -l | tr -d '[:space:]')
+[ "$reservation_records" -eq 0 ] || fail "completed extension capture left residual reservation state"
+pass "extension capture reservations are bounded to their runner lifecycle"
 FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   "$PROCEVENT" register-extension ext-flow inbox-swap-source --config-ref good >/dev/null
 mkdir "$TMP_ROOT/inbox-link-target"
@@ -1473,7 +1493,7 @@ rm "$capture_signal_authority"
 capture_signal=$(perl "$ROOT/bin/fm-procevent-extension-capture.pl" \
   9 8 6 capture-signal-source ext-flow org.example.flow 1.2.3 1 \
   "sha256:$(printf 'a%.0s' {1..64})" "sha256:$(printf 'b%.0s' {1..64})" signal-token \
-  capture-signal-source.runner .capture-signal.output "$$" "$(fm_pid_identity "$$")" 1024 -- perl -e 'kill "KILL", $$')
+  capture-signal-source.runner .capture-signal.output "$$" "$forged_claim_identity" 1024 -- perl -e 'kill "KILL", $$')
 exec 9<&-
 exec 6<&-
 exec 8<&-
@@ -1500,12 +1520,14 @@ ln -s "$TMP_ROOT/capture-swap-outside" "$capture_swap_inbox"
 capture_swap=$(perl "$ROOT/bin/fm-procevent-extension-capture.pl" \
   9 8 6 capture-swap-source ext-flow org.example.flow 1.2.3 1 \
   "sha256:$(printf 'a%.0s' {1..64})" "sha256:$(printf 'b%.0s' {1..64})" swap-token \
-  capture-swap-source.runner .capture-swap.output "$$" "$(fm_pid_identity "$$")" 1024 -- /bin/printf 'pinned helper result')
+  capture-swap-source.runner .capture-swap.output "$$" "$forged_claim_identity" 1024 -- /bin/printf 'pinned helper result')
 exec 9<&-
 exec 6<&-
 exec 8<&-
 exec 7<&-
-[ "${capture_swap%%$'\t'*$'\t'*$'\t'*$'\t'*}" = $'captured\tcapture-swap-source.1.result\t0\t0' ] \
+IFS=$'\t' read -r capture_swap_state capture_swap_result capture_swap_rc capture_swap_truncated _ <<< "$capture_swap"
+[ "$capture_swap_state" = captured ] && [ "$capture_swap_result" = capture-swap-source.1.result ] \
+  && [ "$capture_swap_rc" = 0 ] && [ "$capture_swap_truncated" = 0 ] \
   || fail "pinned capture helper did not report its captured result"
 assert_present "$TMP_ROOT/capture-swap-real-inbox/capture-swap-source.1.result" \
   "pinned capture helper lost evidence after an inbox substitution"
