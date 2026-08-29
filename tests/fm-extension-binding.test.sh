@@ -1232,6 +1232,21 @@ expect_failure "cannot durably capture the extension result" env FM_HOME="$H_STA
 rm "$STATE_OVERRIDE/procevent-inbox"
 mv "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
 pass "post-registration inbox symlink substitution cannot redirect extension evidence"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow registry-swap-source --config-ref good >/dev/null
+mkdir "$TMP_ROOT/registry-link-target"
+mv "$STATE_OVERRIDE/procevent" "$TMP_ROOT/registry-link-target"
+REGISTRY_LINK_TARGET="$TMP_ROOT/registry-link-target/procevent"
+registry_entries_before=$(find "$REGISTRY_LINK_TARGET" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
+ln -s "$REGISTRY_LINK_TARGET" "$STATE_OVERRIDE/procevent"
+expect_failure "cannot safely prepare the external registry staging boundary" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start registry-swap-source
+registry_entries_after=$(find "$REGISTRY_LINK_TARGET" -mindepth 1 -maxdepth 1 -print | LC_ALL=C sort)
+[ "$registry_entries_before" = "$registry_entries_after" ] \
+  || fail "a post-registration registry symlink received external evidence"
+rm "$STATE_OVERRIDE/procevent"
+mv "$REGISTRY_LINK_TARGET" "$STATE_OVERRIDE/procevent"
+pass "post-registration registry symlink substitution cannot redirect external evidence"
 H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
 LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
 LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"

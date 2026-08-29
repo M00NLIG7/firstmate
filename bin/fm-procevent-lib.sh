@@ -522,6 +522,13 @@ fm_procevent_capture_inbox_prepare() {
   printf '%s\n' "$inbox"
 }
 
+fm_procevent_extension_staging_prepare() {
+  local state=$1 registry
+  fm_procevent_private_directory_valid "$state" 0 || return 1
+  registry=$(fm_procevent_registry_dir "$state")
+  fm_procevent_private_directory_valid "$registry" 1
+}
+
 # fm_procevent_capture <state> <source-id> <adapter> <output-file>
 #   [<extension-id> <extension-version> <capability-version> <package-digest> <binding-digest>]
 # Atomically store the completed output at 0600 and print its durable path. The

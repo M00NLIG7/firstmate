@@ -649,6 +649,9 @@ cmd_start() {
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
+  if [ "$extension_owner" -eq 1 ] && ! fm_procevent_extension_staging_prepare "$STATE"; then
+    die "cannot safely prepare the external registry staging boundary"
+  fi
   printf '%s\n' "$$" > "$(runner_file "$id")" 2>/dev/null || true
   chmod 0600 "$(runner_file "$id")" 2>/dev/null || true
 
