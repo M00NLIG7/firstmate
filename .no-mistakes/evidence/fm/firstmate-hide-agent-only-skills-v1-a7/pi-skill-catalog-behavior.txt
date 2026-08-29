@@ -1,0 +1,2 @@
+ok - Pi kept 15 agent-only skills out of model context while preserving five visible skills, all commands, and all explicit paths
+evidence: pi-skills-loaded=20 visible=5 hidden-direct=15 prompt-bytes=6420

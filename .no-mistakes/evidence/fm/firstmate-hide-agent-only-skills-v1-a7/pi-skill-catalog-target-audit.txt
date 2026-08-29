@@ -1,0 +1,6 @@
+commit=84ddeedd35e7690ee7ae1d0345e2c8834c725b0a
+pi=0.84.0
+bytes=82973
+loadedSkills=29
+catalogSkills=14
+firstmateCatalog=afk,ahoy,bearings,stow,updatefirstmate
