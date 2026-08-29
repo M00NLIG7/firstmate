@@ -184,6 +184,9 @@ A long-poll implementation must return `no-result` before its bound timeout when
 The shipped example uses a 55-second finite wait inside the default five-minute host bound, so an absent file produces no result and no wake before ordinary reconciliation starts the next wait.
 The package never receives a result-file path.
 A source configuration reference is a bounded non-secret identifier or path reference stored in the private registration and sent in JSON; credential values must stay out of the reference, argv, envelopes, diagnostics, and process-event records.
+Before an external invocation can open its runner-output staging file, core validates the effective state directory and its `state/procevent/` registry as canonical, same-user, non-link private directories with safe modes.
+Before an external result can be captured, core applies the same boundary checks to the effective state directory and its `state/procevent-inbox/` destination.
+These external-only checks refuse before a staging or capture write when a post-registration link, ownership, mode, or canonical-path substitution is detected, while the legacy four-argument built-in capture path retains its existing behavior.
 The host reads a regular mode-`0600` result directly from this home's `state/procevent-inbox/` and sends only bounded UTF-8 content.
 A source failure becomes a small host-produced `firstmate.process-event-extension-error.v1` result, so missing packages, invalid responses, crashes, nonzero exits, and timeouts become actionable evidence rather than silent fallback.
 Unknown or malformed terminal and silent responses take the safe false path.
