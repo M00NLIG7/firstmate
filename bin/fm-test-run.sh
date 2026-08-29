@@ -255,7 +255,8 @@ family_for_basename() {
     fm-composer-matrix-live-e2e.test.sh|\
     fm-codex-continuity-live-e2e.test.sh|fm-grok-continuity-live-e2e.test.sh|\
     fm-cursor-primary-live-e2e.test.sh|\
-    fm-grok-stop-live-e2e.test.sh|fm-harness-liveness-drift-live-e2e.test.sh|\
+    fm-grok-stop-live-e2e.test.sh|fm-harness-adapter-instructions-live-e2e.test.sh|\
+    fm-harness-liveness-drift-live-e2e.test.sh|\
     fm-muse-signals-live-e2e.test.sh|\
     fm-herdr-version-floor-live-e2e.test.sh|\
     fm-opencode-primary-live-e2e.test.sh|fm-pi-branch-live-e2e.test.sh|\
@@ -534,6 +535,7 @@ tests/fm-gitignore-config.test.sh 63
 tests/fm-gotmp.test.sh 762
 tests/fm-grok-continuity-live-e2e.test.sh 19
 tests/fm-grok-stop-live-e2e.test.sh 21
+tests/fm-harness-adapter-instructions-live-e2e.test.sh 20
 tests/fm-guard-stale-banner.test.sh 11280
 tests/fm-harness-liveness-drift-live-e2e.test.sh 19
 tests/fm-herdr-session-cleanup.test.sh 14120

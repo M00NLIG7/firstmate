@@ -111,6 +111,32 @@ pi-signed
 0.82.0
 ```
 
+### Harness-adapter instruction routing
+
+`tests/fm-harness-adapter-instructions-live-e2e.test.sh` keeps two evidence boundaries separate.
+Its ordinary path parses the router's declared JSON contract as normalized data and proves every selected reference is readable, which is structural evidence only.
+Its opt-in development path sends the directly loaded router and every operation scenario across all nine harness identities to a local Ollama model, requires the generated plan as normalized JSON, and makes no external-provider call.
+
+```sh
+FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 bin/fm-test-run.sh tests/fm-harness-adapter-instructions-live-e2e.test.sh
+```
+
+That local evaluation demonstrates instruction-driven scenario selection, but it does not claim that a native harness loaded the selected files.
+The guard prints the exact installed version or unavailable status for every native harness so absent tools and unexercised provider transports remain explicit rather than becoming passes.
+Native loader behavior still requires the applicable live agent-tool check; no uniform deterministic zero-provider transport currently spans Claude, Codex, OpenCode, and Pi, and the other five tools remain unavailable where their binaries are absent.
+
+Bounded output from the 2026-08-29 local run:
+
+```text
+ok - local model ambient-router-gemma4:e4b selected every operation scenario and all nine harness identities
+# native loader not claimed: claude 2.1.220 (Claude Code) is installed
+# native loader not claimed: codex 0.147.0-alpha.6+local.4 is installed
+# native loader not claimed: opencode 1.14.48 is installed
+# native loader not claimed: pi 0.84.0 is installed
+# installed native tools recorded without overstating loader coverage: 4
+# unavailable native tools: pi-signed grok kimi cursor muse
+```
+
 The isolated process and endpoint checks used:
 
 ```sh
