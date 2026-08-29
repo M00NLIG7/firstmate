@@ -38,6 +38,8 @@ process_race_retire_pid=
 process_race_release=
 registry_race_pid=
 registry_race_release=
+leaf_race_pid=
+leaf_race_release=
 owner_retire_pid=
 owner_worker_pid=
 owner_register_pid=
@@ -59,11 +61,13 @@ extension_test_cleanup() {
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
   [ -z "$process_race_release" ] || touch "$process_race_release" 2>/dev/null || true
   [ -z "$registry_race_release" ] || touch "$registry_race_release" 2>/dev/null || true
+  [ -z "$leaf_race_release" ] || touch "$leaf_race_release" 2>/dev/null || true
   [ -z "$race_register_pid" ] || kill -TERM "$race_register_pid" 2>/dev/null || true
   [ -z "$race_retire_pid" ] || kill -TERM "$race_retire_pid" 2>/dev/null || true
   [ -z "$process_race_start_pid" ] || kill -TERM "$process_race_start_pid" 2>/dev/null || true
   [ -z "$process_race_retire_pid" ] || kill -TERM "$process_race_retire_pid" 2>/dev/null || true
   [ -z "$registry_race_pid" ] || kill -TERM "$registry_race_pid" 2>/dev/null || true
+  [ -z "$leaf_race_pid" ] || kill -TERM "$leaf_race_pid" 2>/dev/null || true
   [ -z "$owner_retire_pid" ] || kill -TERM "$owner_retire_pid" 2>/dev/null || true
   [ -z "$owner_worker_pid" ] || kill -CONT "$owner_worker_pid" 2>/dev/null || true
   [ -z "$owner_worker_pid" ] || kill -KILL "$owner_worker_pid" 2>/dev/null || true
@@ -1114,6 +1118,44 @@ assert_present "$H_PROCESS_RETIRE_RACE/state/procevent-inbox/process-race-source
 pass "process-event resolution reserves the lifecycle before invocation"
 process_race_release=
 
+process_race_result="$H_PROCESS_RETIRE_RACE/state/procevent-inbox/process-race-source.1.result"
+process_race_resolution=$(FM_HOME="$H_PROCESS_RETIRE_RACE" "$HOST" resolve-process-event ext-process-retire-race)
+IFS=$'\t' read -r process_race_schema process_race_id process_race_version process_race_cap process_race_package process_race_resolution_binding process_race_extra <<< "$process_race_resolution"
+[ "$process_race_schema" = fm-extension-process-event-resolution.v1 ] && [ -z "$process_race_extra" ] \
+  || fail "process-event retirement race resolution was malformed"
+for process_race_operation in result.classify result.terminal result.silent; do
+  process_race_guard="process-race-${process_race_operation#result.}"
+  process_race_registration=$(FM_HOME="$H_PROCESS_RETIRE_RACE" "$PROCEVENT" register-extension ext-process-retire-race "$process_race_guard" --config-ref good)
+  process_race_owner=$(printf '%s\n' "$process_race_registration" | sed -n 's/^owner-token: //p')
+  rm -f "$process_race_marker" "$process_race_release"
+  FM_HOME="$H_PROCESS_RETIRE_RACE" "$HOST" process-event ext-process-retire-race "$process_race_operation" \
+    --result-file "$process_race_result" \
+    --expect-extension "$process_race_id" --expect-version "$process_race_version" \
+    --expect-capability-version "$process_race_cap" \
+    --expect-package-digest "$process_race_package" \
+    --expect-binding-digest "$process_race_resolution_binding" \
+    > "$TMP_ROOT/process-retire-race-${process_race_operation#result.}.out" 2>&1 &
+  process_race_start_pid=$!
+  wait_for_file "$process_race_marker" || fail "$process_race_operation race fixture never reached binding resolution"
+  FM_HOME="$H_PROCESS_RETIRE_RACE" "$HOST" retire-binding org.example.process-retire-race --if-binding-digest "$process_race_binding" \
+    > "$TMP_ROOT/process-retire-race-${process_race_operation#result.}-retire.out" 2>&1 &
+  process_race_retire_pid=$!
+  sleep 0.2
+  kill -0 "$process_race_retire_pid" 2>/dev/null || fail "binding retirement bypassed $process_race_operation lifecycle reservation"
+  touch "$process_race_release"
+  wait "$process_race_start_pid" 2>/dev/null || true
+  process_race_start_pid=
+  process_race_retire_rc=0
+  wait "$process_race_retire_pid" || process_race_retire_rc=$?
+  process_race_retire_pid=
+  [ "$process_race_retire_rc" -ne 0 ] || fail "retirement crossed a reserved $process_race_operation invocation"
+  assert_contains "$(cat "$TMP_ROOT/process-retire-race-${process_race_operation#result.}-retire.out")" "still owns process-event registration" \
+    "retirement did not observe the $process_race_operation registration"
+  FM_HOME="$H_PROCESS_RETIRE_RACE" "$PROCEVENT" retire "$process_race_guard" --if-owner "$process_race_owner" >/dev/null
+done
+process_race_release=
+pass "every external result operation reserves the lifecycle before invocation"
+
 expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding-locked org.example.retire-race --if-binding-digest "$race_binding_digest"
 expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-transfer-locked org.example.retire-race --if-transfer-digest "$wrong_binding_digest" --if-binding-digest "$race_binding_digest"
 pass "public extension dispatch exposes no unlocked retirement entry"
@@ -1316,6 +1358,33 @@ rm "$STATE_OVERRIDE/procevent"
 mv "$TMP_ROOT/registry-race-real" "$STATE_OVERRIDE/procevent"
 pass "external staging remains descriptor-bound across a registry directory swap"
 registry_race_release=
+leaf_race_marker="$TMP_ROOT/leaf-race.marker"
+leaf_race_release="$TMP_ROOT/leaf-race.release"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow leaf-race-source \
+  --config-ref "active-block|$leaf_race_marker|$leaf_race_release" >/dev/null
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start leaf-race-source > "$TMP_ROOT/leaf-race.out" 2>&1 &
+leaf_race_pid=$!
+wait_for_file "$leaf_race_marker" || fail "leaf race fixture never entered its staged invocation"
+leaf_stage=$(find "$STATE_OVERRIDE/procevent" -maxdepth 1 -name '.leaf-race-source.*.output' -print -quit)
+leaf_runner="$STATE_OVERRIDE/procevent/leaf-race-source.runner"
+[ -n "$leaf_stage" ] && [ -f "$leaf_runner" ] || fail "leaf race fixture did not create both protected leaves"
+mkdir "$TMP_ROOT/leaf-race-outside"
+mv "$leaf_stage" "$TMP_ROOT/leaf-race-real-output"
+mv "$leaf_runner" "$TMP_ROOT/leaf-race-real-runner"
+ln -s "$TMP_ROOT/leaf-race-outside/output" "$leaf_stage"
+ln -s "$TMP_ROOT/leaf-race-outside/runner" "$leaf_runner"
+touch "$leaf_race_release"
+leaf_race_rc=0
+wait "$leaf_race_pid" || leaf_race_rc=$?
+leaf_race_pid=
+[ "$leaf_race_rc" -eq 0 ] || fail "leaf substitution race did not complete through held descriptors"
+[ ! -e "$TMP_ROOT/leaf-race-outside/output" ] && [ ! -e "$TMP_ROOT/leaf-race-outside/runner" ] \
+  || fail "a substituted staging leaf received external evidence"
+rm -f "$leaf_stage" "$leaf_runner"
+pass "external staging leaves remain no-follow descriptor-bound through capture"
+leaf_race_release=
 H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
 LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
 LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"

@@ -2369,10 +2369,6 @@ async function cmdProcessEvent(args) {
     await cmdProcessEventLocked(args);
     return;
   }
-  if (args[1] !== "source.poll") {
-    await cmdProcessEventLocked(args);
-    return;
-  }
   await runLifecycleProcessEvent(args);
 }
 

@@ -654,6 +654,8 @@ cmd_start() {
   if [ "$extension_owner" -eq 1 ]; then
     fm_procevent_extension_staging_prepare "$STATE" \
       || die "cannot safely prepare the external registry staging boundary"
+    fm_procevent_capture_inbox_prepare "$STATE" >/dev/null \
+      || die "cannot durably capture the extension result"
     CDPATH='' cd -- "$REG" 2>/dev/null \
       || die "cannot safely prepare the external registry staging boundary"
     [ "$(pwd -P)" = "$REG" ] \
@@ -662,52 +664,69 @@ cmd_start() {
   else
     runner=$(runner_file "$id")
   fi
-  printf '%s\n' "$$" > "$runner" 2>/dev/null || true
-  chmod 0600 "$runner" 2>/dev/null || true
 
   case "$MAX_OUTPUT_BYTES" in ''|*[!0-9]*) die "FM_PROCEVENT_MAX_OUTPUT_BYTES must be a nonnegative integer" ;; esac
   if [ "$extension_owner" -eq 1 ]; then
     out="./.$id.$CLAIM_TOKEN.output"
   else
     out=$(staging_file "$id" "$CLAIM_TOKEN")
+    printf '%s\n' "$$" > "$runner" 2>/dev/null || true
+    chmod 0600 "$runner" 2>/dev/null || true
   fi
-  [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
-  (umask 077; : > "$out") || die "cannot stage output"
-  STAGED_OUTPUT=$out
-  "${ARGV[@]}" 2>/dev/null | perl -e '
-    use strict;
-    use warnings;
-    my $limit = shift;
-    my ($written, $truncated) = (0, 0);
-    while (1) {
-      my $count = sysread(STDIN, my $buffer, 65536);
-      exit 2 unless defined $count;
-      last if $count == 0;
-      my $take = $written < $limit ? $limit - $written : 0;
-      $take = $count if $take > $count;
-      if ($take > 0) {
-        my $offset = 0;
-        while ($offset < $take) {
-          my $count_written = syswrite(STDOUT, $buffer, $take - $offset, $offset);
-          exit 2 unless defined $count_written;
-          $offset += $count_written;
+  local truncated=0 capture_state durable
+  if [ "$extension_owner" -eq 1 ]; then
+    capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
+      "$STATE" "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
+      "$FM_PROCEVENT_EXTENSION_VERSION" "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
+      "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" \
+      "$CLAIM_TOKEN" "$runner" "$out" "$$" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \
+      || die "cannot safely stage the extension result"
+    IFS=$'\t' read -r capture_state durable rc truncated <<EOF
+$capture_state
+EOF
+    case "$capture_state" in
+      captured|no-result) ;;
+      *) die "cannot safely stage the extension result" ;;
+    esac
+  else
+    [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
+    (umask 077; : > "$out") || die "cannot stage output"
+    STAGED_OUTPUT=$out
+    "${ARGV[@]}" 2>/dev/null | perl -e '
+      use strict;
+      use warnings;
+      my $limit = shift;
+      my ($written, $truncated) = (0, 0);
+      while (1) {
+        my $count = sysread(STDIN, my $buffer, 65536);
+        exit 2 unless defined $count;
+        last if $count == 0;
+        my $take = $written < $limit ? $limit - $written : 0;
+        $take = $count if $take > $count;
+        if ($take > 0) {
+          my $offset = 0;
+          while ($offset < $take) {
+            my $count_written = syswrite(STDOUT, $buffer, $take - $offset, $offset);
+            exit 2 unless defined $count_written;
+            $offset += $count_written;
+          }
+          $written += $take;
         }
-        $written += $take;
+        $truncated = 1 if $take < $count;
       }
-      $truncated = 1 if $take < $count;
-    }
-    exit($truncated ? 3 : 0);
-  ' "$MAX_OUTPUT_BYTES" > "$out"
-  local pipe_status=("${PIPESTATUS[@]}") truncated=0
-  rc=${pipe_status[0]}
-  bound_rc=${pipe_status[1]}
-  case "$bound_rc" in
-    0) ;;
-    3) truncated=1 ;;
-    *) die "cannot bound source output" ;;
-  esac
+      exit($truncated ? 3 : 0);
+    ' "$MAX_OUTPUT_BYTES" > "$out"
+    local pipe_status=("${PIPESTATUS[@]}")
+    rc=${pipe_status[0]}
+    bound_rc=${pipe_status[1]}
+    case "$bound_rc" in
+      0) ;;
+      3) truncated=1 ;;
+      *) die "cannot bound source output" ;;
+    esac
+  fi
 
-  if [ "$rc" -ne 0 ] && [ ! -s "$out" ]; then
+  if [ "$capture_state" = no-result ] || { [ "$extension_owner" -eq 0 ] && [ "$rc" -ne 0 ] && [ ! -s "$out" ]; }; then
     # No usable result. Leave the registration armed; the adapter decides
     # whether a nonzero exit is terminal when it handles the next result.
     rm -f -- "$out" "$runner"
@@ -715,20 +734,13 @@ cmd_start() {
     exit 0
   fi
 
-  local durable
   if [ "$extension_owner" -eq 1 ]; then
-    exec 9< "$out" || die "cannot safely stage output"
-    durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" /dev/fd/9 \
-      "$FM_PROCEVENT_EXTENSION_ID" "$FM_PROCEVENT_EXTENSION_VERSION" \
-      "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
-      "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST") \
-      || { exec 9<&-; rm -f -- "$out"; die "cannot durably capture the extension result"; }
-    exec 9<&-
+    :
   else
     durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out") \
       || { rm -f -- "$out"; die "cannot durably capture the result"; }
   fi
-  rm -f -- "$out"
+  [ "$extension_owner" -eq 1 ] || rm -f -- "$out"
   STAGED_OUTPUT=
   [ "$truncated" -eq 1 ] && printf 'truncated: %s at %s bytes\n' "$id" "$MAX_OUTPUT_BYTES" >&2
 
@@ -1301,10 +1313,11 @@ cmd_binding_retirement_preflight() {
     [ -f "$rec" ] && [ ! -L "$rec" ] || die "binding retirement found unsafe registration state"
     id=${rec##*/}; id=${id%.source}
     fm_procevent_source_id_valid "$id" || die "binding retirement found malformed registration state"
-    fm_procevent_source_lock_acquire "$id" || die "binding retirement could not lock registration: $id"
+    fm_lock_try_acquire "$(fm_procevent_source_lock_path "$id")" \
+      || die "binding still owns process-event registration: $id"
     fm_procevent_extension_registration_load_locked "$STATE" "$id"
     owner_state=$?
-    fm_procevent_source_lock_release "$id"
+    fm_lock_release "$(fm_procevent_source_lock_path "$id")"
     case "$owner_state" in
       0) [ "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" != "$digest" ] \
         || die "binding still owns process-event registration: $id" ;;
