@@ -709,7 +709,9 @@ cmd_start() {
     printf '%s\n' "$$" > "$runner" 2>/dev/null || true
     chmod 0600 "$runner" 2>/dev/null || true
   fi
-  local truncated=0 capture_state durable reservation_terminal reservation_silent
+  # Built-in adapters do not run the extension capture helper, so keep this
+  # sentinel defined while sharing the no-result branch below under `set -u`.
+  local truncated=0 capture_state= durable reservation_terminal reservation_silent
   if [ "$extension_owner" -eq 1 ]; then
     capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
       9 8 6 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
