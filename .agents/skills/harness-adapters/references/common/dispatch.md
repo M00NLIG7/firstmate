@@ -4,13 +4,9 @@ Load this with the selected tool reference for dispatch, start, or adapter verif
 
 ## Resolution
 
-Workers mirror firstmate unless `config/crew-harness` names an adapter.
+Use the router's detection and safety sections for static crew and secondmate harness resolution and all explicit overrides.
 `config/crew-dispatch.json` can override that static default for one crewmate or scout with concrete harness, model, and effort axes.
 For a profile array, load `quota-array-dispatch` after establishing harness and provider facts here.
-A captain override wins; a per-task override governs only that dispatch; `default` means mirror firstmate.
-
-Secondmates resolve `config/secondmate-harness` -> `config/crew-harness` -> firstmate.
-Absent or `default` preserves launching them on the crew harness, while a concrete value splits the two.
 
 `../secondmate-provisioning/SKILL.md` owns inherited local material.
 Its harness consequence is that a secondmate's workers receive literal `config/crew-harness` and `config/crew-dispatch.json`, while the primary-only `config/secondmate-harness` is never inherited because secondmates do not spawn secondmates.
@@ -21,7 +17,6 @@ The inherited dispatch file applies the same best-fit profiles there.
 ## Owners
 
 `../../../bin/fm-spawn.sh` owns launch, autonomy, concrete flags, task-kind compatibility, and worker turn-end wiring.
-It uses crew resolution for crewmates or scouts and secondmate resolution for `--secondmate`; an explicit spawn argument overrides once.
 Natural-language rules stay with firstmate, while scripts receive concrete axes.
 
 `../../../bin/fm-busy-lib.sh` owns semantic busy trust.

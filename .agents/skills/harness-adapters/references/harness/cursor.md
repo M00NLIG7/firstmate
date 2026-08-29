@@ -1,7 +1,7 @@
 # Cursor Agent
 
 Verified for crew and scout work on tmux on 2026-08-11 and Herdr on 2026-08-12, and for secondmate and primary work on 2026-08-13, with Cursor Agent CLI 2026.08.11-e8db854.
-`harness=cursor` with a `cursor-grok-4.5-*` model is not the separate xAI `grok` harness or credential surface.
+Cross-harness provider and credential identity is owned by `references/common/model-and-effort.md`.
 
 ## Operating facts
 
