@@ -1486,11 +1486,16 @@ function validateOperationResult(operation, result) {
 }
 
 async function readCapturedResult(home, resultFile) {
-  const absolute = path.resolve(resultFile);
+  const pinned = process.env.FM_PROCEVENT_CAPTURE_PINNED_RESULT === "1";
+  const absolute = pinned ? resultFile : path.resolve(resultFile);
   const inbox = path.join(effectiveStateRoot(home), "procevent-inbox");
-  if (!isInside(inbox, absolute) || path.dirname(absolute) !== inbox) fail("path-unsafe", "captured result must be directly inside this home's process-event inbox");
-  const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
-  if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
+  if (pinned) {
+    if (!/^\.\/[A-Za-z0-9._-]+\.result$/.test(absolute)) fail("path-unsafe", "captured result is not pinned to the process-event inbox");
+  } else {
+    if (!isInside(inbox, absolute) || path.dirname(absolute) !== inbox) fail("path-unsafe", "captured result must be directly inside this home's process-event inbox");
+    const canonicalInbox = await realpath(inbox).catch(() => fail("path-unsafe", "process-event inbox is unavailable"));
+    if (canonicalInbox !== inbox) fail("path-unsafe", "process-event inbox traverses a symbolic link");
+  }
   const info = await maybeLstat(absolute);
   if (!info || !info.isFile() || info.isSymbolicLink() || info.nlink !== 1) fail("link-unsafe", "captured result is not one regular file");
   if (info.uid !== currentUid() || modeOf(info) !== 0o600) fail("mode-unsafe", "captured result owner or mode is unsafe");
@@ -2136,8 +2141,10 @@ async function runLifecycleProcessEvent(args) {
   if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
   if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
   if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  const pinnedResult = process.env.FM_PROCEVENT_CAPTURE_PINNED_RESULT === "1";
+  if (pinnedResult) env.FM_PROCEVENT_CAPTURE_PINNED_RESULT = "1";
   const child = spawn(command, ["extension-process-event", ...args], {
-    cwd: CODE_ROOT,
+    cwd: pinnedResult ? process.cwd() : CODE_ROOT,
     env,
     shell: false,
     stdio: ["ignore", "pipe", "pipe"],

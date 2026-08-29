@@ -3,7 +3,7 @@ use warnings;
 use Cwd qw(getcwd);
 use Fcntl qw(O_CREAT O_EXCL O_NOFOLLOW O_RDWR);
 
-my ($state, $id, $adapter, $extension_id, $extension_version, $capability_version,
+my ($state, $registry_fd, $id, $adapter, $extension_id, $extension_version, $capability_version,
     $package_digest, $binding_digest, $claim_token, $runner_name, $output_name,
     $runner_pid, $limit, @command) = @ARGV;
 die "missing command\n" unless @command && shift(@command) eq "--";
@@ -48,9 +48,10 @@ sub publish_new {
   unlink($temporary) or fail("cannot remove temporary evidence");
 }
 
+open(my $registry_dir, "<&=$registry_fd") or fail("cannot retain registry directory");
+chdir($registry_dir) or fail("cannot enter registry directory");
 safe_dir(".", 0700) or fail("unsafe registry directory");
 my $registry = getcwd();
-opendir(my $registry_dir, ".") or fail("cannot retain registry directory");
 opendir(my $state_dir, $state) or fail("cannot enter state directory");
 chdir($state_dir) or fail("cannot enter state directory");
 getcwd() eq $state or fail("state directory changed");
@@ -88,8 +89,16 @@ while (1) {
   $truncated = 1 if $take < $read;
 }
 close($reader);
-waitpid($child, 0);
-my $rc = $? >> 8;
+my $waited = waitpid($child, 0);
+my $status = $?;
+if ($waited != $child || ($status & 127)) {
+  close($stage);
+  unlink($output_name);
+  unlink($runner_name);
+  print "failure\t$truncated\n";
+  exit 0;
+}
+my $rc = $status >> 8;
 if ($rc != 0 && $written == 0) {
   unlink($output_name);
   unlink($runner_name);
@@ -120,4 +129,5 @@ publish_new($result_tmp, "$prefix.result");
 close($stage) or fail("cannot close staged output");
 chdir($registry_dir) or fail("cannot return to registry directory");
 unlink($output_name) or fail("cannot remove staged output");
-print "captured\t$state/procevent-inbox/$prefix.result\t$rc\t$truncated\n";
+unlink($runner_name) or fail("cannot remove runner record");
+print "captured\t$prefix.result\t$rc\t$truncated\n";

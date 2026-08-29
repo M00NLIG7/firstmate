@@ -659,6 +659,10 @@ fm_procevent_event_line() {
 
 # fm_procevent_handled_marker <state> <source-id> <sequence>
 fm_procevent_handled_marker() {
+  if [ "${FM_PROCEVENT_CAPTURE_PINNED_INBOX:-}" = 1 ]; then
+    printf './%s.%s.handled\n' "$2" "$3"
+    return
+  fi
   printf '%s/%s.%s.handled\n' "$(fm_procevent_inbox_dir "$1")" "$2" "$3"
 }
 
@@ -683,7 +687,11 @@ fm_procevent_mark_handled() {
   local state=$1 id=$2 seq=$3 inbox result adapter_file marker tmp
   fm_procevent_source_id_valid "$id" || return 2
   case "$seq" in ''|*[!0-9]*) return 2 ;; esac
-  inbox=$(fm_procevent_inbox_dir "$state")
+  if [ "${FM_PROCEVENT_CAPTURE_PINNED_INBOX:-}" = 1 ]; then
+    inbox=.
+  else
+    inbox=$(fm_procevent_inbox_dir "$state")
+  fi
   result="$inbox/$id.$seq.result"
   adapter_file="$inbox/$id.$seq.adapter"
   [ -f "$result" ] && [ ! -L "$result" ] || return 2

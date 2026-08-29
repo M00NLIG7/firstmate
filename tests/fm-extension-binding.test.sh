@@ -245,7 +245,14 @@ elif mode.startswith("active-block|"):
 elif request["operation"] == "source.poll": raw(success({"status":"no-result" if mode == "no-result" else "result", "output":"" if mode == "no-result" else f"external evidence: {mode}\n"}))
 elif request["operation"] == "result.classify": raw(success({"classification":"external-ready"}))
 elif request["operation"] == "result.terminal": raw(success({"value":True}))
-elif request["operation"] == "result.silent": raw(success({"value":request.get("input", {}).get("content") == "external evidence: silent-result\n"}))
+elif request["operation"] == "result.silent":
+    content = request.get("input", {}).get("content", "")
+    if content.startswith("external evidence: silent-block|"):
+        _, block_marker, block_release = content.rstrip("\n").split("|", 2)
+        write_exclusive(block_marker, f"{os.getpid()}\n")
+        while not os.path.exists(block_release): time.sleep(.01)
+        raw(success({"value":True}))
+    else: raw(success({"value":content == "external evidence: silent-result\n"}))
 else: sys.exit(6)
 PY
   chmod 0755 "$dir/entrypoint.py"
@@ -1385,6 +1392,47 @@ leaf_race_pid=
 rm -f "$leaf_stage" "$leaf_runner"
 pass "external staging leaves remain no-follow descriptor-bound through capture"
 leaf_race_release=
+publication_race_marker="$TMP_ROOT/publication-race.marker"
+publication_race_release="$TMP_ROOT/publication-race.release"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow publication-race-source \
+  --config-ref "silent-block|$publication_race_marker|$publication_race_release" >/dev/null
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start publication-race-source > "$TMP_ROOT/publication-race.out" 2>&1 &
+publication_race_pid=$!
+wait_for_file "$publication_race_marker" || fail "publication race fixture never reached result handoff"
+mkdir "$TMP_ROOT/publication-race-outside"
+mv "$STATE_OVERRIDE/procevent-inbox" "$TMP_ROOT/publication-race-real-inbox"
+ln -s "$TMP_ROOT/publication-race-outside" "$STATE_OVERRIDE/procevent-inbox"
+touch "$publication_race_release"
+publication_race_rc=0
+wait "$publication_race_pid" || publication_race_rc=$?
+publication_race_pid=
+[ "$publication_race_rc" -eq 0 ] || fail "publication race did not complete through its pinned inbox"
+assert_present "$TMP_ROOT/publication-race-real-inbox/publication-race-source.1.result" \
+  "pinned inbox lost the captured result during publication"
+assert_present "$TMP_ROOT/publication-race-real-inbox/publication-race-source.1.handled" \
+  "pinned inbox lost its handled acknowledgement during publication"
+[ -z "$(find "$TMP_ROOT/publication-race-outside" -mindepth 1 -print -quit)" ] \
+  || fail "post-capture inbox substitution redirected extension evidence or metadata"
+rm "$STATE_OVERRIDE/procevent-inbox"
+mv "$TMP_ROOT/publication-race-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
+pass "external publication remains descriptor-bound after capture"
+publication_race_release=
+capture_signal_state="$TMP_ROOT/capture-signal-state"
+capture_signal_registry="$capture_signal_state/procevent"
+mkdir -p "$capture_signal_registry" "$capture_signal_state/procevent-inbox"
+chmod 0700 "$capture_signal_state" "$capture_signal_registry" "$capture_signal_state/procevent-inbox"
+exec 9<"$capture_signal_registry"
+capture_signal=$(perl "$ROOT/bin/fm-procevent-extension-capture.pl" \
+  "$capture_signal_state" 9 capture-signal-source ext-flow org.example.flow 1.2.3 1 \
+  "sha256:$(printf 'a%.0s' {1..64})" "sha256:$(printf 'b%.0s' {1..64})" signal-token \
+  capture-signal-source.runner .capture-signal.output "$$" 1024 -- perl -e 'kill "KILL", $$')
+exec 9<&-
+[ "$capture_signal" = $'failure\t0' ] || fail "signal-terminated extension invocation was not reported as failure"
+[ -z "$(find "$capture_signal_registry" "$capture_signal_state/procevent-inbox" -mindepth 1 -print -quit)" ] \
+  || fail "signal-terminated extension invocation left staged or successful evidence"
+pass "signal-terminated extension capture cannot publish an empty success"
 H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
 LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
 LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"

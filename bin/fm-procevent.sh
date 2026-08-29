@@ -650,24 +650,30 @@ cmd_start() {
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
-  local runner
+  local runner inbox
   if [ "$extension_owner" -eq 1 ]; then
     fm_procevent_extension_staging_prepare "$STATE" \
       || die "cannot safely prepare the external registry staging boundary"
-    fm_procevent_capture_inbox_prepare "$STATE" >/dev/null \
+    inbox=$(fm_procevent_capture_inbox_prepare "$STATE") \
       || die "cannot durably capture the extension result"
     CDPATH='' cd -- "$REG" 2>/dev/null \
       || die "cannot safely prepare the external registry staging boundary"
     [ "$(pwd -P)" = "$REG" ] \
       || die "cannot safely prepare the external registry staging boundary"
-    runner="./$id.runner"
+    exec 9<. || die "cannot retain the external registry staging boundary"
+    CDPATH='' cd -- "$inbox" 2>/dev/null \
+      || die "cannot durably capture the extension result"
+    [ "$(pwd -P)" = "$inbox" ] \
+      || die "cannot durably capture the extension result"
+    FM_PROCEVENT_CAPTURE_PINNED_INBOX=1
+    runner="$id.runner"
   else
     runner=$(runner_file "$id")
   fi
 
   case "$MAX_OUTPUT_BYTES" in ''|*[!0-9]*) die "FM_PROCEVENT_MAX_OUTPUT_BYTES must be a nonnegative integer" ;; esac
   if [ "$extension_owner" -eq 1 ]; then
-    out="./.$id.$CLAIM_TOKEN.output"
+    out=".$id.$CLAIM_TOKEN.output"
   else
     out=$(staging_file "$id" "$CLAIM_TOKEN")
     printf '%s\n' "$$" > "$runner" 2>/dev/null || true
@@ -676,7 +682,7 @@ cmd_start() {
   local truncated=0 capture_state durable
   if [ "$extension_owner" -eq 1 ]; then
     capture_state=$(perl "$SCRIPT_DIR/fm-procevent-extension-capture.pl" \
-      "$STATE" "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
+      "$STATE" 9 "$id" "$adapter" "$FM_PROCEVENT_EXTENSION_ID" \
       "$FM_PROCEVENT_EXTENSION_VERSION" "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
       "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST" \
       "$CLAIM_TOKEN" "$runner" "$out" "$$" "$MAX_OUTPUT_BYTES" -- "${ARGV[@]}") \
@@ -684,8 +690,10 @@ cmd_start() {
     IFS=$'\t' read -r capture_state durable rc truncated <<EOF
 $capture_state
 EOF
+    exec 9<&-
     case "$capture_state" in
       captured|no-result) ;;
+      failure) die "external source invocation failed: $id" ;;
       *) die "cannot safely stage the extension result" ;;
     esac
   else
@@ -729,9 +737,16 @@ EOF
   if [ "$capture_state" = no-result ] || { [ "$extension_owner" -eq 0 ] && [ "$rc" -ne 0 ] && [ ! -s "$out" ]; }; then
     # No usable result. Leave the registration armed; the adapter decides
     # whether a nonzero exit is terminal when it handles the next result.
-    rm -f -- "$out" "$runner"
+    if [ "$extension_owner" -eq 0 ]; then
+      rm -f -- "$out" "$runner"
+    fi
     printf 'no-result: %s (exit %s)\n' "$id" "$rc"
     exit 0
+  fi
+
+  if [ "$extension_owner" -eq 1 ]; then
+    durable="./$durable"
+    export FM_PROCEVENT_CAPTURE_PINNED_RESULT=1
   fi
 
   if [ "$extension_owner" -eq 1 ]; then
@@ -765,7 +780,7 @@ EOF
     fi
     publish_pending "$durable" >/dev/null
   fi
-  rm -f -- "$runner"
+  [ "$extension_owner" -eq 1 ] || rm -f -- "$runner"
   # The result is already durable, so retiring an ended source here cannot cost
   # its captured output; if publication failed, later reconciliation can still
   # announce that inbox result without a registration. Leaving the source armed
