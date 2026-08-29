@@ -1,0 +1,2 @@
+error[adapter-unbound]: no home-local extension binding enables adapter: file-signal
+error: extension adapter verification failed: file-signal

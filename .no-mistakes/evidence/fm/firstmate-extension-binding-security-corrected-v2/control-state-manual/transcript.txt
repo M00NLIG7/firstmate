@@ -1,0 +1,7 @@
+start_rc=1 claim=absent reservations=absent
+
+[register]
+registered: control-tab (lavish)
+
+[start]
+error: cannot claim source: control-tab

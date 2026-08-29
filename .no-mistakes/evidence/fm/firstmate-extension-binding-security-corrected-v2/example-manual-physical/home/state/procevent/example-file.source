@@ -1,0 +1,12 @@
+adapter=file-signal
+owner=extension
+extension_schema=fm-procevent-extension-owner.v1
+extension_id=org.firstmate.example.file-signal
+extension_version=1.0.0
+capability_version=1
+package_digest=sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+binding_digest=sha256:5da2169ad772c66cdfcb6b07b82e030a5d0f1e3594bdc4f542ac24a2912158ce
+config_ref=file:/private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/signal.txt
+registration_token=sha256:78ff694ef6054c85ac869a25cc6407a829006081e38f6e48da15ae5e9ff9a820
+argc=0
+argv:

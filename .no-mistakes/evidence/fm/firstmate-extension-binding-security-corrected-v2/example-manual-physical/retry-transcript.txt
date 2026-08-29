@@ -1,0 +1,4 @@
+retry_rc=0
+[start]
+no-result: example-file (exit 0)
+[inbox]

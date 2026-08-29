@@ -1,20 +1,23 @@
 ok - unknown extension conformance section selectors fail before setup
-tests/fm-extension-binding.test.sh: line 371: 20697 Killed: 9               FM_EXTENSION_BINDING_SECTION_CHILD=1 FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0"
 ok - the section coordinator propagates ordered failures and bounded cleanup
 not-autohandled: example-file (left for the handler; still unacknowledged)
-ok - the shipped file-signal package is a runnable end-to-end external adapter
 not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - the shipped file-signal package is a runnable end-to-end external adapter
 ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
 ok - handshake execution rejects and reaps foreground descendants
-
-all extension-binding tests passed
-ok - local binding retirement requires its exact identity and disables invocation
 
 all extension-binding tests passed
 not-autohandled: remote-source (left for the handler; still unacknowledged)
 ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
 
 all extension-binding tests passed
+ok - inner result.silent host crash releases the parent lifecycle lock before terminal retry
+ok - local binding retirement requires its exact identity and disables invocation
+
+all extension-binding tests passed
 ok - independent extension conformance sections complete through isolated public homes
 
 all extension-binding tests passed
+real 27.43
+user 22.06
+sys 17.61

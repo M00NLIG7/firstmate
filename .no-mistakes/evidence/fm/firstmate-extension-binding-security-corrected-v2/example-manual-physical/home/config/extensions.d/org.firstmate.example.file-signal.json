@@ -1,0 +1,32 @@
+{
+  "capabilities": [
+    {
+      "adapter_names": [
+        "file-signal"
+      ],
+      "name": "process-event-adapter",
+      "version": 1
+    }
+  ],
+  "consents": {
+    "artifact_references": true,
+    "credential_store": false,
+    "network": false,
+    "task_metadata": false,
+    "trusted_same_user_code": true
+  },
+  "entrypoint": "file-signal.mjs",
+  "entrypoint_sha256": "sha256:fa90eeea9f90e84afe07cd44797216fdd6196c0aefd9f0d3add25f2354eff82a",
+  "extension_id": "org.firstmate.example.file-signal",
+  "extension_version": "1.0.0",
+  "host_protocol": 1,
+  "manifest_sha256": "sha256:bc8f76ad0cb19e6d9e492eb3cab4c983938f57f40ea75def895d184274f7e32c",
+  "package_digest": "sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76",
+  "package_root": "/private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/home/data/extensions/packages/org.firstmate.example.file-signal/1.0.0/a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76",
+  "schema": "firstmate.extension-binding.v1",
+  "source": {
+    "kind": "local-directory",
+    "path": "/private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/package"
+  },
+  "timeout_ms": 300000
+}

@@ -1,0 +1,334 @@
++ set -u
++ '[' 0 = 1 ']'
+++ dirname tests/fm-extension-binding.test.sh
++ . tests/lib.sh
+++ '[' -n '' ']'
+++ FM_TEST_LIB_SOURCED=1
+++ export FM_GATE_REFUSE_BYPASS=1
+++ FM_GATE_REFUSE_BYPASS=1
+++++ dirname tests/lib.sh
++++ cd tests/..
++++ pwd
+++ ROOT=/tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F
+++ FM_TEST_CLEANUP_DIRS=()
++++ mktemp /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//.fm-test-cleanup.64460.XXXXXX
+++ FM_TEST_CLEANUP_REGISTRY=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//.fm-test-cleanup.64460.60CJd4
++++ fm_test_pid_identity 64460
++++ local pid=64460
++++ FM_STATE_OVERRIDE=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/
++++ bash -c '. "$1"; fm_pid_identity "$2"' _ /tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-wake-lib.sh 64460
+++ FM_TEST_OWNER_IDENTITY='Sat Aug 29 14:09:47 2026     bash -x tests/fm-extension-binding.test.sh'
+++ trap fm_test_cleanup EXIT
+++ trap 'fm_test_cleanup; exit 130' INT
+++ trap 'fm_test_cleanup; exit 143' TERM
+++ FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++ '[' 0 '!=' 1 ']'
+++ fm_test_reap_orphans
+++ local marker dir mtime now owner_pid owner_identity current_identity
++++ date +%s
+++ now=1788037787
+++ for marker in '"${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture'
+++ '[' -e /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.5MeDdF/.fm-test-fixture ']'
++++ sed -n 1p /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.5MeDdF/.fm-test-fixture
+++ owner_pid=44191
++++ sed -n '2,$p' /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.5MeDdF/.fm-test-fixture
+++ owner_identity='Sat Aug 29 14:09:17 2026     bash tests/fm-extension-binding.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 44191
+++ current_identity=
+++ current_identity=
+++ '[' -n 'Sat Aug 29 14:09:17 2026     bash tests/fm-extension-binding.test.sh' ']'
+++ '[' '' = 'Sat Aug 29 14:09:17 2026     bash tests/fm-extension-binding.test.sh' ']'
++++ stat -c %Y /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.5MeDdF/.fm-test-fixture
++++ stat -f %m /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.5MeDdF/.fm-test-fixture
+++ mtime=1788037757
+++ '[' 30 -ge 3600 ']'
+++ continue
+++ for marker in '"${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture'
+++ '[' -e /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.Ss8XEI/.fm-test-fixture ']'
++++ sed -n 1p /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.Ss8XEI/.fm-test-fixture
+++ owner_pid=46244
++++ sed -n '2,$p' /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.Ss8XEI/.fm-test-fixture
+++ owner_identity='Sat Aug 29 14:09:18 2026     bash tests/fm-extension-binding.test.sh'
+++ case "$owner_pid" in
++++ fm_test_pid_identity 46244
+++ current_identity=
+++ current_identity=
+++ '[' -n 'Sat Aug 29 14:09:18 2026     bash tests/fm-extension-binding.test.sh' ']'
+++ '[' '' = 'Sat Aug 29 14:09:18 2026     bash tests/fm-extension-binding.test.sh' ']'
++++ stat -c %Y /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.Ss8XEI/.fm-test-fixture
++++ stat -f %m /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.Ss8XEI/.fm-test-fixture
+++ mtime=1788037759
+++ '[' 28 -ge 3600 ']'
+++ continue
++ extension_segment=example
++ case "$extension_segment" in
++ HOST=/tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-extension.mjs
++ PROCEVENT=/tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-procevent.sh
+++ fm_test_tmproot fm-extension-binding
+++ local prefix=fm-extension-binding root
++++ mktemp -d /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.XXXXXX
+++ root=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
+++ printf '%s\n%s\n' 64460 'Sat Aug 29 14:09:47 2026     bash -x tests/fm-extension-binding.test.sh'
+++ printf '%s\n' /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
+++ printf '%s\n' /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
++ TMP_ROOT_RAW=/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
+++ cd /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
+++ pwd -P
++ TMP_ROOT=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW
++ first_bind_pid=
++ second_bind_pid=
++ handshake_orphan_pid=
++ concurrent_release=
++ race_register_pid=
++ race_retire_pid=
++ race_release=
++ process_race_start_pid=
++ process_race_retire_pid=
++ process_race_release=
++ registry_race_pid=
++ registry_race_release=
++ leaf_race_pid=
++ leaf_race_release=
++ owner_retire_pid=
++ owner_worker_pid=
++ owner_register_pid=
++ signal_retire_pid=
++ signal_worker_pid=
++ active_runner_pid=
++ active_runner_release=
++ remote_active_release=
++ unrelated_daemon_pid=
++ unrelated_launcher_pid=
++ signal_cleanup_host_pid=
++ signal_cleanup_group_pid=
++ crash_cleanup_host_pid=
++ crash_cleanup_group_pid=
++ crash_cleanup_release=
++ crash_silent_start_pid=
++ crash_silent_runner_pid=
++ override_crash_start_pid=
++ override_crash_runner_pid=
++ section_coordinator_pid=
++ trap extension_test_cleanup EXIT
++ trap 'extension_test_cleanup; exit 130' INT
++ trap 'extension_test_cleanup; exit 143' TERM
++ export FM_PROCEVENT_CLAIM_ROOT=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims
++ FM_PROCEVENT_CLAIM_ROOT=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims
++ PACKAGES=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages
++ HOMES=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes
++ mkdir -p /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes
++ '[' 0 = 1 ']'
++ section_enabled coordinator-fail
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-fail ']'
++ return 1
++ section_enabled coordinator-wait
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-wait ']'
++ return 1
++ section_enabled coordinator-stubborn
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-stubborn ']'
++ return 1
++ section_enabled coordinator-pass
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-pass ']'
++ return 1
++ section_enabled coordinator-late-pass
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-late-pass ']'
++ return 1
++ section_enabled coordinator-scheduler-block
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-scheduler-block ']'
++ return 1
++ section_enabled coordinator-scheduler-late
++ local section
++ for section in '"$@"'
++ '[' example = coordinator-scheduler-late ']'
++ return 1
++ '[' example = all ']'
++ '[' example = coordinator ']'
++ section_enabled early-bind
++ local section
++ for section in '"$@"'
++ '[' example = early-bind ']'
++ return 1
++ section_enabled early-validation
++ local section
++ for section in '"$@"'
++ '[' example = early-validation ']'
++ return 1
++ section_enabled early-handshake
++ local section
++ for section in '"$@"'
++ '[' example = early-handshake ']'
++ return 1
++ section_enabled early-integrity
++ local section
++ for section in '"$@"'
++ '[' example = early-integrity ']'
++ return 1
++ section_enabled matrix matrix-runtime
++ local section
++ for section in '"$@"'
++ '[' example = matrix ']'
++ for section in '"$@"'
++ '[' example = matrix-runtime ']'
++ return 1
++ section_enabled lifecycle-flow
++ local section
++ for section in '"$@"'
++ '[' example = lifecycle-flow ']'
++ return 1
++ section_enabled lifecycle-lock
++ local section
++ for section in '"$@"'
++ '[' example = lifecycle-lock ']'
++ return 1
++ section_enabled lifecycle-runner
++ local section
++ for section in '"$@"'
++ '[' example = lifecycle-runner ']'
++ return 1
++ section_enabled lifecycle-state
++ local section
++ for section in '"$@"'
++ '[' example = lifecycle-state ']'
++ return 1
++ section_enabled lifecycle-invocation-cleanup
++ local section
++ for section in '"$@"'
++ '[' example = lifecycle-invocation-cleanup ']'
++ return 1
++ section_enabled remote-envelope remote-activation remote-lifecycle remote-retirement
++ local section
++ for section in '"$@"'
++ '[' example = remote-envelope ']'
++ for section in '"$@"'
++ '[' example = remote-activation ']'
++ for section in '"$@"'
++ '[' example = remote-lifecycle ']'
++ for section in '"$@"'
++ '[' example = remote-retirement ']'
++ return 1
++ section_enabled example
++ local section
++ for section in '"$@"'
++ '[' example = example ']'
++ return 0
++ P_EXAMPLE=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example
++ cp -R /tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/docs/examples/process-event-extension /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example
++ chmod 0755 /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example/file-signal.mjs
++ chmod 0644 /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example/firstmate-extension.json
++ H_EXAMPLE=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
++ new_home /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
++ mkdir -p /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
++ bind_package /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example file-signal --consent artifact-references
++ local home=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example package=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example adapter=file-signal
++ shift 3
++ FM_HOME=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
++ /tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-extension.mjs bind /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/packages/file-signal-example --adapter file-signal --trust-same-user-code --consent artifact-references
++ SIGNAL_FILE=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/example-result.txt
+++ FM_HOME=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
+++ /tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-procevent.sh register-extension file-signal example-file --config-ref file:/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/example-result.txt
++ example_registration='registered: example-file (file-signal from org.firstmate.example.file-signal@1.0.0)
+owner-token: sha256:ea8d4c4e475122af30be67645aede6ccd627ddd2ded4b256a7d2c02762300003
+retire: bin/fm-procevent.sh retire example-file --if-owner sha256:ea8d4c4e475122af30be67645aede6ccd627ddd2ded4b256a7d2c02762300003'
+++ printf '%s\n' 'registered: example-file (file-signal from org.firstmate.example.file-signal@1.0.0)
+owner-token: sha256:ea8d4c4e475122af30be67645aede6ccd627ddd2ded4b256a7d2c02762300003
+retire: bin/fm-procevent.sh retire example-file --if-owner sha256:ea8d4c4e475122af30be67645aede6ccd627ddd2ded4b256a7d2c02762300003'
+++ sed -n 's/^owner-token: //p'
++ example_token=sha256:ea8d4c4e475122af30be67645aede6ccd627ddd2ded4b256a7d2c02762300003
++ example_start=65034
++ FM_HOME=/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example
++ /tmp/fm-t7-nm/nm/worktrees/2fd9ece85c19/01M15QR82GK5RD99WA7SNN1X1F/bin/fm-procevent.sh start example-file
+++ seq 1 100
++ for _ in '$(seq 1 100)'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ sleep 0.05
++ for _ in '$(seq 1 100)'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ sleep 0.05
++ for _ in '$(seq 1 100)'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ sleep 0.05
++ for _ in '$(seq 1 100)'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ sleep 0.05
++ for _ in '$(seq 1 100)'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ break
++ assert_present /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim 'example source never started waiting'
++ '[' -e /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/claims/example-file.claim ']'
++ printf 'build 42 completed successfully\n'
++ wait 65034
+++ first_result /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example example-file
+++ local candidate
+++ for candidate in '"$1/state/procevent-inbox/$2".*.result'
+++ '[' -f '/private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/homes/example/state/procevent-inbox/example-file.*.result' ']'
+++ continue
+++ return 1
++ example_result=
++ fail 'example captured no file result'
++ printf 'not ok - %s\n' 'example captured no file result'
+not ok - example captured no file result
++ exit 1
++ extension_test_cleanup
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -z '' ']'
++ '[' -n '' ']'
++ '[' -f /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.fFPYMW/remote-jobs/worker.pid ']'
++ '[' -n '' ']'
++ '[' -n '' ']'
++ chmod -R u+w /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
++ fm_test_cleanup
++ local d
++ for d in '"${FM_TEST_CLEANUP_DIRS[@]:-}"'
++ '[' -n '' ']'
++ '[' -f /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//.fm-test-cleanup.64460.60CJd4 ']'
++ IFS=
++ read -r d
++ '[' -n /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW ']'
++ rm -rf /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//fm-extension-binding.fFPYMW
++ IFS=
++ read -r d
++ rm -f /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T//.fm-test-cleanup.64460.60CJd4

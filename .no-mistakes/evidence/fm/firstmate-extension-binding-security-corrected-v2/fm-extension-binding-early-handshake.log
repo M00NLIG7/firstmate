@@ -1,0 +1,8 @@
+ok - unknown-only protocol and capability versions refuse without downgrade
+ok - handshake request identity, exact fields, JSON, and process exit are validated before enablement
+not run - foreign-owner fixture requires chown privilege
+
+all extension-binding tests passed
+real 38.22
+user 3.02
+sys 1.58

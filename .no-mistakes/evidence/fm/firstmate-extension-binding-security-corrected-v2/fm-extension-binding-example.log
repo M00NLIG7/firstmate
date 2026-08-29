@@ -1,0 +1,8 @@
+not-autohandled: example-file (left for the handler; still unacknowledged)
+ok - the shipped file-signal package is a runnable end-to-end external adapter
+ok - handshake execution rejects and reaps foreground descendants
+
+all extension-binding tests passed
+real 9.49
+user 3.88
+sys 2.28

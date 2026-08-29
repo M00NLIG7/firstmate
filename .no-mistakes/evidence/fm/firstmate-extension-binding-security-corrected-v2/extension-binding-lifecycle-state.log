@@ -1,0 +1,2 @@
+ok - owner-matched retirement refuses a stale generation and accepts the current one
+not ok - overridden-state runner did not capture its result

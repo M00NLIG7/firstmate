@@ -1,0 +1,8 @@
+ok - unknown extension conformance section selectors fail before setup
+not ok - example captured no file result
+tests/fm-extension-binding.test.sh: line 402: 46244 Killed: 9               FM_EXTENSION_BINDING_SECTION_CHILD=1 FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0"
+ok - the section coordinator propagates ordered failures and bounded cleanup
+not ok - an isolated extension conformance section failed
+real 7.55
+user 4.05
+sys 4.09

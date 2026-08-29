@@ -1,0 +1,6 @@
+start_rc=1
+
+[start.out]
+error: source is not registered: example-file
+
+[state files]

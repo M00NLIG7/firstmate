@@ -1,0 +1,3 @@
+registered: example-file (file-signal from org.firstmate.example.file-signal@1.0.0)
+owner-token: sha256:78ff694ef6054c85ac869a25cc6407a829006081e38f6e48da15ae5e9ff9a820
+retire: bin/fm-procevent.sh retire example-file --if-owner sha256:78ff694ef6054c85ac869a25cc6407a829006081e38f6e48da15ae5e9ff9a820

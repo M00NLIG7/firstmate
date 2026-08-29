@@ -1,0 +1,21 @@
+bind_rc=0 register_rc=0 start_rc=0
+
+[bind]
+bound: org.firstmate.example.file-signal@1.0.0
+binding: /private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/home/config/extensions.d/org.firstmate.example.file-signal.json
+binding-digest: sha256:5da2169ad772c66cdfcb6b07b82e030a5d0f1e3594bdc4f542ac24a2912158ce
+package: /private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/home/data/extensions/packages/org.firstmate.example.file-signal/1.0.0/a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+package-digest: sha256:a670d3f1353bbfa659564b86f6af7783cd47d32ae9a04e7962b28aedf5bc0e76
+verified: process-event-adapter/1 (file-signal)
+
+[registration]
+registered: example-file (file-signal from org.firstmate.example.file-signal@1.0.0)
+owner-token: sha256:78ff694ef6054c85ac869a25cc6407a829006081e38f6e48da15ae5e9ff9a820
+retire: bin/fm-procevent.sh retire example-file --if-owner sha256:78ff694ef6054c85ac869a25cc6407a829006081e38f6e48da15ae5e9ff9a820
+
+[start]
+no-result: example-file (exit 0)
+
+[state files]
+/private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/home/state/procevent/.extension-binding-lifecycle.lock.owner.TpXpJt/pid
+/private/tmp/fm-t7-nm/nm/evidence/01M15QR82GK5RD99WA7SNN1X1F/example-manual-physical/home/state/procevent/example-file.source

@@ -1,0 +1,4 @@
+direct_rc=1
+[stdout]
+[stderr]
+error[path-unsafe]: capture handoff descriptors are unsafe
