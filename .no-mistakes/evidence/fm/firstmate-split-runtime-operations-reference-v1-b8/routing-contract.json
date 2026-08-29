@@ -1,0 +1,36 @@
+{
+  "operations": {
+    "start": {
+      "default": ["references/common/dispatch.md", "references/common/model-and-effort.md"],
+      "trust-dialog": ["references/common/control-and-recovery.md"]
+    },
+    "trust": {"default": ["references/common/control-and-recovery.md"]},
+    "skill": {"default": ["references/common/control-and-recovery.md"]},
+    "interrupt": {"default": ["references/common/control-and-recovery.md"]},
+    "exit": {"default": ["references/common/control-and-recovery.md"]},
+    "resume": {"default": ["references/common/control-and-recovery.md"]},
+    "recovery": {
+      "default": ["references/common/control-and-recovery.md"],
+      "replacement-profile": ["references/common/control-and-recovery.md", "references/common/dispatch.md", "references/common/model-and-effort.md"],
+      "secondmate": ["references/common/control-and-recovery.md", "references/common/primary-hooks.md"],
+      "replacement-secondmate": ["references/common/control-and-recovery.md", "references/common/dispatch.md", "references/common/model-and-effort.md", "references/common/primary-hooks.md"]
+    },
+    "primary": {"default": ["references/common/primary-hooks.md"]},
+    "model-effort": {
+      "default": ["references/common/model-and-effort.md"],
+      "configured-profile": ["references/common/model-and-effort.md", "references/common/dispatch.md"]
+    },
+    "verify": {"default": ["references/common/dispatch.md", "references/common/control-and-recovery.md", "references/common/primary-hooks.md", "references/common/model-and-effort.md"]}
+  },
+  "harnesses": {
+    "claude": "references/harness/claude.md",
+    "codex": "references/harness/codex.md",
+    "opencode": "references/harness/opencode.md",
+    "pi": "references/harness/pi.md",
+    "pi-signed": "references/harness/pi.md",
+    "grok": "references/harness/grok.md",
+    "kimi": "references/harness/kimi.md",
+    "cursor": "references/harness/cursor.md",
+    "muse": "references/harness/muse.md"
+  }
+}

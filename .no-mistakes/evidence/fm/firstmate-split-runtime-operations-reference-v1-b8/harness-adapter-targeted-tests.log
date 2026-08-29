@@ -1,0 +1,69 @@
+Focused harness-adapter validation at 2026-08-29T17:24:32Z
+ok - harness adapter routing artifact is normalized and every target is readable
+ok - local model ambient-router-gemma4:e4b selected every operation scenario and all nine harness identities
+# native loader not claimed: claude 2.1.220 (Claude Code) is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: codex codex 0.147.0-alpha.6+local.4 0f64c204bfc17d61e519b755e9b7f0ed2b75e90b dirty=false is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: opencode 1.14.48 is installed, but this harness-neutral evaluation does not exercise its provider transport
+# native loader not claimed: pi 0.84.0 is installed, but this harness-neutral evaluation does not exercise its provider transport
+# unverified native loader: pi-signed is not installed on this machine
+# unverified native loader: grok is not installed on this machine
+# unverified native loader: kimi is not installed on this machine
+# unverified native loader: cursor is not installed on this machine
+# unverified native loader: muse is not installed on this machine
+# installed native tools recorded without overstating loader coverage: 4
+# unavailable native tools: pi-signed grok kimi cursor muse
+
+Changed-file test selection from public base:
+tests/fm-arm-pretool-check.test.sh
+tests/fm-ask-user-authority.test.sh
+tests/fm-bearings-board.test.sh
+tests/fm-brief.test.sh
+tests/fm-calm-pi-extension.test.sh
+tests/fm-captain-hold-lifecycle.test.sh
+tests/fm-cd-pretool-check.test.sh
+tests/fm-classify-decision-key.test.sh
+tests/fm-composer-ghost.test.sh
+tests/fm-composer-lib.test.sh
+tests/fm-crew-state.test.sh
+tests/fm-documentation-audiences.test.sh
+tests/fm-ensure-agents-md.test.sh
+tests/fm-grok-harness.test.sh
+tests/fm-harness-adapter-references.test.sh
+tests/fm-herdr-lab.test.sh
+tests/fm-kimi-harness.test.sh
+tests/fm-lint-workflows.test.sh
+tests/fm-lint.test.sh
+tests/fm-muse-harness.test.sh
+tests/fm-operational-input.test.sh
+tests/fm-pi-primary-types.test.sh
+tests/fm-send-popup-settle.test.sh
+tests/fm-send-settle.test.sh
+tests/fm-subagent-pretool-check.test.sh
+tests/fm-supervision-instructions.test.sh
+tests/fm-task-delivery.test.sh
+tests/fm-test-isolation-proof.test.sh
+tests/fm-test-run.test.sh
+tests/fm-tmux-submit-busy.test.sh
+tests/fm-trace-context-lib.test.sh
+tests/fm-transition-lib.test.sh
+tests/fm-vendor-auth-probe.test.sh
+tests/fm-afk-pi-herdr-return-e2e.test.sh
+tests/fm-cmux-claude-composer-live-e2e.test.sh
+tests/fm-codex-continuity-live-e2e.test.sh
+tests/fm-composer-matrix-live-e2e.test.sh
+tests/fm-cursor-primary-live-e2e.test.sh
+tests/fm-grok-continuity-live-e2e.test.sh
+tests/fm-grok-stop-live-e2e.test.sh
+tests/fm-harness-adapter-instructions-live-e2e.test.sh
+tests/fm-harness-liveness-drift-live-e2e.test.sh
+tests/fm-herdr-submit-confirm-live-e2e.test.sh
+tests/fm-herdr-version-floor-live-e2e.test.sh
+tests/fm-muse-signals-live-e2e.test.sh
+tests/fm-opencode-primary-live-e2e.test.sh
+tests/fm-pi-branch-live-e2e.test.sh
+tests/fm-pi-primary-live-e2e.test.sh
+tests/fm-quota-array-dispatch-live-e2e.test.sh
+tests/fm-send-inbox-doorbell-live-e2e.test.sh
+tests/fm-send-secondmate-marker-herdr-e2e.test.sh
+tests/fm-sessionstart-hook-live-e2e.test.sh
+tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh
