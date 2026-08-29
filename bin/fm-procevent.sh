@@ -1426,6 +1426,13 @@ cmd_extension_process_event() {
   export FM_EXTENSION_RETIREMENT_MODE=process-event
   export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
   export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
+  # These descriptors are reserved for the direct, internal capture handoff.
+  # The public lifecycle path must not let unrelated descriptors acquired while
+  # obtaining its lock look like a malformed handoff to the host.
+  { exec 6<&-; } 2>/dev/null || true
+  { exec 7<&-; } 2>/dev/null || true
+  { exec 8<&-; } 2>/dev/null || true
+  { exec 9<&-; } 2>/dev/null || true
   exec "$EXTENSION_HOST" process-event "$@"
 }
 

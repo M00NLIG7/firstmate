@@ -25,18 +25,18 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
     && defined $host && $host =~ m{\A/};
   my ($result_id, $sequence) = $result_name =~ /\A\.\/([A-Za-z0-9._-]{1,64})\.(\d+)\.result\z/;
   die "invalid handoff\n" unless $result_id eq $id && getppid() == $claim_pid;
-  open(my $inbox, "<&=$inbox_fd") or die "cannot retain inbox\n";
+  open(my $inbox, "<&$inbox_fd") or die "cannot retain inbox\n";
   chdir($inbox) or die "cannot enter inbox\n";
   my $inbox_root = getcwd();
-  my @inbox_stat = stat($inbox);
+  my @inbox_stat = lstat('.');
   die "unsafe inbox\n" unless @inbox_stat && -d _ && !-l _ && $inbox_stat[4] == $< && ($inbox_stat[2] & 07777) == 0700;
   sysopen(my $result, "$id.$sequence.result", O_RDONLY | O_NOFOLLOW) or die "cannot open result\n";
-  my @result_stat = stat($result);
+  my @result_stat = lstat($result_name);
   die "unsafe result\n" unless @result_stat && -f _ && !-l _ && $result_stat[4] == $<
     && ($result_stat[2] & 07777) == 0600 && $result_stat[3] == 1;
   sysopen(my $claim, $claim_path, O_RDONLY | O_NOFOLLOW) or die "cannot open claim\n";
   my @claim_stat = stat($claim);
-  die "unsafe claim\n" unless @claim_stat && -f _ && !-l _ && $claim_stat[4] == $<
+  die "unsafe claim\n" unless @claim_stat && -f _ && $claim_stat[4] == $<
     && ($claim_stat[2] & 07777) == 0600 && $claim_stat[3] == 1 && $claim_stat[7] <= 4096;
   my $claim_bytes = '';
   while (1) {
@@ -55,10 +55,12 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
       && $claim_lines[9] =~ /\A\d+\z/ && $claim_lines[10] =~ /\A\d+\z/
       && $claim_lines[11] =~ /\A[0-7]+\z/ && (oct($claim_lines[11]) & 0022) == 0;
   }
+  seek($claim, 0, 0) or die "cannot rewind claim\n";
   open(my $reservation, "<&=$reservation_fd") or die "cannot retain reservation root\n";
   chdir($reservation) or die "cannot enter reservation root\n";
-  my @reservation_stat = stat($reservation);
+  my @reservation_stat = lstat('.');
   die "unsafe reservation root\n" unless @reservation_stat && -d _ && !-l _ && $reservation_stat[4] == $< && ($reservation_stat[2] & 07777) == 0700;
+  dup2(fileno($reservation), 7) >= 0 or die "cannot reserve capability descriptor\n";
   my $capability_name = ".extension-capture-capability-$claim_token.$reservation_token";
   sysopen(my $capability, $capability_name, O_CREAT | O_EXCL | O_NOFOLLOW | O_RDWR, 0600) or die "cannot create capability\n";
   my $record = encode_json({
@@ -79,6 +81,7 @@ if (@ARGV && $ARGV[0] eq 'handoff') {
   unlink($capability_name) or die "cannot unlink capability\n";
   dup2(fileno($claim), 6) >= 0 or die "cannot install claim descriptor\n";
   dup2(fileno($capability), 7) >= 0 or die "cannot install capability descriptor\n";
+  dup2(fileno($inbox), 8) >= 0 or die "cannot install inbox descriptor\n";
   dup2(fileno($result), 9) >= 0 or die "cannot install result descriptor\n";
   chdir($inbox) or die "cannot restore inbox\n";
   delete @ENV{grep { /^FM_PROCEVENT_INTERNAL_CAPTURE_/ } keys %ENV};

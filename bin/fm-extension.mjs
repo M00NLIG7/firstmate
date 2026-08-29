@@ -55,7 +55,7 @@
 // mutation, or stronger-operation capability.
 
 import { spawn } from "node:child_process";
-import { constants as fsConstants, fstat } from "node:fs";
+import { constants as fsConstants, fstat, read } from "node:fs";
 import {
   chmod,
   copyFile,
@@ -126,6 +126,7 @@ const DIGEST_RE = /^sha256:[0-9a-f]{64}$/;
 const REQUEST_ID_RE = /^sha256:[0-9a-f]{64}$/;
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const fstatAsync = promisify(fstat);
+const readAsync = promisify(read);
 
 class HostError extends Error {
   constructor(code, message) {
@@ -137,6 +138,20 @@ class HostError extends Error {
 
 function fail(code, message) {
   throw new HostError(code, message);
+}
+
+async function readPinnedDescriptor(fd, limit) {
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const buffer = Buffer.allocUnsafe(Math.min(65536, limit - size + 1));
+    const { bytesRead } = await readAsync(fd, buffer, 0, buffer.length, null);
+    if (bytesRead === 0) break;
+    size += bytesRead;
+    if (size > limit) fail("path-unsafe", "pinned descriptor exceeds its size limit");
+    chunks.push(buffer.subarray(0, bytesRead));
+  }
+  return Buffer.concat(chunks, size);
 }
 
 function isPlainObject(value) {
@@ -1539,7 +1554,7 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
           || resultInfo.size > MAX_RESULT_BYTES) {
         fail("path-unsafe", "captured result does not match its reservation");
       }
-      const bytes = await readFile(9);
+      const bytes = await readPinnedDescriptor(9, MAX_RESULT_BYTES);
       let content;
       try { content = decoder.decode(bytes); } catch { fail("json-invalid", "captured extension result is not valid UTF-8"); }
       return { sourceId: record.source_id, sequence: Number(record.sequence), content };
@@ -1553,12 +1568,18 @@ async function consumeCaptureReservation(home, resultFile, operation, expected) 
 }
 
 async function inheritedCaptureCapability(home) {
-  const [claimInfo, capabilityInfo, resultInfo] = await Promise.all([
+  const [claimInfo, capabilityInfo, inboxInfo, resultInfo] = await Promise.all([
     fstatAsync(6).catch(() => null),
     fstatAsync(7).catch(() => null),
+    fstatAsync(8).catch(() => null),
     fstatAsync(9).catch(() => null),
   ]);
-  if (!claimInfo && !capabilityInfo && !resultInfo) return null;
+  // Node may retain unrelated descriptors at the capability descriptor numbers
+  // on an ordinary lifecycle invocation.  The unlinked capability file is the
+  // direct capture handoff marker; every partial handoff remains a hard failure
+  // below.
+  if (!capabilityInfo || !capabilityInfo.isFile() || capabilityInfo.uid !== currentUid()
+      || modeOf(capabilityInfo) !== 0o600 || capabilityInfo.nlink !== 0) return null;
   if (!claimInfo || !capabilityInfo || !resultInfo || !claimInfo.isFile() || !capabilityInfo.isFile() || !resultInfo.isFile()
       || claimInfo.uid !== currentUid() || capabilityInfo.uid !== currentUid()
       || modeOf(claimInfo) !== 0o600 || modeOf(capabilityInfo) !== 0o600
@@ -1569,8 +1590,8 @@ async function inheritedCaptureCapability(home) {
     fail("path-unsafe", "capture handoff descriptors are unsafe");
   }
   const [claimBytes, capabilityBytes] = await Promise.all([
-    readFile(6).catch(() => fail("path-unsafe", "capture claim descriptor is unavailable")),
-    readFile(7).catch(() => fail("path-unsafe", "capture capability descriptor is unavailable")),
+    readPinnedDescriptor(6, MAX_JSON_BYTES).catch(() => fail("path-unsafe", "capture claim descriptor is unavailable")),
+    readPinnedDescriptor(7, MAX_JSON_BYTES).catch(() => fail("path-unsafe", "capture capability descriptor is unavailable")),
   ]);
   let claimText;
   try { claimText = decoder.decode(claimBytes); } catch { fail("json-invalid", "capture claim descriptor is not valid UTF-8"); }
@@ -1605,7 +1626,7 @@ async function inheritedCaptureCapability(home) {
   if (await processIdentityState(Number(claimPid), claimIdentity) !== 0) {
     fail("process-identity-uncertain", "capture claim owner is no longer active");
   }
-  const inboxInfo = await fstatAsync(8).catch(() => fail("path-unsafe", "capture inbox descriptor is unavailable"));
+  if (!inboxInfo) fail("path-unsafe", "capture inbox descriptor is unavailable");
   if (!inboxInfo.isDirectory() || String(inboxInfo.dev) !== capability.inbox_device || String(inboxInfo.ino) !== capability.inbox_inode) {
     fail("path-unsafe", "capture inbox descriptor does not match its capability");
   }
