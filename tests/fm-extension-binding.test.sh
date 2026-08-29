@@ -1063,7 +1063,9 @@ FM_HOME="$H_FLOW" "$PROCEVENT" start crash-silent-source > "$TMP_ROOT/crash-sile
 crash_silent_start_pid=$!
 for _ in $(seq 1 400); do
   if [ -f "$TMP_ROOT/claims/crash-silent-source.claim" ]; then
-    crash_silent_runner_pid=$(sed -n '2p' "$TMP_ROOT/claims/crash-silent-source.claim")
+    # The successful crash-recovery path may release this durable claim between
+    # the observation above and this best-effort cleanup PID read.
+    crash_silent_runner_pid=$(sed -n '2p' "$TMP_ROOT/claims/crash-silent-source.claim" 2>/dev/null || true)
   fi
   kill -0 "$crash_silent_start_pid" 2>/dev/null || break
   sleep 0.01

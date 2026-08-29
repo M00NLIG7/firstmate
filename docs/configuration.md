@@ -583,7 +583,7 @@ When the directory is absent, ordinary process-event commands perform only a bou
 Binding separates the package's own manifest from this home's explicit enablement.
 `bind` validates the source package, computes every digest, copies the complete tree into the read-only content-addressed `data/extensions/packages/` store, performs the live handshake, and atomically publishes the enabled adapter-name subset.
 The operator supplies trust and required consent facts, not hashes.
-`state/extensions/<extension-id>/` is created only on the first invocation of an enabled package and is that package's home-local working namespace.
+`state/extensions/<extension-id>/` is created when binding performs its initial handshake and is that package's home-local working namespace for later verification and invocation.
 `state/extension-invocations/` contains private host-owned exact process-group cleanup records only while an enabled package invocation is starting or running; retirement and reconciliation retain their existing owners until those records prove the group extinct.
 This integrity boundary does not sandbox trusted same-user code, so bind only a package trusted to run with the operator's operating-system access.
 
