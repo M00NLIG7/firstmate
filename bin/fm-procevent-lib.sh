@@ -543,13 +543,20 @@ fm_procevent_capture() {
     fm_procevent_digest_valid "$package_digest" || return 1
     fm_procevent_digest_valid "$binding_digest" || return 1
   fi
-  inbox=$(fm_procevent_capture_inbox_prepare "$state") || return 1
+  if [ "$#" -eq 9 ]; then
+    inbox=$(fm_procevent_capture_inbox_prepare "$state") || return 1
+  else
+    inbox=$(fm_procevent_inbox_dir "$state")
+    (umask 077; mkdir -p "$inbox") || return 1
+  fi
   seq=1
   while [ -e "$inbox/$id.$seq.result" ]; do seq=$((seq + 1)); done
   dest="$inbox/$id.$seq.result"
   adapter_dest="$inbox/$id.$seq.adapter"
-  [ ! -e "$dest" ] && [ ! -L "$dest" ] \
-    && [ ! -e "$adapter_dest" ] && [ ! -L "$adapter_dest" ] || return 1
+  if [ "$#" -eq 9 ]; then
+    [ ! -e "$dest" ] && [ ! -L "$dest" ] \
+      && [ ! -e "$adapter_dest" ] && [ ! -L "$adapter_dest" ] || return 1
+  fi
   tmp=$(umask 077; mktemp "$inbox/.capture.XXXXXX") || return 1
   adapter_tmp=$(umask 077; mktemp "$inbox/.adapter.XXXXXX") || { rm -f -- "$tmp"; return 1; }
   if [ "$#" -eq 9 ]; then

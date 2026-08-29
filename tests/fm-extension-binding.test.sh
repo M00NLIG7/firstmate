@@ -1232,6 +1232,18 @@ expect_failure "cannot durably capture the extension result" env FM_HOME="$H_STA
 rm "$STATE_OVERRIDE/procevent-inbox"
 mv "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
 pass "post-registration inbox symlink substitution cannot redirect extension evidence"
+H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
+LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
+LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"
+mkdir "$LEGACY_REAL_STATE"
+ln -s "$LEGACY_REAL_STATE" "$LEGACY_LINK_STATE"
+FM_HOME="$H_LEGACY_LINK" FM_STATE_OVERRIDE="$LEGACY_LINK_STATE" \
+  "$PROCEVENT" register lavish legacy-link-source -- /bin/echo legacy-link >/dev/null
+FM_HOME="$H_LEGACY_LINK" FM_STATE_OVERRIDE="$LEGACY_LINK_STATE" \
+  "$PROCEVENT" start legacy-link-source >/dev/null
+assert_present "$LEGACY_REAL_STATE/procevent-inbox/legacy-link-source.1.result" \
+  "an absent-registry built-in capture no longer accepts its legacy state path"
+pass "absent-registry built-in capture retains its legacy state-path behavior"
 mv "$STATE_OVERRIDE/procevent-inbox" "$TMP_ROOT/override-real-inbox"
 ln -s "$TMP_ROOT/override-real-inbox" "$STATE_OVERRIDE/procevent-inbox"
 expect_failure "traverses a symbolic link" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
