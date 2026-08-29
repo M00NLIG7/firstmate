@@ -15,6 +15,7 @@
 #   fm-procevent.sh binding-retirement-preflight <binding-digest>
 #   fm-procevent.sh extension-retirement <binding|transfer> <retirement-arguments...>
 #   fm-procevent.sh extension-bind <bind|receive-transfer-bind> <binding-arguments...>
+#   fm-procevent.sh extension-process-event <process-event-arguments...>
 #   fm-procevent.sh list
 #
 # register   Record a built-in source: its adapter, its canonical id, and the
@@ -649,14 +650,27 @@ cmd_start() {
     fm_procevent_source_lock_release "$CLAIM_ID" 2>/dev/null || true
   }
   trap release_start_claim EXIT
-  if [ "$extension_owner" -eq 1 ] && ! fm_procevent_extension_staging_prepare "$STATE"; then
-    die "cannot safely prepare the external registry staging boundary"
+  local runner
+  if [ "$extension_owner" -eq 1 ]; then
+    fm_procevent_extension_staging_prepare "$STATE" \
+      || die "cannot safely prepare the external registry staging boundary"
+    CDPATH='' cd -- "$REG" 2>/dev/null \
+      || die "cannot safely prepare the external registry staging boundary"
+    [ "$(pwd -P)" = "$REG" ] \
+      || die "cannot safely prepare the external registry staging boundary"
+    runner="./$id.runner"
+  else
+    runner=$(runner_file "$id")
   fi
-  printf '%s\n' "$$" > "$(runner_file "$id")" 2>/dev/null || true
-  chmod 0600 "$(runner_file "$id")" 2>/dev/null || true
+  printf '%s\n' "$$" > "$runner" 2>/dev/null || true
+  chmod 0600 "$runner" 2>/dev/null || true
 
   case "$MAX_OUTPUT_BYTES" in ''|*[!0-9]*) die "FM_PROCEVENT_MAX_OUTPUT_BYTES must be a nonnegative integer" ;; esac
-  out=$(staging_file "$id" "$CLAIM_TOKEN")
+  if [ "$extension_owner" -eq 1 ]; then
+    out="./.$id.$CLAIM_TOKEN.output"
+  else
+    out=$(staging_file "$id" "$CLAIM_TOKEN")
+  fi
   [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
   (umask 077; : > "$out") || die "cannot stage output"
   STAGED_OUTPUT=$out
@@ -696,18 +710,20 @@ cmd_start() {
   if [ "$rc" -ne 0 ] && [ ! -s "$out" ]; then
     # No usable result. Leave the registration armed; the adapter decides
     # whether a nonzero exit is terminal when it handles the next result.
-    rm -f -- "$out" "$(runner_file "$id")"
+    rm -f -- "$out" "$runner"
     printf 'no-result: %s (exit %s)\n' "$id" "$rc"
     exit 0
   fi
 
   local durable
   if [ "$extension_owner" -eq 1 ]; then
-    durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out" \
+    exec 9< "$out" || die "cannot safely stage output"
+    durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" /dev/fd/9 \
       "$FM_PROCEVENT_EXTENSION_ID" "$FM_PROCEVENT_EXTENSION_VERSION" \
       "$FM_PROCEVENT_EXTENSION_CAPABILITY_VERSION" \
       "$FM_PROCEVENT_EXTENSION_PACKAGE_DIGEST" "$FM_PROCEVENT_EXTENSION_BINDING_DIGEST") \
-      || { rm -f -- "$out"; die "cannot durably capture the extension result"; }
+      || { exec 9<&-; rm -f -- "$out"; die "cannot durably capture the extension result"; }
+    exec 9<&-
   else
     durable=$(fm_procevent_capture "$STATE" "$id" "$adapter" "$out") \
       || { rm -f -- "$out"; die "cannot durably capture the result"; }
@@ -737,7 +753,7 @@ cmd_start() {
     fi
     publish_pending "$durable" >/dev/null
   fi
-  rm -f -- "$(runner_file "$id")"
+  rm -f -- "$runner"
   # The result is already durable, so retiring an ended source here cannot cost
   # its captured output; if publication failed, later reconciliation can still
   # announce that inbox result without a registration. Leaving the source armed
@@ -1341,6 +1357,18 @@ cmd_extension_bind() {
   exec "$EXTENSION_HOST" "$@"
 }
 
+cmd_extension_process_event() {
+  local owner
+  [ "$#" -ge 2 ] || die "extension-process-event requires process-event arguments"
+  extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
+  owner=${FM_LOCK_OWNER_DIR:-}
+  [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
+  export FM_EXTENSION_RETIREMENT_MODE=process-event
+  export FM_EXTENSION_LIFECYCLE_LOCK="$EXTENSION_LIFECYCLE_LOCK"
+  export FM_EXTENSION_LIFECYCLE_OWNER="$owner"
+  exec "$EXTENSION_HOST" process-event "$@"
+}
+
 case "${1-}" in
   register)           shift; cmd_register "$@" ;;
   register-extension) shift; cmd_register_extension "$@" ;;
@@ -1354,6 +1382,7 @@ case "${1-}" in
   binding-retirement-preflight) shift; cmd_binding_retirement_preflight "$@" ;;
   extension-retirement) shift; cmd_extension_retirement "$@" ;;
   extension-bind) shift; cmd_extension_bind "$@" ;;
+  extension-process-event) shift; cmd_extension_process_event "$@" ;;
   list)               shift; cmd_list "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;

@@ -33,6 +33,11 @@ concurrent_release=
 race_register_pid=
 race_retire_pid=
 race_release=
+process_race_start_pid=
+process_race_retire_pid=
+process_race_release=
+registry_race_pid=
+registry_race_release=
 owner_retire_pid=
 owner_worker_pid=
 owner_register_pid=
@@ -52,8 +57,13 @@ section_coordinator_pid=
 extension_test_cleanup() {
   [ -z "$concurrent_release" ] || touch "$concurrent_release" 2>/dev/null || true
   [ -z "$race_release" ] || touch "$race_release" 2>/dev/null || true
+  [ -z "$process_race_release" ] || touch "$process_race_release" 2>/dev/null || true
+  [ -z "$registry_race_release" ] || touch "$registry_race_release" 2>/dev/null || true
   [ -z "$race_register_pid" ] || kill -TERM "$race_register_pid" 2>/dev/null || true
   [ -z "$race_retire_pid" ] || kill -TERM "$race_retire_pid" 2>/dev/null || true
+  [ -z "$process_race_start_pid" ] || kill -TERM "$process_race_start_pid" 2>/dev/null || true
+  [ -z "$process_race_retire_pid" ] || kill -TERM "$process_race_retire_pid" 2>/dev/null || true
+  [ -z "$registry_race_pid" ] || kill -TERM "$registry_race_pid" 2>/dev/null || true
   [ -z "$owner_retire_pid" ] || kill -TERM "$owner_retire_pid" 2>/dev/null || true
   [ -z "$owner_worker_pid" ] || kill -CONT "$owner_worker_pid" 2>/dev/null || true
   [ -z "$owner_worker_pid" ] || kill -KILL "$owner_worker_pid" 2>/dev/null || true
@@ -1075,6 +1085,35 @@ FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding org.example.retire-race --if-bin
 race_release=
 pass "registration publication and binding retirement share one lifecycle boundary"
 
+P_PROCESS_RETIRE_RACE="$PACKAGES/process-retire-race"
+process_race_marker="$TMP_ROOT/process-retire-race.marker"
+process_race_release="$TMP_ROOT/process-retire-race.release"
+make_package "$P_PROCESS_RETIRE_RACE" org.example.process-retire-race ext-process-retire-race "$(printf 'handshake-block\n%s\n%s' "$process_race_marker" "$process_race_release")"
+H_PROCESS_RETIRE_RACE="$HOMES/process-retire-race"; new_home "$H_PROCESS_RETIRE_RACE"
+touch "$process_race_release"
+process_race_bind=$(bind_package "$H_PROCESS_RETIRE_RACE" "$P_PROCESS_RETIRE_RACE" ext-process-retire-race)
+process_race_binding=$(printf '%s\n' "$process_race_bind" | sed -n 's/^binding-digest: //p')
+FM_HOME="$H_PROCESS_RETIRE_RACE" "$PROCEVENT" register-extension ext-process-retire-race process-race-source --config-ref good >/dev/null
+rm -f "$process_race_marker" "$process_race_release"
+FM_HOME="$H_PROCESS_RETIRE_RACE" "$PROCEVENT" start process-race-source > "$TMP_ROOT/process-retire-race-start.out" 2>&1 &
+process_race_start_pid=$!
+wait_for_file "$process_race_marker" || fail "process-event race fixture never reached binding resolution"
+FM_HOME="$H_PROCESS_RETIRE_RACE" "$HOST" retire-binding org.example.process-retire-race --if-binding-digest "$process_race_binding" > "$TMP_ROOT/process-retire-race-retire.out" 2>&1 &
+process_race_retire_pid=$!
+sleep 0.2
+kill -0 "$process_race_retire_pid" 2>/dev/null || fail "binding retirement bypassed an in-flight process-event resolution"
+touch "$process_race_release"
+wait "$process_race_start_pid" || fail "lifecycle-locked process-event did not complete after release"
+process_race_start_pid=
+process_race_retire_rc=0
+wait "$process_race_retire_pid" || process_race_retire_rc=$?
+process_race_retire_pid=
+[ "$process_race_retire_rc" -ne 0 ] || fail "retirement crossed a reserved process-event invocation"
+assert_contains "$(cat "$TMP_ROOT/process-retire-race-retire.out")" "still owns process-event registration" "retirement did not observe the reserved process-event registration"
+assert_present "$H_PROCESS_RETIRE_RACE/state/procevent-inbox/process-race-source.1.result" "reserved process-event did not capture its result"
+pass "process-event resolution reserves the lifecycle before invocation"
+process_race_release=
+
 expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-binding-locked org.example.retire-race --if-binding-digest "$race_binding_digest"
 expect_failure "unknown command" env FM_HOME="$H_RETIRE_RACE" "$HOST" retire-transfer-locked org.example.retire-race --if-transfer-digest "$wrong_binding_digest" --if-binding-digest "$race_binding_digest"
 pass "public extension dispatch exposes no unlocked retirement entry"
@@ -1254,6 +1293,29 @@ registry_entries_after=$(find "$REGISTRY_LINK_TARGET" -mindepth 1 -maxdepth 1 -p
 rm "$STATE_OVERRIDE/procevent"
 mv "$REGISTRY_LINK_TARGET" "$STATE_OVERRIDE/procevent"
 pass "post-registration registry symlink substitution cannot redirect external evidence"
+registry_race_marker="$TMP_ROOT/registry-race.marker"
+registry_race_release="$TMP_ROOT/registry-race.release"
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" register-extension ext-flow registry-race-source \
+  --config-ref "active-block|$registry_race_marker|$registry_race_release" >/dev/null
+FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
+  "$PROCEVENT" start registry-race-source > "$TMP_ROOT/registry-race.out" 2>&1 &
+registry_race_pid=$!
+wait_for_file "$registry_race_marker" || fail "registry race fixture never reached its pinned staging boundary"
+mkdir "$TMP_ROOT/registry-race-outside"
+mv "$STATE_OVERRIDE/procevent" "$TMP_ROOT/registry-race-real"
+ln -s "$TMP_ROOT/registry-race-outside" "$STATE_OVERRIDE/procevent"
+touch "$registry_race_release"
+registry_race_rc=0
+wait "$registry_race_pid" || registry_race_rc=$?
+registry_race_pid=
+[ "$registry_race_rc" -eq 0 ] || fail "registry swap race did not complete through its pinned staging directory"
+[ -z "$(find "$TMP_ROOT/registry-race-outside" -mindepth 1 -print -quit)" ] \
+  || fail "a registry directory swap received external evidence"
+rm "$STATE_OVERRIDE/procevent"
+mv "$TMP_ROOT/registry-race-real" "$STATE_OVERRIDE/procevent"
+pass "external staging remains descriptor-bound across a registry directory swap"
+registry_race_release=
 H_LEGACY_LINK="$HOMES/legacy-link"; new_home "$H_LEGACY_LINK"
 LEGACY_REAL_STATE="$TMP_ROOT/legacy-real-state"
 LEGACY_LINK_STATE="$TMP_ROOT/legacy-state-link"

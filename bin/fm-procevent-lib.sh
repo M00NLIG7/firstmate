@@ -551,7 +551,18 @@ fm_procevent_capture() {
     fm_procevent_digest_valid "$binding_digest" || return 1
   fi
   if [ "$#" -eq 9 ]; then
-    inbox=$(fm_procevent_capture_inbox_prepare "$state") || return 1
+    if [ "${FM_PROCEVENT_CAPTURE_PINNED_INBOX:-}" != 1 ]; then
+      inbox=$(fm_procevent_capture_inbox_prepare "$state") || return 1
+      (
+        CDPATH='' cd -- "$inbox" 2>/dev/null || exit 1
+        [ "$(pwd -P)" = "$inbox" ] || exit 1
+        FM_PROCEVENT_CAPTURE_PINNED_INBOX=1 \
+          FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX="$inbox" \
+          fm_procevent_capture "$@"
+      )
+      return $?
+    fi
+    inbox=.
   else
     inbox=$(fm_procevent_inbox_dir "$state")
     (umask 077; mkdir -p "$inbox") || return 1
@@ -606,7 +617,11 @@ fm_procevent_capture() {
     [ -z "$extension_dest" ] || rm -f -- "$extension_dest"
     return 1
   fi
-  printf '%s\n' "$dest"
+  if [ "$#" -eq 9 ]; then
+    printf '%s\n' "$FM_PROCEVENT_CAPTURE_ABSOLUTE_INBOX/$id.$seq.result"
+  else
+    printf '%s\n' "$dest"
+  fi
 }
 
 # fm_procevent_pending <state>

@@ -1887,7 +1887,7 @@ async function assertLifecycleLockOwned() {
 
 async function claimInheritedLifecycleLock(home) {
   const mode = process.env.FM_EXTENSION_RETIREMENT_MODE;
-  if (mode !== "binding" && mode !== "transfer" && mode !== "bind") fail("lifecycle-lock-invalid", "extension lifecycle mode is invalid");
+  if (mode !== "binding" && mode !== "transfer" && mode !== "bind" && mode !== "process-event") fail("lifecycle-lock-invalid", "extension lifecycle mode is invalid");
   const stateRoot = effectiveStateRoot(home);
   const expectedLock = path.join(stateRoot, "procevent", ".extension-binding-lifecycle.lock");
   const lockPath = path.resolve(process.env.FM_EXTENSION_LIFECYCLE_LOCK || "");
@@ -2129,6 +2129,44 @@ async function runLifecycleRetirement(mode, args) {
   process.stdout.write(Buffer.concat(stdout));
 }
 
+async function runLifecycleProcessEvent(args) {
+  const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
+  const home = await activeHome();
+  const env = { PATH: sanitizedPath(), LANG: "C", LC_ALL: "C", HOME: process.env.HOME || home, FM_HOME: home, FM_ROOT_OVERRIDE: CODE_ROOT };
+  if (process.env.FM_STATE_OVERRIDE) env.FM_STATE_OVERRIDE = process.env.FM_STATE_OVERRIDE;
+  if (process.env.XDG_STATE_HOME) env.XDG_STATE_HOME = process.env.XDG_STATE_HOME;
+  if (process.env.FM_PROCEVENT_CLAIM_ROOT) env.FM_PROCEVENT_CLAIM_ROOT = process.env.FM_PROCEVENT_CLAIM_ROOT;
+  const child = spawn(command, ["extension-process-event", ...args], {
+    cwd: CODE_ROOT,
+    env,
+    shell: false,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const stdout = [];
+  const stderr = [];
+  let stdoutBytes = 0;
+  let stderrBytes = 0;
+  child.stdout.on("data", (chunk) => {
+    stdoutBytes += chunk.length;
+    if (stdoutBytes <= MAX_JSON_BYTES) stdout.push(chunk);
+  });
+  child.stderr.on("data", (chunk) => {
+    stderrBytes += chunk.length;
+    if (stderrBytes <= MAX_STDERR_BYTES) stderr.push(chunk);
+  });
+  const outcome = await new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("close", (code, signal) => resolve({ code, signal }));
+  }).catch(() => fail("process-event-failed", "extension lifecycle process-event could not start"));
+  if (stdoutBytes > MAX_JSON_BYTES || stderrBytes > MAX_STDERR_BYTES || outcome.signal) {
+    const diagnostic = Buffer.concat(stderr).toString("utf8").trim();
+    fail("process-event-failed", diagnostic || "extension lifecycle process-event failed");
+  }
+  process.stdout.write(Buffer.concat(stdout));
+  if (outcome.code !== 0) process.stderr.write(Buffer.concat(stderr));
+  process.exitCode = outcome.code || 0;
+}
+
 async function runLifecycleBinding(commandName, args) {
   const command = path.join(CODE_ROOT, "bin", "fm-procevent.sh");
   const home = await activeHome();
@@ -2178,7 +2216,11 @@ async function runInheritedLifecycleRetirement(args) {
   const home = await activeHome();
   const mode = await claimInheritedLifecycleLock(home);
   try {
-    if (mode === "binding") await cmdRetireBindingLocked(args);
+    if (mode === "process-event") {
+      const [command, ...commandArgs] = args;
+      if (command !== "process-event") fail("lifecycle-lock-invalid", "extension lifecycle process-event command is invalid");
+      await cmdProcessEventLocked(commandArgs);
+    } else if (mode === "binding") await cmdRetireBindingLocked(args);
     else if (mode === "transfer") await cmdRetireTransferLocked(args);
     else {
       const [command, ...commandArgs] = args;
@@ -2296,7 +2338,7 @@ async function cmdResolveProcessEvent(args) {
   process.stdout.write(`${fields.join("\t")}\n`);
 }
 
-async function cmdProcessEvent(args) {
+async function cmdProcessEventLocked(args) {
   if (args.length < 2) fail("usage", "process-event requires <adapter> <operation>");
   const [adapter, operation, ...optionArgs] = args;
   const options = parseExpectedOptions(optionArgs);
@@ -2320,6 +2362,18 @@ async function cmdProcessEvent(args) {
     }
     throw error;
   }
+}
+
+async function cmdProcessEvent(args) {
+  if (process.env.FM_EXTENSION_RETIREMENT_MODE === "process-event") {
+    await cmdProcessEventLocked(args);
+    return;
+  }
+  if (args[1] !== "source.poll") {
+    await cmdProcessEventLocked(args);
+    return;
+  }
+  await runLifecycleProcessEvent(args);
 }
 
 function usage() {
