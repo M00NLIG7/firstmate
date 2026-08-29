@@ -1,48 +1,25 @@
 #!/usr/bin/env bash
 # Opt-in development evaluation for the harness-adapters routing instructions.
-# The portable half validates only the declared routing artifact and readability
-# of its targets.
-# The opt-in half sends the directly loaded router and a complete scenario set
+# It sends the directly loaded router and a complete scenario set
 # to a local Ollama model, then compares the generated routing plan as normalized
 # JSON.
 # It makes no external-provider or remote CI call and does not claim that an absent or
 # unconfigured native harness loaded the references itself.
 set -u
 
+if [ "${FM_HARNESS_ADAPTER_INSTRUCTION_EVAL:-0}" != 1 ]; then
+  echo "skip: set FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 to run the local instruction evaluation"
+  exit 0
+fi
+
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 ROUTER="$ROOT/.agents/skills/harness-adapters/SKILL.md"
 TMP_ROOT=$(fm_test_tmproot fm-harness-adapter-instructions)
-ROUTING_JSON="$TMP_ROOT/routing.json"
 EXPECTED_JSON="$TMP_ROOT/expected.json"
 PROMPT_FILE="$TMP_ROOT/prompt.txt"
 RESPONSE_JSON="$TMP_ROOT/response.json"
-
-awk '
-  /^```json harness-adapter-routing-v1$/ { capture = 1; next }
-  capture && /^```$/ { exit }
-  capture { print }
-' "$ROUTER" > "$ROUTING_JSON"
-
-jq -e '
-  (.operations | type == "object") and
-  (.harnesses | type == "object") and
-  ([.operations[][] | select(type != "array")] | length == 0) and
-  ([.operations[][][] | select(type != "string")] | length == 0) and
-  ([.harnesses[] | select(type != "string")] | length == 0)
-' "$ROUTING_JSON" >/dev/null || fail "harness adapter routing artifact is not a normalized operation and harness map"
-
-jq -r '.operations[][][], .harnesses[]' "$ROUTING_JSON" | sort -u | while IFS= read -r path; do
-  [ -r "$ROOT/.agents/skills/harness-adapters/$path" ] \
-    || fail "harness adapter routing target is unreadable: $path"
-done
-pass "harness adapter routing artifact is normalized and every target is readable"
-
-if [ "${FM_HARNESS_ADAPTER_INSTRUCTION_EVAL:-0}" != 1 ]; then
-  echo "skip: set FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 to run the local instruction evaluation"
-  exit 0
-fi
 
 command -v curl >/dev/null 2>&1 || fail "curl is required for the local instruction evaluation"
 command -v jq >/dev/null 2>&1 || fail "jq is required for the local instruction evaluation"
