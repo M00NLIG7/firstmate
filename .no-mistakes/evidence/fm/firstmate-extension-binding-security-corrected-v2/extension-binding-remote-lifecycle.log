@@ -1,0 +1,8 @@
+not-autohandled: remote-source (left for the handler; still unacknowledged)
+ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
+
+all extension-binding tests passed
+real 20.02
+user 5.34
+sys 4.89
+exit=0

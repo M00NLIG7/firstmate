@@ -1,4 +1,5 @@
 ok - unknown extension conformance section selectors fail before setup
+tests/fm-extension-binding.test.sh: line 402: 48781 Killed: 9               FM_EXTENSION_BINDING_SECTION_CHILD=1 FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0"
 ok - the section coordinator propagates ordered failures and bounded cleanup
 not-autohandled: example-file (left for the handler; still unacknowledged)
 not-autohandled: flow-source (left for the handler; still unacknowledged)
@@ -8,7 +9,6 @@ ok - handshake execution rejects and reaps foreground descendants
 
 all extension-binding tests passed
 not-autohandled: remote-source (left for the handler; still unacknowledged)
-sed: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.mKL8Pe/claims/crash-silent-source.claim: No such file or directory
 ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
 
 all extension-binding tests passed
@@ -19,3 +19,7 @@ all extension-binding tests passed
 ok - independent extension conformance sections complete through isolated public homes
 
 all extension-binding tests passed
+real 25.49
+user 20.33
+sys 16.74
+exit=0

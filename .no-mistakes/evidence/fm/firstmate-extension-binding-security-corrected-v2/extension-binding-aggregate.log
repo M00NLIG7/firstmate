@@ -1,8 +1,10 @@
 ok - unknown extension conformance section selectors fail before setup
-not ok - example captured no file result
-tests/fm-extension-binding.test.sh: line 402: 46244 Killed: 9               FM_EXTENSION_BINDING_SECTION_CHILD=1 FM_EXTENSION_BINDING_SEGMENT="$section" bash "$0"
 ok - the section coordinator propagates ordered failures and bounded cleanup
+not-autohandled: example-file (left for the handler; still unacknowledged)
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - the shipped file-signal package is a runnable end-to-end external adapter
 not ok - an isolated extension conformance section failed
-real 7.55
-user 4.05
-sys 4.09
+real 40.81
+user 12.21
+sys 9.31
+not-autohandled: remote-source (left for the handler; still unacknowledged)

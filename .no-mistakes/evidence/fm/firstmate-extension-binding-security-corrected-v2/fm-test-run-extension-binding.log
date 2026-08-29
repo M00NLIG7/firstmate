@@ -1,3 +1,4 @@
+FM_TEST_BEGIN 2026-08-29T22:19:05Z tests/fm-extension-binding.test.sh family=unclassified expected_gate_skip=none
 ok - unknown extension conformance section selectors fail before setup
 ok - the section coordinator propagates ordered failures and bounded cleanup
 not-autohandled: example-file (left for the handler; still unacknowledged)
@@ -8,7 +9,6 @@ ok - handshake execution rejects and reaps foreground descendants
 
 all extension-binding tests passed
 not-autohandled: remote-source (left for the handler; still unacknowledged)
-sed: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.mKL8Pe/claims/crash-silent-source.claim: No such file or directory
 ok - serialized remote binding crosses fm-on through addressed-home capture and retirement
 
 all extension-binding tests passed
@@ -19,3 +19,8 @@ all extension-binding tests passed
 ok - independent extension conformance sections complete through isolated public homes
 
 all extension-binding tests passed
+FM_TEST_END 2026-08-29T22:19:26Z tests/fm-extension-binding.test.sh exit=0 duration_ms=21449 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=21565
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=21449 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-extension-binding.test.sh duration_ms=21449
+FM_TEST_BUDGET max_wall_ms=35000 duration_ms=21565

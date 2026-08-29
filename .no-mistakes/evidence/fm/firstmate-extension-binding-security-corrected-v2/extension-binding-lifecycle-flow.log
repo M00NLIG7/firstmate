@@ -1,1 +1,11 @@
-not ok - external source produced no captured result
+not-autohandled: flow-source (left for the handler; still unacknowledged)
+ok - one external adapter registers, invokes, captures unhandled evidence, classifies, and terminally retires end to end
+sed: /private/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/fm-extension-binding.8d7eZx/claims/crash-silent-source.claim: No such file or directory
+ok - inner result.silent host crash releases the parent lifecycle lock before terminal retry
+ok - local binding retirement requires its exact identity and disables invocation
+
+all extension-binding tests passed
+real 33.16
+user 9.80
+sys 7.60
+exit=0

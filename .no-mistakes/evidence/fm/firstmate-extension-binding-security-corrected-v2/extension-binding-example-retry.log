@@ -3,7 +3,7 @@ ok - the shipped file-signal package is a runnable end-to-end external adapter
 ok - handshake execution rejects and reaps foreground descendants
 
 all extension-binding tests passed
-real 16.50
-user 5.96
-sys 3.88
+real 12.66
+user 5.21
+sys 3.24
 exit=0
