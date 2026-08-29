@@ -1358,6 +1358,7 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
 mkdir "$TMP_ROOT/forged-pinned-result"
 printf 'forged extension evidence\n' > "$TMP_ROOT/forged-pinned-result/forged-source.1.result"
 chmod 0600 "$TMP_ROOT/forged-pinned-result/forged-source.1.result"
+# shellcheck disable=SC2016 # Child shell intentionally expands its positional parameters.
 expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   FM_PROCEVENT_CAPTURE_PINNED_RESULT=1 sh -c '
     cd "$1" || exit 1
@@ -1366,6 +1367,7 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
       --expect-package-digest "$7" --expect-binding-digest "$8"
   ' sh "$TMP_ROOT/forged-pinned-result" "$HOST" ext-flow "$override_id" "$override_version" \
   "$override_cap" "$override_package" "$override_binding"
+# shellcheck disable=SC2016 # Child shell intentionally expands its positional parameters.
 expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   sh -c '
     cd "$1" || exit 1
@@ -1380,6 +1382,7 @@ expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRI
       --expect-package-digest "$7" --expect-binding-digest "$8"
   ' sh "$TMP_ROOT/forged-pinned-result" "$PROCEVENT" ext-flow "$override_id" "$override_version" \
   "$override_cap" "$override_package" "$override_binding"
+# shellcheck disable=SC2016 # Child shell intentionally expands its positional parameters.
 expect_failure "directly inside" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   FM_PROCEVENT_INTERNAL_CAPTURE_RESERVATION="$(printf 'd%.0s' {1..64})" \
   FM_PROCEVENT_INTERNAL_CAPTURE_CLAIM_PID="$$" \
@@ -1405,6 +1408,7 @@ forged_claim_identity=$(FM_HOME="$TMP_ROOT/forged-identity-home" FM_STATE_OVERRI
 printf '%s\n' '{"schema":"fm-procevent-capture-reservation.v1","token":"'"$forged_reservation_token"'","operation":"result.silent","source_id":"forged-source","sequence":1,"inbox_device":"1","inbox_inode":"1","result_device":"1","result_inode":"1","claim_pid":"'"$$"'","claim_identity":"'"$forged_claim_identity"'","claim_token":"forged-claim","binding_digest":"'"$override_binding"'"}' \
   > "$forged_reservation_root/.extension-capture-forged-claim.$forged_reservation_token.json"
 chmod 0600 "$forged_reservation_root/.extension-capture-forged-claim.$forged_reservation_token.json"
+# shellcheck disable=SC2016 # Child shell intentionally expands its positional parameters.
 expect_failure "reservation" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   FM_PROCEVENT_CLAIM_ROOT="$forged_reservation_root" sh -c '
     cd "$1" || exit 1
@@ -1416,6 +1420,7 @@ expect_failure "reservation" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="
   "$override_cap" "$override_package" "$override_binding" "$forged_reservation_token"
 printf 'forged adapter\n' > "$TMP_ROOT/forged-pinned-result/forged-source.1.adapter"
 chmod 0600 "$TMP_ROOT/forged-pinned-result/forged-source.1.adapter"
+# shellcheck disable=SC2016 # Child shell intentionally expands its positional parameters.
 expect_failure "cannot durably" env FM_HOME="$H_STATE_OVERRIDE" FM_STATE_OVERRIDE="$STATE_OVERRIDE" \
   FM_PROCEVENT_CAPTURE_PINNED_INBOX=1 sh -c '
     cd "$1" || exit 1

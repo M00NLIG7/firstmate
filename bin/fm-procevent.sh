@@ -1403,8 +1403,8 @@ cmd_extension_retirement() {
 }
 
 cmd_extension_bind() {
-  local command=${1-} owner
-  case "$command" in bind|receive-transfer-bind) ;; *) die "unsupported extension binding command: $command" ;; esac
+  local binding_command=${1-} owner
+  case "$binding_command" in bind|receive-transfer-bind) ;; *) die "unsupported extension binding command: $binding_command" ;; esac
   extension_lifecycle_lock_acquire || die "cannot lock the extension lifecycle"
   owner=${FM_LOCK_OWNER_DIR:-}
   [ -n "$owner" ] || die "extension lifecycle lock has no owner identity"
