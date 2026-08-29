@@ -412,6 +412,12 @@ pass "--stdin still delivers a payload caller's bytes"
 OLD_STAGE="$STATE_ROOT/jobs/.stage.abandoned"
 FRESH_STAGE="$STATE_ROOT/jobs/.stage.fresh"
 mkdir -p "$OLD_STAGE" "$FRESH_STAGE"
+# A staging directory is live only while its exact creator identity is live.
+# Record this test shell as the owner so the worker exercises that public
+# contract even if the age-boundary polling spans more than one second.
+printf '%s\n' "$$" > "$FRESH_STAGE/.owner-pid"
+fm_remote_job_process_start "$$" > "$FRESH_STAGE/.owner-start" \
+  || fail "could not establish the fresh stage's live owner identity"
 touch -t 200001010000 "$OLD_STAGE"
 for _ in $(seq 1 100); do
   [ ! -d "$OLD_STAGE" ] && break
@@ -419,6 +425,7 @@ for _ in $(seq 1 100); do
 done
 [ ! -d "$OLD_STAGE" ] || fail "stage litter older than the reap age survived the worker pass"
 assert_present "$FRESH_STAGE" "the worker reaped fresh staging that is still in use"
+rm -f -- "$FRESH_STAGE/.owner-pid" "$FRESH_STAGE/.owner-start"
 rmdir "$FRESH_STAGE"
 pass "abandoned stage litter is reaped by age while fresh staging survives"
 
