@@ -1,14 +1,89 @@
 #!/usr/bin/env bash
-# Real Pi skill-catalog regression through the documented extension and RPC APIs.
-# It proves agent-only Firstmate skills stay loaded and command-addressable while
-# only captain-invocable Firstmate skills enter the automatic model catalog.
+# Skill-catalog contract regression.
+# The portable path validates the machine-consumed YAML metadata in every CI run.
+# When Pi is installed, its documented extension and RPC APIs additionally prove
+# hidden skills stay loaded and command-addressable without entering model context.
 set -eu
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-command -v pi >/dev/null 2>&1 || { echo "skip: pi not found for skill-catalog regression"; exit 0; }
-command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found for skill-catalog regression"; exit 0; }
+HIDDEN_SKILLS='ask-user-authority
+bootstrap-diagnostics
+captain-hold-lifecycle
+decision-hold-lifecycle
+diagnostic-reasoning
+firstmate-codexapp
+firstmate-coding-guidelines
+firstmate-orca
+fmx-respond
+harness-adapters
+process-event-sources
+project-management
+quota-array-dispatch
+secondmate-provisioning
+stuck-crewmate-recovery'
+VISIBLE_SKILLS='afk
+ahoy
+bearings
+stow
+updatefirstmate'
+
+command -v ruby >/dev/null 2>&1 \
+  || fail "ruby is required to validate skill front matter as YAML"
+ruby -ryaml - "$ROOT" "$HIDDEN_SKILLS" "$VISIBLE_SKILLS" <<'RB'
+root, hidden_text, visible_text = ARGV
+hidden = hidden_text.lines(chomp: true).reject(&:empty?).sort
+visible = visible_text.lines(chomp: true).reject(&:empty?).sort
+expected = (hidden + visible).sort
+skills = {}
+
+Dir.glob(File.join(root, ".agents/skills/*/SKILL.md")).sort.each do |path|
+  lines = File.readlines(path)
+  raise "missing YAML front matter: #{path}" unless lines.first&.strip == "---"
+
+  closing = lines[1..].index { |line| line.strip == "---" }
+  raise "unterminated YAML front matter: #{path}" if closing.nil?
+
+  metadata = YAML.safe_load(
+    lines[1, closing].join,
+    permitted_classes: [],
+    permitted_symbols: [],
+    aliases: false
+  )
+  name = metadata.fetch("name")
+  directory_name = File.basename(File.dirname(path))
+  raise "skill name/path mismatch: #{path}" unless name == directory_name
+  raise "duplicate skill name: #{name}" if skills.key?(name)
+
+  skills[name] = metadata
+end
+
+raise "unexpected Firstmate skill inventory: #{skills.keys.sort.inspect}" unless skills.keys.sort == expected
+
+hidden.each do |name|
+  metadata = skills.fetch(name)
+  raise "agent-only skill became user-invocable: #{name}" unless metadata["user-invocable"] == false
+  raise "agent-only skill is model-visible: #{name}" unless metadata["disable-model-invocation"] == true
+  raise "agent-only skill lost internal metadata: #{name}" unless metadata.dig("metadata", "internal") == true
+end
+
+visible.each do |name|
+  metadata = skills.fetch(name)
+  raise "captain skill became agent-only: #{name}" unless metadata["user-invocable"] == true
+  if metadata.key?("disable-model-invocation")
+    raise "captain skill gained disable-model-invocation: #{name}"
+  end
+  raise "captain skill lost internal metadata: #{name}" unless metadata.dig("metadata", "internal") == true
+end
+
+puts "ok - portable YAML contract keeps exactly 15 agent-only skills hidden and five captain skills visible"
+RB
+
+command -v pi >/dev/null 2>&1 \
+  || { echo "skip: pi not found; portable skill-catalog contract passed, installed-Pi behavior not exercised"; exit 0; }
+command -v python3 >/dev/null 2>&1 \
+  || { echo "skip: python3 not found; portable skill-catalog contract passed, installed-Pi behavior not exercised"; exit 0; }
 
 TMP_ROOT=$(fm_test_tmproot fm-pi-skill-catalog)
 PI_HOME="$TMP_ROOT/pi-agent"
@@ -81,27 +156,6 @@ PY
 }
 
 run_probe "$ALL_CAPTURE" --skill "$ROOT/.agents/skills"
-
-HIDDEN_SKILLS='ask-user-authority
-bootstrap-diagnostics
-captain-hold-lifecycle
-decision-hold-lifecycle
-diagnostic-reasoning
-firstmate-codexapp
-firstmate-coding-guidelines
-firstmate-orca
-fmx-respond
-harness-adapters
-process-event-sources
-project-management
-quota-array-dispatch
-secondmate-provisioning
-stuck-crewmate-recovery'
-VISIBLE_SKILLS='afk
-ahoy
-bearings
-stow
-updatefirstmate'
 
 DIRECT_ARGS=()
 while IFS= read -r skill; do

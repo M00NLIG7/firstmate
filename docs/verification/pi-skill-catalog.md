@@ -3,7 +3,9 @@
 Audience: maintainer verification.
 
 This record preserves the full-prompt measurement for hiding Firstmate's 15 agent-only skills from Pi's automatic model catalog.
-The behavioral contract remains enforced by `tests/fm-pi-skill-catalog.test.sh`; this record owns the version-scoped byte evidence and its refresh method.
+The required portable path in `tests/fm-pi-skill-catalog.test.sh` parses every Firstmate skill's YAML front matter and enforces the exact 15-hidden and 5-visible metadata partition before checking whether Pi is installed.
+When Pi is installed, that same regression continues through Pi's extension and RPC interfaces to enforce the behavioral contract; otherwise it reports that behavioral portion as skipped after the portable contract passes.
+This record owns the version-scoped byte evidence and its refresh method.
 
 ## Full-prompt audit
 
