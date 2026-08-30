@@ -107,14 +107,18 @@ if [ "$MODE" = compact ]; then
         else "unstructured: \($r.raw)" end);
 
     .fm_home as $home
-    | (.tasks | length) as $tasks
+    | ([.tasks[].id]) as $task_ids
+    | ([.backlog.records[]?
+        | select(.state == "in_flight" and .structured)
+        | select(.id as $id | $task_ids | index($id) | not)]) as $unmatched_in_flight
+    | ((.tasks | length) + ($unmatched_in_flight | length)) as $under_way
     | ([.backlog.records[]? | select(.state == "queued")] | length) as $queued
     | ([.backlog.records[]? | select(.state == "done")] | length) as $done
     | ([.tasks[] | select(path_of(.) != "-")] | length) as $paths_omitted
     | "# Fleet View (compact)",
       "",
       "Home: \($home)",
-      "Rows shown/total: under-way=\($tasks)/\($tasks); queued=\($queued)/\($queued); done=0/\($done).",
+      "Rows shown/total: under-way=\($under_way)/\($under_way); queued=\($queued)/\($queued); done=0/\($done).",
       "Raw-view omissions: done detail rows=\($done); task path cells=\($paths_omitted).",
       "Truncation: none.",
       "Full human detail: FM_HOME=\($home | @sh) \($view_script | @sh) --raw",
@@ -122,7 +126,9 @@ if [ "$MODE" = compact ]; then
       "Full queued hold detail: tasks-axi show <id> --full, or \(($home + "/data/backlog.md") | @sh).",
       "Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> \u0027<request>\u0027, then read status/doc and do not routinely peek a secondmate.",
       "Attention marker: ! means a non-working task, endpoint problem, open decision, captain-actionable row, unstructured row, or inventory error.",
-      (if .main_inventory.valid then empty
+      (if .backlog.present != true then
+         "! inventory error: backlog missing: \(.backlog.path)"
+       elif .main_inventory.valid then empty
        else "! inventory error: \(.main_inventory.reason); orphan in-flight=\(.main_inventory.orphan_in_flight | join(",")); unstructured current=\(.main_inventory.unstructured_current_count)"
        end),
       (.backlog.records[]?
@@ -130,10 +136,11 @@ if [ "$MODE" = compact ]; then
        | "! inventory item: unstructured in-flight: \(.raw)"),
       "",
       "## Under Way",
-      (if $tasks == 0 then "None."
+      (if $under_way == 0 then "None."
        else (.tasks[] | . as $task
          | task_row($task; $home),
-           ($task.hints.open_decisions[]? | decision_row($task; .)))
+           ($task.hints.open_decisions[]? | decision_row($task; .))),
+         ($unmatched_in_flight[] | backlog_row(.; $home))
        end),
       "",
       "## Queued",

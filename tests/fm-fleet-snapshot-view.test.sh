@@ -902,6 +902,52 @@ test_compact_view_contract() {
   pass "fleet view compact mode preserves raw output, rows, errors, ordering, omission counts, and escape hatches"
 }
 
+test_compact_view_unmatched_in_flight_records() {
+  local home fakebin compact worker_rows
+  home=$(make_home compact-unmatched-in-flight)
+  mkdir -p "$home/projects/worker"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] program - Aggregate program (repo: alpha) (kind: program)
+- [ ] observation - Watch production (repo: alpha) (kind: scout) (hold: wait for metrics) (hold-kind: external)
+- [ ] worker - Active worker (repo: alpha) (kind: ship)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/worker.meta" \
+    "window=firstmate:fm-worker" \
+    "worktree=$home/projects/worker" \
+    "project=alpha" \
+    "harness=codex" \
+    "kind=ship" \
+    "mode=ship"
+  printf 'working: active\n' > "$home/state/worker.status"
+  fakebin=$(make_fakebin "$home")
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
+  assert_contains "$compact" "Rows shown/total: under-way=3/3; queued=0/0; done=0/0." \
+    "compact view did not count unmatched structured in-flight records"
+  assert_contains "$compact" "- program: Aggregate program; alpha program" \
+    "compact view omitted an unmatched program record"
+  assert_contains "$compact" "- observation: Watch production; alpha scout; hold=external: wait for metrics" \
+    "compact view omitted an unmatched held record or its reason"
+  worker_rows=$(printf '%s\n' "$compact" | grep -Ec '^[-!] worker:')
+  [ "$worker_rows" -eq 1 ] || fail "compact view duplicated a task-backed in-flight record"
+  pass "compact view retains unmatched structured in-flight records without duplicates"
+}
+
+test_compact_view_missing_backlog_error() {
+  local home compact
+  home=$(make_home compact-missing-backlog)
+
+  compact=$(FM_HOME="$home" "$VIEW" --compact)
+  assert_contains "$compact" "! inventory error: backlog missing: $home/data/backlog.md" \
+    "compact view did not surface a missing backlog inventory error"
+  pass "compact view surfaces a missing backlog inventory error"
+}
+
 test_compact_view_representative_reduction() {
   local home fakebin raw compact raw_bytes compact_bytes raw_tokens compact_tokens i id busy_gen
   home=$(make_home compact-measurement)
@@ -970,4 +1016,6 @@ test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
 test_compact_view_contract
+test_compact_view_unmatched_in_flight_records
+test_compact_view_missing_backlog_error
 test_compact_view_representative_reduction
