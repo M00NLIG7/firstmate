@@ -9,10 +9,11 @@ This record owns the version-scoped byte evidence and its refresh method.
 
 ## Full-prompt audit
 
-The audit was run on 2026-08-30 with Pi 0.84.0 on macOS against public base `c731c36c381ea0886fa5aabf6a3be761534d3f30` and final reconciled task head `f8a62946f235b7e35c7bdeacb6b1a734281d65fc`.
+The audit was run on 2026-08-30 with Pi 0.84.0 on macOS against public base `c731c36c381ea0886fa5aabf6a3be761534d3f30` and audited implementation head `f8a62946f235b7e35c7bdeacb6b1a734281d65fc`.
 Both captures used the same clean disposable checkout path, the same installed Pi configuration, and the normal discovered project context and skill catalog.
 The only source difference was the task head.
 Pi's command context exposed the complete generated system prompt without starting an agent turn or making a provider request.
+Later descendants through `6668b1022c7519289735a0d7a12b147035ebabda` change only this verification record, which Pi does not discover as prompt context, so the captured prompt bytes remain authoritative for the reconciled implementation.
 
 Create this test-only hook in `.tmp-skill-catalog-audit/capture-system-prompt.ts` inside the disposable checkout:
 
