@@ -1,0 +1,6 @@
+source=target tree with only the 15 metadata fields temporarily removed
+pi=0.84.0
+bytes=92950
+loadedSkills=29
+catalogSkills=29
+providerRequests=0
