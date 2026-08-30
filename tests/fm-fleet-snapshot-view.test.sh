@@ -799,6 +799,161 @@ test_parked_scout_decision_stays_pending() {
   pass "a scout still parked at a decision stays pending (terminal clear does not over-fire)"
 }
 
+test_compact_view_contract() {
+  local home fakebin help raw explicit_raw snapshot_json view_json compact repeated raw_error compact_error raw_rc compact_rc
+  local cmux_line decision_line scout_line secondmate_line ship_line queued_line unstructured_line captain_line
+  home=$(make_home compact-contract)
+  write_fixture "$home"
+  mkdir -p "$home/projects/decision-worktree"
+  fm_write_meta "$home/state/decision-task.meta" \
+    "window=firstmate:fm-decision-task" \
+    "worktree=$home/projects/decision-worktree" \
+    "project=alpha" \
+    "harness=claude" \
+    "kind=scout" \
+    "mode=scout"
+  record_claude_idle "$home/state" decision-task
+  printf 'needs-decision [key=route]: choose the release route\n' > "$home/state/decision-task.status"
+  awk '
+    /^## In flight/ {
+      print
+      print "unstructured in-flight recovery note"
+      next
+    }
+    /^## Done/ {
+      print "- [ ] captain-choice - Choose rollout (repo: alpha) (kind: captain) (hold: select blue or green) (hold-kind: captain)"
+      print ""
+    }
+    { print }
+  ' "$home/data/backlog.md" > "$home/data/backlog.next"
+  mv "$home/data/backlog.next" "$home/data/backlog.md"
+  fakebin=$(make_fakebin "$home")
+
+  help=$("$VIEW" --help)
+  assert_contains "$help" "usage: fm-fleet-view.sh [--raw|--compact|--json]" \
+    "fleet view help did not publish the compact and full-detail modes"
+  raw=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
+  explicit_raw=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --raw)
+  [ "$raw" = "$explicit_raw" ] || fail "explicit --raw changed the default fleet view"
+  snapshot_json=$(PATH="$fakebin:$PATH" FM_HOME="$home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 \
+    "$SNAPSHOT" --json)
+  view_json=$(PATH="$fakebin:$PATH" FM_HOME="$home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 \
+    "$VIEW" --json)
+  [ "$snapshot_json" = "$view_json" ] || fail "fleet view --json changed the complete snapshot escape hatch"
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
+  repeated=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
+  [ "$compact" = "$repeated" ] || fail "compact fleet view was not deterministic across identical reads"
+
+  assert_contains "$compact" "Rows shown/total: under-way=5/5; queued=3/3; done=0/1." \
+    "compact view did not retain every live and queued row or account for Done"
+  assert_contains "$compact" "Raw-view omissions: done detail rows=1; task path cells=5." \
+    "compact view did not count every detail row and path cell omitted from raw mode"
+  assert_contains "$compact" "Truncation: none." "compact view did not make its no-truncation guarantee explicit"
+  assert_contains "$compact" "Full human detail: FM_HOME='$home' '$VIEW' --raw" \
+    "compact view omitted its exact raw-detail escape command"
+  assert_contains "$compact" "Complete raw snapshot: FM_HOME='$home' '$VIEW' --json" \
+    "compact view omitted its complete structured-detail escape command"
+  assert_contains "$compact" "Full queued hold detail: tasks-axi show <id> --full, or '$home/data/backlog.md'." \
+    "compact view omitted the full hold-detail escape hatch"
+  assert_contains "$compact" "! inventory error:" "compact view did not preserve the unstructured-row inventory error"
+  assert_contains "$compact" "! inventory item: unstructured in-flight: unstructured in-flight recovery note" \
+    "compact view did not retain an unstructured in-flight inventory item"
+  assert_contains "$compact" "! cmux-task: unknown/none; ship alpha; cmux absent; detail=worktree gone (torn down?)" \
+    "compact view did not retain a task error and its detail"
+  assert_contains "$compact" "! decision decision-task[key=route]: needs-decision: choose the release route" \
+    "compact view did not retain an actionable keyed decision"
+  assert_contains "$compact" "! captain-choice: Choose rollout; alpha captain; hold=captain: select blue or green" \
+    "compact view did not retain the reason for a captain-actionable queued row"
+  assert_contains "$compact" "! unstructured: handoff note without canonical syntax" \
+    "compact view did not retain an unstructured queued row"
+  assert_not_contains "$compact" "done-task" "compact view leaked a Done detail row it says it omits"
+  assert_contains "$compact" "peek = bin/fm-peek.sh fm-<row-id>" \
+    "compact view dropped the exact ordinary-task action template"
+  assert_contains "$compact" "return = bin/fm-send.sh fm-<row-id> '<request>'" \
+    "compact view dropped the exact secondmate return action template"
+
+  cmux_line=$(printf '%s\n' "$compact" | grep -n '^! cmux-task:' | cut -d: -f1)
+  decision_line=$(printf '%s\n' "$compact" | grep -n '^! decision-task:' | cut -d: -f1)
+  scout_line=$(printf '%s\n' "$compact" | grep -n '^! scout-task:' | cut -d: -f1)
+  secondmate_line=$(printf '%s\n' "$compact" | grep -n '^- secondmate-task:' | cut -d: -f1)
+  ship_line=$(printf '%s\n' "$compact" | grep -n '^- ship-task:' | cut -d: -f1)
+  [ "$cmux_line" -lt "$decision_line" ] && [ "$decision_line" -lt "$scout_line" ] \
+    && [ "$scout_line" -lt "$secondmate_line" ] && [ "$secondmate_line" -lt "$ship_line" ] \
+    || fail "compact task rows did not preserve deterministic snapshot order"
+  queued_line=$(printf '%s\n' "$compact" | grep -n '^- queued-task:' | cut -d: -f1)
+  unstructured_line=$(printf '%s\n' "$compact" | grep -n '^! unstructured:' | cut -d: -f1)
+  captain_line=$(printf '%s\n' "$compact" | grep -n '^! captain-choice:' | cut -d: -f1)
+  [ "$queued_line" -lt "$unstructured_line" ] && [ "$unstructured_line" -lt "$captain_line" ] \
+    || fail "compact queued rows did not preserve backlog order"
+
+  raw_error=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_CREW_STATE_TIMEOUT=0 "$VIEW" --raw 2>&1)
+  raw_rc=$?
+  compact_error=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_CREW_STATE_TIMEOUT=0 "$VIEW" --compact 2>&1)
+  compact_rc=$?
+  [ "$raw_rc" -eq 2 ] && [ "$compact_rc" -eq "$raw_rc" ] \
+    || fail "compact mode changed a snapshot validation error exit status"
+  [ "$compact_error" = "$raw_error" ] \
+    || fail "compact mode changed or suppressed a snapshot validation error: $compact_error"
+  assert_contains "$compact_error" "FM_SNAPSHOT_CREW_STATE_TIMEOUT must be a positive integer" \
+    "compact mode did not preserve the underlying snapshot error"
+  pass "fleet view compact mode preserves raw output, rows, errors, ordering, omission counts, and escape hatches"
+}
+
+test_compact_view_representative_reduction() {
+  local home fakebin raw compact raw_bytes compact_bytes raw_tokens compact_tokens i id busy_gen
+  home=$(make_home compact-measurement)
+  mkdir -p "$home/projects"
+  {
+    printf '## In flight\n'
+    i=1
+    while [ "$i" -le 12 ]; do
+      id=$(printf 'representative-worker-%02d-with-stable-identity' "$i")
+      mkdir -p "$home/projects/$id"
+      fm_write_meta "$home/state/$id.meta" \
+        "window=firstmate:fm-$id" \
+        "worktree=$home/projects/$id" \
+        "project=representative-project" \
+        "harness=claude" \
+        "kind=scout" \
+        "mode=scout"
+      printf 'working: representative supervision activity %02d\n' "$i" > "$home/state/$id.status"
+      busy_gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" "$id")
+      "$ROOT/bin/fm-busy-event.sh" apply "$home/state" "$id" busy --gen "$busy_gen" \
+        --source claude-hook --event user-prompt-submit
+      printf -- '- [ ] %s - Representative active task %02d (repo: representative-project) (kind: scout)\n' "$id" "$i"
+      i=$((i + 1))
+    done
+    printf '\n## Queued\n'
+    i=1
+    while [ "$i" -le 24 ]; do
+      id=$(printf 'representative-queued-%02d-with-stable-identity' "$i")
+      printf -- '- [ ] %s - Representative queued task %02d with bounded acceptance criteria (repo: representative-project) (kind: ship)\n' "$id" "$i"
+      i=$((i + 1))
+    done
+    printf '\n## Done\n'
+    i=1
+    while [ "$i" -le 8 ]; do
+      id=$(printf 'representative-done-%02d-with-stable-identity' "$i")
+      printf -- '- [x] %s - Representative completed task %02d https://github.com/kunchenguid/firstmate/pull/%d (repo: representative-project) (kind: ship) (merged 2026-08-30)\n' "$id" "$i" "$i"
+      i=$((i + 1))
+    done
+  } > "$home/data/backlog.md"
+  fakebin=$(make_fakebin "$home")
+
+  raw=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --raw)
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
+  raw_bytes=$(printf '%s' "$raw" | LC_ALL=C wc -c | tr -d ' ')
+  compact_bytes=$(printf '%s' "$compact" | LC_ALL=C wc -c | tr -d ' ')
+  [ $((compact_bytes * 100)) -le $((raw_bytes * 75)) ] \
+    || fail "representative compact view saved less than 25%: raw=$raw_bytes compact=$compact_bytes"
+  raw_tokens=$(((raw_bytes + 3) / 4))
+  compact_tokens=$(((compact_bytes + 3) / 4))
+  pass "compact fleet view representative fixture: $raw_bytes -> $compact_bytes bytes (~$raw_tokens -> ~$compact_tokens tokens at four bytes/token)"
+}
+
 test_empty_fleet_json
 test_fixture_snapshot_json
 test_main_inventory_orphan_and_unstructured_disclosure
@@ -814,3 +969,5 @@ test_scout_reports_include_teardown_reports
 test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
+test_compact_view_contract
+test_compact_view_representative_reduction
