@@ -9,11 +9,11 @@ This record owns the version-scoped byte evidence and its refresh method.
 
 ## Full-prompt audit
 
-The audit was run on 2026-08-30 with Pi 0.84.0 on macOS against public base `c731c36c381ea0886fa5aabf6a3be761534d3f30` and audited implementation head `eab78820a67b8221337a3ce828281abc0277ee38`.
+The audit was run on 2026-08-30 with Pi 0.84.0 on macOS against public base `c731c36c381ea0886fa5aabf6a3be761534d3f30` and audited implementation head `40f8af8e96e4aace58d5f765bc478b68f368593d`.
 Both captures used the same clean disposable checkout path, the same installed Pi configuration, and the normal discovered project context and skill catalog.
 The only source difference was the task head.
 Pi's command context exposed the complete generated system prompt without starting an agent turn or making a provider request.
-The captured prompt bytes are authoritative for the reviewed implementation head.
+The captured prompt bytes are authoritative for the reviewed implementation head and later descendants that change only this verification record, which Pi does not discover as prompt context.
 
 Create this test-only hook in `.tmp-skill-catalog-audit/capture-system-prompt.ts` inside the disposable checkout:
 
@@ -46,7 +46,7 @@ Keeping the checkout path fixed matters because Pi includes each skill's absolut
 
 ```sh
 BASE=c731c36c381ea0886fa5aabf6a3be761534d3f30
-TASK_HEAD=eab78820a67b8221337a3ce828281abc0277ee38
+TASK_HEAD=40f8af8e96e4aace58d5f765bc478b68f368593d
 AUDIT_DIR="$PWD/.tmp-skill-catalog-audit"
 capture_prompt() {
   label=$1
@@ -72,15 +72,15 @@ The raw bounded output was:
 
 ```text
 base=c731c36c381ea0886fa5aabf6a3be761534d3f30
-head=eab78820a67b8221337a3ce828281abc0277ee38
+head=40f8af8e96e4aace58d5f765bc478b68f368593d
 pi=0.84.0
-before={"bytes":92950,"loadedSkills":29,"catalogSkills":29}
-after={"bytes":83499,"loadedSkills":29,"catalogSkills":14}
-saved=9451
+before={"bytes":93016,"loadedSkills":29,"catalogSkills":29}
+after={"bytes":83520,"loadedSkills":29,"catalogSkills":14}
+saved=9496
 providerRequests=0
 ```
 
 The 29 loaded skills comprised all 20 Firstmate skills and nine installed global skills in both captures.
 After the change, the automatic catalog retained those nine global skills plus the five captain-invocable Firstmate skills, while all 29 skill records remained loaded.
 The focused behavioral regression separately confirms that Pi retains all 20 Firstmate skill commands.
-The measured reduction was 9,451 UTF-8 bytes in Pi's complete generated system prompt.
+The measured reduction was 9,496 UTF-8 bytes in Pi's complete generated system prompt.
