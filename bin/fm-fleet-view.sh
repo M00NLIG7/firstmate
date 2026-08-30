@@ -76,6 +76,11 @@ if [ "$MODE" = compact ]; then
       or ($t.kind == "secondmate" and $t.endpoint.agent_alive != "alive")
       or ((($t.hints.open_decisions // []) | length) > 0);
     def task_action($t): if $t.kind == "secondmate" then "return" else "peek" end;
+    def hold_detail($r):
+      if ($r.hold_reason // "") == "" then null
+      else "\(dash($r.hold_kind)): \($r.hold_reason)"
+        + (if ($r.hold_until // "") == "" then "" else " until \($r.hold_until)" end)
+      end;
     def task_row($t; $home):
       (if attention($t) then "! " else "- " end)
       + "\($t.id): \($t.current_state.state)/\($t.current_state.source)"
@@ -83,6 +88,7 @@ if [ "$MODE" = compact ]; then
       + "; \($t.backend) \(endpoint_of($t))"
       + (if $t.current_state.state != "working" and (($t.current_state.detail // "") != "")
          then "; detail=\($t.current_state.detail)" else "" end)
+      + (if hold_detail($t.backlog) == null then "" else "; hold=\(hold_detail($t.backlog))" end)
       + (if artifact($t) == null then "" else "; artifact=\(home_path(artifact($t); $home))" end)
       + "; action=\(task_action($t))";
     def decision_row($t; $d):
@@ -92,11 +98,6 @@ if [ "$MODE" = compact ]; then
       elif ($r.blocked_reason // "") == "" then $r.blocked_by
       else "\($r.blocked_by) - \($r.blocked_reason)" end;
     def backlog_artifact($r): $r.pr_url // $r.report_path // $r.local_note;
-    def hold_detail($r):
-      if ($r.hold_reason // "") == "" then null
-      else "\(dash($r.hold_kind)): \($r.hold_reason)"
-        + (if ($r.hold_until // "") == "" then "" else " until \($r.hold_until)" end)
-      end;
     def backlog_row($r; $home):
       (if (($r.captain_actionable // false) or ($r.structured == false)) then "! " else "- " end)
       + (if $r.structured then

@@ -907,13 +907,13 @@ test_compact_view_contract() {
 }
 
 test_compact_view_unmatched_in_flight_records() {
-  local home fakebin compact worker_rows unstructured_rows
+  local home fakebin compact observation_line observation_rows worker_rows unstructured_rows busy_gen
   home=$(make_home compact-unmatched-in-flight)
-  mkdir -p "$home/projects/worker"
+  mkdir -p "$home/projects/observation" "$home/projects/worker"
   cat > "$home/data/backlog.md" <<'EOF'
 ## In flight
 - [ ] program - Aggregate program (repo: alpha) (kind: program)
-- [ ] observation - Watch production (repo: alpha) (kind: scout) (hold: wait for metrics) (hold-kind: external)
+- [ ] observation - Watch production (repo: alpha) (kind: scout) (hold: wait for metrics) (hold-kind: external) (hold-until: 2026-09-01)
 - [ ] worker - Active worker (repo: alpha) (kind: ship)
 recovery note without canonical syntax
 
@@ -921,6 +921,17 @@ recovery note without canonical syntax
 
 ## Done
 EOF
+  fm_write_meta "$home/state/observation.meta" \
+    "window=firstmate:fm-observation" \
+    "worktree=$home/projects/observation" \
+    "project=alpha" \
+    "harness=codex" \
+    "kind=scout" \
+    "mode=scout"
+  printf 'working: watching metrics\n' > "$home/state/observation.status"
+  busy_gen=$("$ROOT/bin/fm-busy-event.sh" arm "$home/state" observation)
+  "$ROOT/bin/fm-busy-event.sh" apply "$home/state" observation busy --gen "$busy_gen" \
+    --source codex-hook --event user-prompt-submit
   fm_write_meta "$home/state/worker.meta" \
     "window=firstmate:fm-worker" \
     "worktree=$home/projects/worker" \
@@ -936,8 +947,11 @@ EOF
     "compact view did not count every unmatched in-flight record"
   assert_contains "$compact" "- program: Aggregate program; alpha program" \
     "compact view omitted an unmatched program record"
-  assert_contains "$compact" "- observation: Watch production; alpha scout; hold=external: wait for metrics" \
-    "compact view omitted an unmatched held record or its reason"
+  observation_line=$(printf '%s\n' "$compact" | grep -E '^[-!] observation:')
+  assert_contains "$observation_line" "; hold=external: wait for metrics until 2026-09-01; action=peek" \
+    "compact view omitted a matched held record's identifying hold detail"
+  observation_rows=$(printf '%s\n' "$compact" | grep -Ec '^[-!] observation:')
+  [ "$observation_rows" -eq 1 ] || fail "compact view duplicated a task-backed held record"
   worker_rows=$(printf '%s\n' "$compact" | grep -Ec '^[-!] worker:')
   [ "$worker_rows" -eq 1 ] || fail "compact view duplicated a task-backed in-flight record"
   assert_contains "$compact" "! inventory item: unstructured in-flight: recovery note without canonical syntax" \
