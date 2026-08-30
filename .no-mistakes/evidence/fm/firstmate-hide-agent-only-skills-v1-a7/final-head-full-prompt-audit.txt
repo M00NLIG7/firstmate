@@ -1,0 +1,7 @@
+base=c731c36c381ea0886fa5aabf6a3be761534d3f30
+head=40f8af8e96e4aace58d5f765bc478b68f368593d
+pi=0.84.0
+before={"bytes":93016,"loadedSkills":29,"catalogSkills":29}
+after={"bytes":83520,"loadedSkills":29,"catalogSkills":14}
+saved=9496
+providerRequests=0
