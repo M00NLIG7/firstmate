@@ -7,7 +7,7 @@ The behavioral contract remains enforced by `tests/fm-pi-skill-catalog.test.sh`;
 
 ## Full-prompt audit
 
-The audit was run on 2026-08-28 with Pi 0.84.0 on macOS against public base `420721401c4080d1a4f6982b0ef6769e2a749b23` and task head `8abb49e25da4e1211a933ca57e72c4c745b78276`.
+The audit was run on 2026-08-30 with Pi 0.84.0 on macOS against public base `c731c36c381ea0886fa5aabf6a3be761534d3f30` and final task head `b2c14efa419eda2321b8fe671b673e24e104fc73`.
 Both captures used the same clean disposable checkout path, the same installed Pi configuration, and the normal discovered project context and skill catalog.
 The only source difference was the task head.
 Pi's command context exposed the complete generated system prompt without starting an agent turn or making a provider request.
@@ -23,12 +23,14 @@ export default function (pi: ExtensionAPI) {
     description: "Capture Pi's complete generated system prompt",
     handler: async (_args, ctx) => {
       const prompt = ctx.getSystemPrompt();
+      const catalog = prompt.match(/<available_skills>[\s\S]*?<\/available_skills>/)?.[0];
       writeFileSync(
         process.env.FM_PI_PROMPT_CAPTURE!,
         JSON.stringify({
           prompt,
           bytes: Buffer.byteLength(prompt, "utf8"),
           skills: ctx.getSystemPromptOptions().skills,
+          catalogSkills: catalog?.match(/<skill>/g)?.length ?? 0,
         }),
       );
     },
@@ -36,38 +38,46 @@ export default function (pi: ExtensionAPI) {
 }
 ```
 
-Run this command at the base, save the resulting `before.json`, switch the same clean disposable checkout to the head, and run it again with `LABEL=after`.
+Run these commands from the clean disposable checkout that contains the test-only hook.
 Keeping the checkout path fixed matters because Pi includes each skill's absolute location in the generated catalog.
 
 ```sh
-LABEL=before
+BASE=c731c36c381ea0886fa5aabf6a3be761534d3f30
+TASK_HEAD=b2c14efa419eda2321b8fe671b673e24e104fc73
 AUDIT_DIR="$PWD/.tmp-skill-catalog-audit"
-printf '%s\n' \
-  '{"id":"capture","type":"prompt","message":"/fm-capture-full-prompt"}' \
-  | PI_OFFLINE=1 \
-    FM_PI_PROMPT_CAPTURE="$AUDIT_DIR/$LABEL.json" \
-    pi --mode rpc --approve --no-session --no-extensions \
-      -e "$AUDIT_DIR/capture-system-prompt.ts" \
-      --no-prompt-templates --no-themes \
-      --model openai-codex/gpt-5.6-sol --thinking low \
-      >"$AUDIT_DIR/$LABEL.rpc" \
-      2>"$AUDIT_DIR/$LABEL.stderr"
-jq '{bytes, loadedSkills:(.skills | length)}' "$AUDIT_DIR/$LABEL.json"
+capture_prompt() {
+  label=$1
+  printf '%s\n' \
+    '{"id":"capture","type":"prompt","message":"/fm-capture-full-prompt"}' \
+    | PI_OFFLINE=1 \
+      FM_PI_PROMPT_CAPTURE="$AUDIT_DIR/$label.json" \
+      pi --mode rpc --approve --no-session --no-extensions \
+        -e "$AUDIT_DIR/capture-system-prompt.ts" \
+        --no-prompt-templates --no-themes \
+        --model openai-codex/gpt-5.6-sol --thinking low \
+        >"$AUDIT_DIR/$label.rpc" \
+        2>"$AUDIT_DIR/$label.stderr"
+  jq '{bytes, loadedSkills:(.skills | length), catalogSkills}' "$AUDIT_DIR/$label.json"
+}
+git switch --detach "$BASE"
+capture_prompt before
+git switch --detach "$TASK_HEAD"
+capture_prompt after
 ```
 
 The raw bounded output was:
 
 ```text
-base=420721401c4080d1a4f6982b0ef6769e2a749b23
-head=8abb49e25da4e1211a933ca57e72c4c745b78276
+base=c731c36c381ea0886fa5aabf6a3be761534d3f30
+head=b2c14efa419eda2321b8fe671b673e24e104fc73
 pi=0.84.0
-before={"bytes":92325,"loadedSkills":29,"catalogSkills":29}
-after={"bytes":82784,"loadedSkills":29,"catalogSkills":14}
-saved=9541
+before={"bytes":165695,"loadedSkills":29,"catalogSkills":29}
+after={"bytes":155225,"loadedSkills":29,"catalogSkills":14}
+saved=10470
 providerRequests=0
 ```
 
 The 29 loaded skills comprised all 20 Firstmate skills and nine installed global skills in both captures.
 After the change, the automatic catalog retained those nine global skills plus the five captain-invocable Firstmate skills, while all 29 skill records remained loaded.
 The focused behavioral regression separately confirms that Pi retains all 20 Firstmate skill commands.
-The measured reduction was 9,541 UTF-8 bytes in Pi's complete generated system prompt.
+The measured reduction was 10,470 UTF-8 bytes in Pi's complete generated system prompt.
