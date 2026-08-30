@@ -801,7 +801,7 @@ test_parked_scout_decision_stays_pending() {
 
 test_compact_view_contract() {
   local home fakebin help raw explicit_raw snapshot_json view_json compact repeated raw_error compact_error raw_rc compact_rc
-  local cmux_line decision_line scout_line secondmate_line ship_line queued_line unstructured_line captain_line
+  local cmux_line decision_line scout_line secondmate_line ship_line recovery_line queued_line unstructured_line captain_line
   home=$(make_home compact-contract)
   write_fixture "$home"
   mkdir -p "$home/projects/decision-worktree"
@@ -847,7 +847,7 @@ test_compact_view_contract() {
   repeated=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
   [ "$compact" = "$repeated" ] || fail "compact fleet view was not deterministic across identical reads"
 
-  assert_contains "$compact" "Rows shown/total: under-way=5/5; queued=3/3; done=0/1." \
+  assert_contains "$compact" "Rows shown/total: under-way=6/6; queued=3/3; done=0/1." \
     "compact view did not retain every live and queued row or account for Done"
   assert_contains "$compact" "Raw-view omissions: done detail rows=1; task path cells=5." \
     "compact view did not count every detail row and path cell omitted from raw mode"
@@ -861,6 +861,8 @@ test_compact_view_contract() {
   assert_contains "$compact" "! inventory error:" "compact view did not preserve the unstructured-row inventory error"
   assert_contains "$compact" "! inventory item: unstructured in-flight: unstructured in-flight recovery note" \
     "compact view did not retain an unstructured in-flight inventory item"
+  [ "$(printf '%s\n' "$compact" | grep -Fc '! inventory item: unstructured in-flight: unstructured in-flight recovery note')" -eq 1 ] \
+    || fail "compact view duplicated an unstructured in-flight inventory item"
   assert_contains "$compact" "! cmux-task: unknown/none; ship alpha; cmux absent; detail=worktree gone (torn down?)" \
     "compact view did not retain a task error and its detail"
   assert_contains "$compact" "! decision decision-task[key=route]: needs-decision: choose the release route" \
@@ -880,8 +882,10 @@ test_compact_view_contract() {
   scout_line=$(printf '%s\n' "$compact" | grep -n '^! scout-task:' | cut -d: -f1)
   secondmate_line=$(printf '%s\n' "$compact" | grep -n '^- secondmate-task:' | cut -d: -f1)
   ship_line=$(printf '%s\n' "$compact" | grep -n '^- ship-task:' | cut -d: -f1)
+  recovery_line=$(printf '%s\n' "$compact" | grep -n '^! inventory item: unstructured in-flight:' | cut -d: -f1)
   [ "$cmux_line" -lt "$decision_line" ] && [ "$decision_line" -lt "$scout_line" ] \
     && [ "$scout_line" -lt "$secondmate_line" ] && [ "$secondmate_line" -lt "$ship_line" ] \
+    && [ "$ship_line" -lt "$recovery_line" ] \
     || fail "compact task rows did not preserve deterministic snapshot order"
   queued_line=$(printf '%s\n' "$compact" | grep -n '^- queued-task:' | cut -d: -f1)
   unstructured_line=$(printf '%s\n' "$compact" | grep -n '^! unstructured:' | cut -d: -f1)
@@ -903,7 +907,7 @@ test_compact_view_contract() {
 }
 
 test_compact_view_unmatched_in_flight_records() {
-  local home fakebin compact worker_rows
+  local home fakebin compact worker_rows unstructured_rows
   home=$(make_home compact-unmatched-in-flight)
   mkdir -p "$home/projects/worker"
   cat > "$home/data/backlog.md" <<'EOF'
@@ -911,6 +915,7 @@ test_compact_view_unmatched_in_flight_records() {
 - [ ] program - Aggregate program (repo: alpha) (kind: program)
 - [ ] observation - Watch production (repo: alpha) (kind: scout) (hold: wait for metrics) (hold-kind: external)
 - [ ] worker - Active worker (repo: alpha) (kind: ship)
+recovery note without canonical syntax
 
 ## Queued
 
@@ -927,15 +932,19 @@ EOF
   fakebin=$(make_fakebin "$home")
 
   compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --compact)
-  assert_contains "$compact" "Rows shown/total: under-way=3/3; queued=0/0; done=0/0." \
-    "compact view did not count unmatched structured in-flight records"
+  assert_contains "$compact" "Rows shown/total: under-way=4/4; queued=0/0; done=0/0." \
+    "compact view did not count every unmatched in-flight record"
   assert_contains "$compact" "- program: Aggregate program; alpha program" \
     "compact view omitted an unmatched program record"
   assert_contains "$compact" "- observation: Watch production; alpha scout; hold=external: wait for metrics" \
     "compact view omitted an unmatched held record or its reason"
   worker_rows=$(printf '%s\n' "$compact" | grep -Ec '^[-!] worker:')
   [ "$worker_rows" -eq 1 ] || fail "compact view duplicated a task-backed in-flight record"
-  pass "compact view retains unmatched structured in-flight records without duplicates"
+  assert_contains "$compact" "! inventory item: unstructured in-flight: recovery note without canonical syntax" \
+    "compact view omitted an unmatched unstructured in-flight record"
+  unstructured_rows=$(printf '%s\n' "$compact" | grep -Fc '! inventory item: unstructured in-flight: recovery note without canonical syntax')
+  [ "$unstructured_rows" -eq 1 ] || fail "compact view duplicated an unmatched unstructured in-flight record"
+  pass "compact view retains every unmatched in-flight record without duplicates"
 }
 
 test_compact_view_missing_backlog_error() {

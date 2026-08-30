@@ -109,8 +109,8 @@ if [ "$MODE" = compact ]; then
     .fm_home as $home
     | ([.tasks[].id]) as $task_ids
     | ([.backlog.records[]?
-        | select(.state == "in_flight" and .structured)
-        | select(.id as $id | $task_ids | index($id) | not)]) as $unmatched_in_flight
+        | select(.state == "in_flight")
+        | select((.structured | not) or (.id as $id | $task_ids | index($id) | not))]) as $unmatched_in_flight
     | ((.tasks | length) + ($unmatched_in_flight | length)) as $under_way
     | ([.backlog.records[]? | select(.state == "queued")] | length) as $queued
     | ([.backlog.records[]? | select(.state == "done")] | length) as $done
@@ -131,16 +131,15 @@ if [ "$MODE" = compact ]; then
        elif .main_inventory.valid then empty
        else "! inventory error: \(.main_inventory.reason); orphan in-flight=\(.main_inventory.orphan_in_flight | join(",")); unstructured current=\(.main_inventory.unstructured_current_count)"
        end),
-      (.backlog.records[]?
-       | select(.state == "in_flight" and (.structured | not))
-       | "! inventory item: unstructured in-flight: \(.raw)"),
       "",
       "## Under Way",
       (if $under_way == 0 then "None."
        else (.tasks[] | . as $task
          | task_row($task; $home),
            ($task.hints.open_decisions[]? | decision_row($task; .))),
-         ($unmatched_in_flight[] | backlog_row(.; $home))
+         ($unmatched_in_flight[]
+          | if .structured then backlog_row(.; $home)
+            else "! inventory item: unstructured in-flight: \(.raw)" end)
        end),
       "",
       "## Queued",
