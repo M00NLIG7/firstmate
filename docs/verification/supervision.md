@@ -249,6 +249,7 @@ FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0
 ```
 
 The measured reduction is 3,605 bytes, or 36.5%, and approximately 901 tokens per representative recurring fleet review under the stated four-bytes-per-token estimate.
+The portable regression enforces the material reduction as a percentage because the exact raw and compact byte totals include checkout and fixture paths, while this record preserves the same-path maintainer measurement above.
 The compact renderer has no harness or model-provider branch.
 Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, and Cursor primaries, plus Muse workers, all consume the same normalized snapshot fields, so no vendor or model call is applicable to this view.
 Tmux, Herdr, Zellij, Orca, and cmux remain normalized by `bin/fm-fleet-snapshot.sh`; their adapter-specific endpoint behavior stays owned by the runtime-backend verification and portable backend suites.
