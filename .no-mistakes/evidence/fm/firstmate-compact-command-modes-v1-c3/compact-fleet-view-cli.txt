@@ -1,0 +1,36 @@
+$ bin/fm-fleet-view.sh --help
+usage: fm-fleet-view.sh [--raw|--compact|--json]
+
+Render a human fleet view from fm-fleet-snapshot.sh.
+The default and --raw print the complete historical human view.
+--compact keeps every under-way and queued row, counts every omission from
+raw mode, applies no truncation, and prints exact full-detail commands.
+--json prints the complete underlying snapshot.
+
+$ FM_HOME=<fixture> bin/fm-fleet-view.sh --compact
+# Fleet View (compact)
+
+Home: /var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1AFG33A7RR80ZB26M9NT7T1/compact-cli-fixture
+Rows shown/total: under-way=2/2; queued=2/2; done=0/1.
+Raw-view omissions: done detail rows=1; task path cells=0.
+Truncation: none.
+Full human detail: FM_HOME='/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1AFG33A7RR80ZB26M9NT7T1/compact-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1AFG33A7RR80ZB26M9NT7T1/bin/fm-fleet-view.sh' --raw
+Complete raw snapshot: FM_HOME='/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1AFG33A7RR80ZB26M9NT7T1/compact-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1AFG33A7RR80ZB26M9NT7T1/bin/fm-fleet-view.sh' --json
+Full queued hold detail: tasks-axi show <id> --full, or '/var/folders/9w/r64y1hss78j7h843gtlnls6r0000gn/T/no-mistakes-evidence/01M1AFG33A7RR80ZB26M9NT7T1/compact-cli-fixture/data/backlog.md'.
+Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> '<request>', then read status/doc and do not routinely peek a secondmate.
+Attention marker: ! means a non-working task, endpoint problem, open decision, captain-actionable row, unstructured row, or inventory error.
+! inventory error: unstructured current backlog row; orphan in-flight=; unstructured current=1
+
+## Under Way
+- observation: Watch rollout health; firstmate scout; hold=external: waiting for production metrics until 2026-09-01
+! inventory item: unstructured in-flight: recovery note without canonical syntax
+
+## Queued
+! captain-choice: Choose rollout lane; firstmate captain; hold=captain: select blue or green
+- queued-fix: Apply bounded repair; firstmate ship
+
+## Done
+1 detail row(s) omitted; use the full-human-detail command above.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
