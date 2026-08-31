@@ -906,6 +906,36 @@ test_compact_view_contract() {
   pass "fleet view compact mode preserves raw output, rows, errors, ordering, omission counts, and escape hatches"
 }
 
+test_compact_view_relative_home_escape_hatches() {
+  local home relative_home fakebin compact raw snapshot raw_command json_command escaped_raw escaped_json
+  home="$TMP_ROOT/relative-escape-home"
+  relative_home="relative-escape-home"
+  mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config" "$TMP_ROOT/elsewhere"
+  write_fixture "$home"
+  fakebin=$(make_fakebin "$home")
+
+  raw=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_HOME="$relative_home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --raw)
+  snapshot=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_HOME="$relative_home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$SNAPSHOT" --json)
+  compact=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_HOME="$relative_home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --compact)
+  raw_command=$(printf '%s\n' "$compact" | sed -n 's/^Full human detail: //p')
+  json_command=$(printf '%s\n' "$compact" | sed -n 's/^Complete raw snapshot: //p')
+
+  escaped_raw=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$raw_command")
+  escaped_json=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$json_command")
+  [ "$escaped_raw" = "$raw" ] \
+    || fail "relative FM_HOME raw escape command did not recover the original complete fleet view"
+  [ "$escaped_json" = "$snapshot" ] \
+    || fail "relative FM_HOME JSON escape command did not recover the original complete snapshot"
+  assert_contains "$compact" "or '$home/data/backlog.md'." \
+    "relative FM_HOME queued-hold escape hatch was not canonicalized"
+  pass "compact view canonicalizes relative FM_HOME escape hatches"
+}
+
 test_compact_view_unmatched_in_flight_records() {
   local home fakebin compact observation_line observation_rows worker_rows unstructured_rows busy_gen
   home=$(make_home compact-unmatched-in-flight)
@@ -1178,6 +1208,7 @@ test_backlog_tasks_axi_forms_and_overrides
 test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
 test_compact_view_contract
+test_compact_view_relative_home_escape_hatches
 test_compact_view_unmatched_in_flight_records
 test_compact_view_missing_backlog_error
 test_compact_view_discloses_incomplete_secondmate_evidence
