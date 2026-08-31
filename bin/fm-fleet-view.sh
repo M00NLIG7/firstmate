@@ -49,24 +49,54 @@ SNAPSHOT=$("$SCRIPT_DIR/fm-fleet-snapshot.sh" --json) || exit $?
 
 if [ "$MODE" = compact ]; then
   COMPACT_ESCAPE_HOME=$(printf '%s\n' "$SNAPSHOT" | jq -r '.fm_home')
-  COMPACT_ESCAPE_VARIABLE=FM_HOME
-  COMPACT_ESCAPE_VALUE=${FM_HOME:-}
-  if [ -z "$COMPACT_ESCAPE_VALUE" ] && [ -n "${FM_ROOT_OVERRIDE:-}" ]; then
-    COMPACT_ESCAPE_VARIABLE=FM_ROOT_OVERRIDE
-    COMPACT_ESCAPE_VALUE=$FM_ROOT_OVERRIDE
+  COMPACT_ESCAPE_ROOT=$(printf '%s\n' "$SNAPSHOT" | jq -r '.roots.fm_root')
+  COMPACT_ESCAPE_HOME_ENV=$COMPACT_ESCAPE_HOME
+  COMPACT_ESCAPE_ROOT_ENV=$COMPACT_ESCAPE_ROOT
+  COMPACT_ESCAPE_HAS_HOME=true
+  COMPACT_ESCAPE_HAS_ROOT=false
+  if [ -n "${FM_ROOT_OVERRIDE:-}" ]; then
+    COMPACT_ESCAPE_HAS_ROOT=true
   fi
-  case "$COMPACT_ESCAPE_VALUE" in
-    ""|/*)
-      COMPACT_ESCAPE_DIR=
-      COMPACT_ESCAPE_NEEDS_DIRECTORY=false
-      ;;
-    *)
+  if [ -z "${FM_HOME:-}" ] && [ "$COMPACT_ESCAPE_HAS_ROOT" = true ]; then
+    COMPACT_ESCAPE_HAS_HOME=false
+  fi
+  COMPACT_ESCAPE_DIR=
+  COMPACT_ESCAPE_NEEDS_DIRECTORY=false
+  if [ "$COMPACT_ESCAPE_HAS_HOME" = true ] && [ -n "${FM_HOME:-}" ]; then
+    case "$FM_HOME" in
+      /*)
+        COMPACT_ESCAPE_HOME=$FM_HOME
+        COMPACT_ESCAPE_HOME_ENV=$FM_HOME
+        ;;
+      *)
+        COMPACT_ESCAPE_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
+        COMPACT_ESCAPE_HOME_ENV=$FM_HOME
+        COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
+        COMPACT_ESCAPE_NEEDS_DIRECTORY=true
+        ;;
+    esac
+  fi
+  if [ "$COMPACT_ESCAPE_HAS_ROOT" = true ]; then
+    COMPACT_ESCAPE_ROOT_ENV=$FM_ROOT_OVERRIDE
+    case "$FM_ROOT_OVERRIDE" in
+      /*) COMPACT_ESCAPE_ROOT=$FM_ROOT_OVERRIDE ;;
+      *)
+        COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
+        COMPACT_ESCAPE_NEEDS_DIRECTORY=true
+        ;;
+    esac
+  fi
+  if [ "$COMPACT_ESCAPE_HAS_HOME" = true ] && [ -z "${FM_HOME:-}" ]; then
+    case "$COMPACT_ESCAPE_HOME" in
+      /*) : ;;
+      *)
       COMPACT_ESCAPE_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
       COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
       COMPACT_ESCAPE_NEEDS_DIRECTORY=true
       ;;
   esac
-  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_variable "$COMPACT_ESCAPE_VARIABLE" --arg escape_dir "$COMPACT_ESCAPE_DIR" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
+  fi
+  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_home_env "$COMPACT_ESCAPE_HOME_ENV" --arg escape_root_env "$COMPACT_ESCAPE_ROOT_ENV" --arg escape_dir "$COMPACT_ESCAPE_DIR" --argjson escape_has_home "$COMPACT_ESCAPE_HAS_HOME" --argjson escape_has_root "$COMPACT_ESCAPE_HAS_ROOT" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
     def dash($v): if $v == null or $v == "" then "-" else $v end;
     def endpoint_exists($t):
       if $t.endpoint.exists == null then "unknown"
@@ -101,6 +131,10 @@ if [ "$MODE" = compact ]; then
       else "\(dash($r.hold_kind)): \($r.hold_reason)"
         + (if ($r.hold_until // "") == "" then "" else " until \($r.hold_until)" end)
       end;
+    def escape_environment:
+      (if $escape_has_home then "FM_HOME=\($escape_home_env | @sh)" else "" end)
+      + (if $escape_has_home and $escape_has_root then " " else "" end)
+      + (if $escape_has_root then "FM_ROOT_OVERRIDE=\($escape_root_env | @sh)" else "" end);
     def task_row($t; $home):
       (if attention($t) then "! " else "- " end)
       + "\($t.id): \($t.current_state.state)/\($t.current_state.source)"
@@ -156,14 +190,14 @@ if [ "$MODE" = compact ]; then
       "Raw-view omissions: done detail rows=\($done); task path cells=\($paths_omitted).",
       "Compact renderer truncation: none.",
       (if $escape_needs_directory then
-         "Full human detail: cd \($escape_dir | @sh) && \($escape_variable)=\($home | @sh) \($view_script | @sh) --raw"
+         "Full human detail: cd \($escape_dir | @sh) && \(escape_environment) \($view_script | @sh) --raw"
        else
-         "Full human detail: \($escape_variable)=\($home | @sh) \($view_script | @sh) --raw"
+         "Full human detail: \(escape_environment) \($view_script | @sh) --raw"
        end),
       (if $escape_needs_directory then
-         "Complete raw snapshot: cd \($escape_dir | @sh) && \($escape_variable)=\($home | @sh) \($view_script | @sh) --json"
+         "Complete raw snapshot: cd \($escape_dir | @sh) && \(escape_environment) \($view_script | @sh) --json"
        else
-         "Complete raw snapshot: \($escape_variable)=\($home | @sh) \($view_script | @sh) --json"
+         "Complete raw snapshot: \(escape_environment) \($view_script | @sh) --json"
        end),
       "Full queued hold detail: tasks-axi show <id> --full, or \(($escape_home + "/data/backlog.md") | @sh).",
       "Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> \u0027<request>\u0027, then read status/doc and do not routinely peek a secondmate.",
