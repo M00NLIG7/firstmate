@@ -938,6 +938,34 @@ test_compact_view_relative_home_escape_hatches() {
   pass "compact view preserves relative and absolute FM_HOME escape hatches"
 }
 
+test_compact_view_relative_root_override_escape_hatches() {
+  local home relative_root fakebin compact raw snapshot raw_command json_command escaped_raw escaped_json
+  home="$TMP_ROOT/relative-root-override-home"
+  relative_root="relative-root-override-home"
+  mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config" "$TMP_ROOT/elsewhere"
+  write_fixture "$home"
+  fakebin=$(make_fakebin "$home")
+
+  raw=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$relative_root" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --raw)
+  snapshot=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$relative_root" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$SNAPSHOT" --json)
+  compact=$(cd "$TMP_ROOT" && PATH="$fakebin:$PATH" FM_ROOT_OVERRIDE="$relative_root" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --compact)
+  raw_command=$(printf '%s\n' "$compact" | sed -n 's/^Full human detail: //p')
+  json_command=$(printf '%s\n' "$compact" | sed -n 's/^Complete raw snapshot: //p')
+
+  escaped_raw=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$raw_command")
+  escaped_json=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$json_command")
+  [ "$escaped_raw" = "$raw" ] \
+    || fail "relative FM_ROOT_OVERRIDE raw escape command did not recover the original complete fleet view"
+  [ "$escaped_json" = "$snapshot" ] \
+    || fail "relative FM_ROOT_OVERRIDE JSON escape command did not recover the original complete snapshot"
+  pass "compact view preserves relative FM_ROOT_OVERRIDE escape hatches"
+}
+
 assert_compact_view_absolute_home_escape_hatches() {
   local home alias_home fakebin compact
   home=$(make_home compact-absolute-escape)
@@ -1230,6 +1258,7 @@ test_view_renders_snapshot
 test_view_renders_dead_secondmate_agent_status
 test_compact_view_contract
 test_compact_view_relative_home_escape_hatches
+test_compact_view_relative_root_override_escape_hatches
 test_compact_view_unmatched_in_flight_records
 test_compact_view_missing_backlog_error
 test_compact_view_discloses_incomplete_secondmate_evidence
