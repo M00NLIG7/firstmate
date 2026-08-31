@@ -113,6 +113,8 @@ if [ "$MODE" = compact ]; then
         "! secondmate evidence \($r.id): unavailable; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
       elif $r.provenance.trust == "partial-structured" then
         "! secondmate evidence \($r.id): partial; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
+      elif ($r.contradiction // false) then
+        "! secondmate evidence \($r.id): contradictory; home=\(home_path($r.home; $home))"
       else empty end;
     def secondmate_omission($r):
       $r.omitted[]?

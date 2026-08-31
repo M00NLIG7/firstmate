@@ -1052,22 +1052,36 @@ EOF
   cat > "$home/data/secondmates.md" <<EOF
 - bounded-holds - fixture (home: $secondmate; scope: fixture; projects: alpha; added 2026-08-30)
 EOF
+  fm_write_meta "$home/state/bounded-holds.meta" \
+    "window=firstmate:fm-bounded-holds" \
+    "worktree=$secondmate" \
+    "project=$secondmate" \
+    "harness=codex" \
+    "kind=secondmate" \
+    "mode=secondmate" \
+    "home=$secondmate" \
+    "projects=alpha"
+  printf 'needs-decision [key=stale]: old parent question\n' > "$home/state/bounded-holds.status"
   fakebin=$(make_fakebin "$home")
 
   snapshot=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$SNAPSHOT" --json)
   printf '%s' "$snapshot" | jq -e '
     .secondmate_current.records[] | select(.id == "bounded-holds")
-    | .counts.holds == 2
+    | .provenance.trust == "complete"
+      and .contradiction == true
+      and .counts.holds == 2
       and (.holds | length) == 1
       and any(.omitted[]; .surface == "holds" and .count == 1)
-  ' >/dev/null || fail "snapshot did not disclose the exact bounded hold count: $snapshot"
+  ' >/dev/null || fail "snapshot did not disclose contradictory evidence and the exact bounded hold count: $snapshot"
 
   compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$VIEW" --compact)
+  assert_contains "$compact" "! secondmate evidence bounded-holds: contradictory; home=" \
+    "compact view hid contradictory secondmate evidence"
   assert_contains "$compact" "! secondmate evidence bounded-holds: bounded holds omitted=1" \
     "compact view hid a bounded secondmate hold"
   assert_contains "$compact" "! secondmate evidence bounded-holds: bounded queued omitted=1" \
     "compact view hid the corresponding bounded queued row"
-  pass "compact view discloses exact bounded secondmate hold and queued counts"
+  pass "compact view discloses contradictory evidence and exact bounded secondmate hold and queued counts"
 }
 
 test_compact_view_representative_reduction() {
