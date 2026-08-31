@@ -51,7 +51,11 @@ if [ "$MODE" = compact ]; then
   COMPACT_ESCAPE_HOME=$(printf '%s\n' "$SNAPSHOT" | jq -r '.fm_home')
   COMPACT_ESCAPE_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
   COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
-  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_dir "$COMPACT_ESCAPE_DIR" '
+  case "${FM_HOME:-}" in
+    ""|/*) COMPACT_ESCAPE_NEEDS_DIRECTORY=false ;;
+    *) COMPACT_ESCAPE_NEEDS_DIRECTORY=true ;;
+  esac
+  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_dir "$COMPACT_ESCAPE_DIR" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
     def dash($v): if $v == null or $v == "" then "-" else $v end;
     def endpoint_exists($t):
       if $t.endpoint.exists == null then "unknown"
@@ -140,15 +144,15 @@ if [ "$MODE" = compact ]; then
       "Rows shown/total: under-way=\($under_way)/\($under_way); queued=\($queued)/\($queued); done=0/\($done).",
       "Raw-view omissions: done detail rows=\($done); task path cells=\($paths_omitted).",
       "Compact renderer truncation: none.",
-      (if $home == $escape_home then
-         "Full human detail: FM_HOME=\($escape_home | @sh) \($view_script | @sh) --raw"
-       else
+      (if $escape_needs_directory then
          "Full human detail: cd \($escape_dir | @sh) && FM_HOME=\($home | @sh) \($view_script | @sh) --raw"
-       end),
-      (if $home == $escape_home then
-         "Complete raw snapshot: FM_HOME=\($escape_home | @sh) \($view_script | @sh) --json"
        else
+         "Full human detail: FM_HOME=\($home | @sh) \($view_script | @sh) --raw"
+       end),
+      (if $escape_needs_directory then
          "Complete raw snapshot: cd \($escape_dir | @sh) && FM_HOME=\($home | @sh) \($view_script | @sh) --json"
+       else
+         "Complete raw snapshot: FM_HOME=\($home | @sh) \($view_script | @sh) --json"
        end),
       "Full queued hold detail: tasks-axi show <id> --full, or \(($escape_home + "/data/backlog.md") | @sh).",
       "Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> \u0027<request>\u0027, then read status/doc and do not routinely peek a secondmate.",
