@@ -1026,6 +1026,50 @@ EOF
   pass "compact view discloses bounded, unavailable, and partial secondmate evidence"
 }
 
+test_compact_view_discloses_bounded_secondmate_holds() {
+  local home secondmate fakebin snapshot compact
+  home=$(make_home compact-bounded-secondmate-holds)
+  secondmate="$TMP_ROOT/compact-bounded-holds-home"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+  mkdir -p "$secondmate/state" "$secondmate/data" "$secondmate/config" "$secondmate/projects" "$secondmate/bin"
+  printf '# Firstmate fixture\n' > "$secondmate/AGENTS.md"
+  printf 'bounded-holds\n' > "$secondmate/.fm-secondmate-home"
+  cat > "$secondmate/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+- [ ] first-hold - Wait for first dependency (repo: alpha) (kind: ship) (hold: first external dependency) (hold-kind: external)
+- [ ] second-hold - Wait for second dependency (repo: beta) (kind: scout) (hold: second external dependency) (hold-kind: external)
+
+## Done
+EOF
+  cat > "$home/data/secondmates.md" <<EOF
+- bounded-holds - fixture (home: $secondmate; scope: fixture; projects: alpha; added 2026-08-30)
+EOF
+  fakebin=$(make_fakebin "$home")
+
+  snapshot=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$SNAPSHOT" --json)
+  printf '%s' "$snapshot" | jq -e '
+    .secondmate_current.records[] | select(.id == "bounded-holds")
+    | .counts.holds == 2
+      and (.holds | length) == 1
+      and any(.omitted[]; .surface == "holds" and .count == 1)
+  ' >/dev/null || fail "snapshot did not disclose the exact bounded hold count: $snapshot"
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$VIEW" --compact)
+  assert_contains "$compact" "! secondmate evidence bounded-holds: bounded holds omitted=1" \
+    "compact view hid a bounded secondmate hold"
+  assert_contains "$compact" "! secondmate evidence bounded-holds: bounded queued omitted=1" \
+    "compact view hid the corresponding bounded queued row"
+  pass "compact view discloses exact bounded secondmate hold and queued counts"
+}
+
 test_compact_view_representative_reduction() {
   local home fakebin raw compact raw_bytes compact_bytes raw_tokens compact_tokens i id busy_gen
   home=$(make_home compact-measurement)
@@ -1097,4 +1141,5 @@ test_compact_view_contract
 test_compact_view_unmatched_in_flight_records
 test_compact_view_missing_backlog_error
 test_compact_view_discloses_incomplete_secondmate_evidence
+test_compact_view_discloses_bounded_secondmate_holds
 test_compact_view_representative_reduction
