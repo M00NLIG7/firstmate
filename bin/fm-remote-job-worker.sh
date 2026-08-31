@@ -374,8 +374,19 @@ worker_stop_active_execution() {
     start=${WORKER_LANE_STARTS[$i]}
     job=${WORKER_LANE_JOBS[$i]}
     if worker_lane_identity_matches "$pid" "$start"; then kill -TERM "$pid" 2>/dev/null || true; fi
-    if worker_lane_identity_matches "$pid" "$start"; then kill -KILL "$pid" 2>/dev/null || true; fi
-    wait "$pid" 2>/dev/null || true
+    if worker_lane_identity_matches "$pid" "$start"; then
+      if kill -KILL "$pid" 2>/dev/null; then
+        wait "$pid" 2>/dev/null || true
+      elif kill -0 "$pid" 2>/dev/null; then
+        failed=1
+      fi
+    elif kill -0 "$pid" 2>/dev/null; then
+      # Do not wait for an unverifiable live lane: its active command could
+      # finish and erase the execution records while shutdown appears safe.
+      failed=1
+    else
+      wait "$pid" 2>/dev/null || true
+    fi
     if [ -d "$job" ] && [ ! -L "$job" ]; then
       worker_stop_recorded_execution "$job" || failed=1
     fi
