@@ -49,11 +49,16 @@ SNAPSHOT=$("$SCRIPT_DIR/fm-fleet-snapshot.sh" --json) || exit $?
 
 if [ "$MODE" = compact ]; then
   COMPACT_ESCAPE_HOME=$(printf '%s\n' "$SNAPSHOT" | jq -r '.fm_home')
-  COMPACT_ESCAPE_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
-  COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
   case "${FM_HOME:-}" in
-    ""|/*) COMPACT_ESCAPE_NEEDS_DIRECTORY=false ;;
-    *) COMPACT_ESCAPE_NEEDS_DIRECTORY=true ;;
+    ""|/*)
+      COMPACT_ESCAPE_DIR=
+      COMPACT_ESCAPE_NEEDS_DIRECTORY=false
+      ;;
+    *)
+      COMPACT_ESCAPE_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
+      COMPACT_ESCAPE_DIR=$(pwd -P) || exit $?
+      COMPACT_ESCAPE_NEEDS_DIRECTORY=true
+      ;;
   esac
   printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_dir "$COMPACT_ESCAPE_DIR" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
     def dash($v): if $v == null or $v == "" then "-" else $v end;

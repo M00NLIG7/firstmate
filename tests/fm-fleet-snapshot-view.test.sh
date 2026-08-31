@@ -907,10 +907,11 @@ test_compact_view_contract() {
 }
 
 test_compact_view_relative_home_escape_hatches() {
-  local home relative_home fakebin compact raw snapshot raw_command json_command escaped_raw escaped_json
+  local home relative_home canonical_home fakebin compact raw snapshot raw_command json_command escaped_raw escaped_json
   home="$TMP_ROOT/relative-escape-home"
   relative_home="relative-escape-home"
   mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config" "$TMP_ROOT/elsewhere"
+  canonical_home=$(cd "$home" && pwd -P)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
 
@@ -931,9 +932,29 @@ test_compact_view_relative_home_escape_hatches() {
     || fail "relative FM_HOME raw escape command did not recover the original complete fleet view"
   [ "$escaped_json" = "$snapshot" ] \
     || fail "relative FM_HOME JSON escape command did not recover the original complete snapshot"
-  assert_contains "$compact" "or '$home/data/backlog.md'." \
+  assert_contains "$compact" "or '$canonical_home/data/backlog.md'." \
     "relative FM_HOME queued-hold escape hatch was not canonicalized"
-  pass "compact view canonicalizes relative FM_HOME escape hatches"
+  assert_compact_view_absolute_home_escape_hatches
+  pass "compact view preserves relative and absolute FM_HOME escape hatches"
+}
+
+assert_compact_view_absolute_home_escape_hatches() {
+  local home alias_home fakebin compact
+  home=$(make_home compact-absolute-escape)
+  alias_home="$TMP_ROOT/compact-absolute-escape-alias"
+  write_fixture "$home"
+  ln -s "$home" "$alias_home"
+  fakebin=$(make_fakebin "$home")
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$alias_home" \
+    FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --compact)
+
+  assert_contains "$compact" "Full human detail: FM_HOME='$alias_home' '$VIEW' --raw" \
+    "absolute FM_HOME raw escape command did not retain its supplied path"
+  assert_contains "$compact" "Complete raw snapshot: FM_HOME='$alias_home' '$VIEW' --json" \
+    "absolute FM_HOME JSON escape command did not retain its supplied path"
+  assert_contains "$compact" "or '$alias_home/data/backlog.md'." \
+    "absolute FM_HOME queued-hold escape path did not retain its supplied path"
 }
 
 test_compact_view_unmatched_in_flight_records() {
