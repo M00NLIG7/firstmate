@@ -1,0 +1,189 @@
+{
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-08-31T15:41:52Z",
+  "fm_home": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture",
+  "roots": {
+    "fm_root": "/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1C7DXH49H4RCMKRAQHCBZBD",
+    "state": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/state",
+    "data": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/data",
+    "config": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/config",
+    "projects": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/projects"
+  },
+  "backlog": {
+    "path": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/data/backlog.md",
+    "present": true,
+    "records": [
+      {
+        "order": 1,
+        "state": "in_flight",
+        "structured": false,
+        "id": null,
+        "raw": "unstructured recovery item requiring reconciliation",
+        "body_lines": [],
+        "body_excerpt": null
+      },
+      {
+        "order": 2,
+        "state": "in_flight",
+        "structured": true,
+        "id": "orphan-ship",
+        "checked": false,
+        "title": "Structured live row without task metadata",
+        "repo": "alpha",
+        "kind": "ship",
+        "priority": null,
+        "hold_reason": "awaiting captain decision",
+        "hold_kind": "captain",
+        "hold_until": null,
+        "blocked_by": null,
+        "blocked_by_ids": [],
+        "blocked_reason": null,
+        "since": null,
+        "merged": null,
+        "reported": null,
+        "done": null,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "links": [],
+        "pr_url": null,
+        "report_path": null,
+        "local_note": null,
+        "raw": "- [ ] orphan-ship - Structured live row without task metadata (repo: alpha) (kind: ship) (hold: awaiting captain decision) (hold-kind: captain)",
+        "body_lines": [],
+        "body_excerpt": null,
+        "unresolved_blocker_ids": [],
+        "current_role": "held",
+        "requires_child_metadata": false,
+        "captain_actionable": false,
+        "deferred_marker": false
+      },
+      {
+        "order": 3,
+        "state": "queued",
+        "structured": true,
+        "id": "captain-route",
+        "checked": false,
+        "title": "Choose release route",
+        "repo": "alpha",
+        "kind": "captain",
+        "priority": null,
+        "hold_reason": "select one option",
+        "hold_kind": "captain",
+        "hold_until": null,
+        "blocked_by": null,
+        "blocked_by_ids": [],
+        "blocked_reason": null,
+        "since": null,
+        "merged": null,
+        "reported": null,
+        "done": null,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "links": [],
+        "pr_url": null,
+        "report_path": null,
+        "local_note": null,
+        "raw": "- [ ] captain-route - Choose release route (repo: alpha) (kind: captain) (hold: select one option) (hold-kind: captain)",
+        "body_lines": [],
+        "body_excerpt": null,
+        "unresolved_blocker_ids": [],
+        "current_role": "queued",
+        "requires_child_metadata": false,
+        "captain_actionable": true,
+        "deferred_marker": false
+      },
+      {
+        "order": 4,
+        "state": "queued",
+        "structured": false,
+        "id": null,
+        "raw": "unstructured queued recovery note",
+        "body_lines": [],
+        "body_excerpt": null
+      },
+      {
+        "order": 5,
+        "state": "done",
+        "structured": true,
+        "id": "previous-ship",
+        "checked": true,
+        "title": "Historical completed work",
+        "repo": "alpha",
+        "kind": "ship",
+        "priority": null,
+        "hold_reason": null,
+        "hold_kind": null,
+        "hold_until": null,
+        "blocked_by": null,
+        "blocked_by_ids": [],
+        "blocked_reason": null,
+        "since": null,
+        "merged": null,
+        "reported": null,
+        "done": null,
+        "completion": {
+          "verb": null,
+          "date": null
+        },
+        "links": [],
+        "pr_url": null,
+        "report_path": null,
+        "local_note": null,
+        "raw": "- [x] previous-ship - Historical completed work (repo: alpha) (kind: ship)",
+        "body_lines": [],
+        "body_excerpt": null,
+        "unresolved_blocker_ids": [],
+        "current_role": "done",
+        "requires_child_metadata": false,
+        "captain_actionable": false,
+        "deferred_marker": false
+      }
+    ]
+  },
+  "tasks": [],
+  "main_inventory": {
+    "valid": false,
+    "reason": "unstructured current backlog row",
+    "orphan_in_flight": [],
+    "unstructured_current_count": 2
+  },
+  "scout_reports": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-08-31T15:41:52Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}

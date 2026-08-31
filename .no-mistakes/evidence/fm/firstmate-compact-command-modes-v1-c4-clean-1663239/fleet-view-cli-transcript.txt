@@ -1,0 +1,48 @@
+Fleet view executable-interface transcript
+
+=== help ===
+usage: fm-fleet-view.sh [--raw|--compact|--json]
+
+Render a human fleet view from fm-fleet-snapshot.sh.
+The default and --raw print the complete historical human view.
+--compact keeps every under-way and queued row, counts every omission from
+raw mode, applies no renderer truncation, discloses incomplete snapshot
+evidence, and prints exact full-detail commands.
+--json prints the complete underlying snapshot.
+
+=== default equals --raw ===
+yes (byte-for-byte cmp)
+
+=== --compact ===
+# Fleet View (compact)
+
+Home: /Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture
+Rows shown/total: under-way=2/2; queued=2/2; done=0/1.
+Raw-view omissions: done detail rows=1; task path cells=0.
+Compact renderer truncation: none.
+Full human detail: FM_HOME='/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1C7DXH49H4RCMKRAQHCBZBD/bin/fm-fleet-view.sh' --raw
+Complete raw snapshot: FM_HOME='/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1C7DXH49H4RCMKRAQHCBZBD/bin/fm-fleet-view.sh' --json
+Full queued hold detail: tasks-axi show <id> --full, or '/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/data/backlog.md'.
+Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> '<request>', then read status/doc and do not routinely peek a secondmate.
+Attention marker: ! means a non-working task, endpoint problem, open decision, captain-actionable row, unstructured row, or inventory error.
+! inventory error: unstructured current backlog row; orphan in-flight=; unstructured current=2
+
+## Under Way
+! inventory item: unstructured in-flight: unstructured recovery item requiring reconciliation
+- orphan-ship: Structured live row without task metadata; alpha ship; hold=captain: awaiting captain decision
+
+## Queued
+! captain-route: Choose release route; alpha captain; hold=captain: select one option
+! unstructured: unstructured queued recovery note
+
+## Done
+1 detail row(s) omitted; use the full-human-detail command above.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.
+
+=== --json contract summary ===
+{"schema":"fm-fleet-snapshot.v1","backlog":{"present":true,"records":[{"id":null,"state":"in_flight","structured":false,"hold_reason":null,"hold_kind":null},{"id":"orphan-ship","state":"in_flight","structured":true,"hold_reason":"awaiting captain decision","hold_kind":"captain"},{"id":"captain-route","state":"queued","structured":true,"hold_reason":"select one option","hold_kind":"captain"},{"id":null,"state":"queued","structured":false,"hold_reason":null,"hold_kind":null},{"id":"previous-ship","state":"done","structured":true,"hold_reason":null,"hold_kind":null}]},"main_inventory":{"valid":false,"reason":"unstructured current backlog row","orphan_in_flight":[],"unstructured_current_count":2}}
+
+=== emitted Pi heartbeat instruction ===
+A heartbeat wake asks you to review the whole fleet the way MAIN would on an ordinary heartbeat: run `bin/fm-fleet-view.sh --compact`, reconcile suspicious tasks and PR state, update the backlog, and report verdict routine with a one-line summary when nothing changed.

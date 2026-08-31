@@ -1,0 +1,21 @@
+# Fleet View
+
+Schema: fm-fleet-snapshot.v1
+Home: /Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture
+
+## Under Way
+No live task metadata found.
+
+## Queued
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| captain-route | Choose release route | alpha | captain | - | - |
+| - | unstructured queued recovery note | - | - | - | - |
+
+## Done
+| ID | Title | Repo | Kind | Blocked By | Artifact |
+| --- | --- | --- | --- | --- | --- |
+| previous-ship | Historical completed work | alpha | ship | - | - |
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.

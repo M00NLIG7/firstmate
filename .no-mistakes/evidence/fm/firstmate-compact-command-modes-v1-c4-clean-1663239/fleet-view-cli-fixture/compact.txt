@@ -1,0 +1,26 @@
+# Fleet View (compact)
+
+Home: /Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture
+Rows shown/total: under-way=2/2; queued=2/2; done=0/1.
+Raw-view omissions: done detail rows=1; task path cells=0.
+Compact renderer truncation: none.
+Full human detail: FM_HOME='/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1C7DXH49H4RCMKRAQHCBZBD/bin/fm-fleet-view.sh' --raw
+Complete raw snapshot: FM_HOME='/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture' '/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1C7DXH49H4RCMKRAQHCBZBD/bin/fm-fleet-view.sh' --json
+Full queued hold detail: tasks-axi show <id> --full, or '/Users/cmagana/.no-mistakes/evidence/01M1C7DXH49H4RCMKRAQHCBZBD/fleet-view-cli-fixture/data/backlog.md'.
+Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> '<request>', then read status/doc and do not routinely peek a secondmate.
+Attention marker: ! means a non-working task, endpoint problem, open decision, captain-actionable row, unstructured row, or inventory error.
+! inventory error: unstructured current backlog row; orphan in-flight=; unstructured current=2
+
+## Under Way
+! inventory item: unstructured in-flight: unstructured recovery item requiring reconciliation
+- orphan-ship: Structured live row without task metadata; alpha ship; hold=captain: awaiting captain decision
+
+## Queued
+! captain-route: Choose release route; alpha captain; hold=captain: select one option
+! unstructured: unstructured queued recovery note
+
+## Done
+1 detail row(s) omitted; use the full-human-detail command above.
+
+## Secondmates
+For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority.

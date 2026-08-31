@@ -1,0 +1,8 @@
+usage: fm-fleet-view.sh [--raw|--compact|--json]
+
+Render a human fleet view from fm-fleet-snapshot.sh.
+The default and --raw print the complete historical human view.
+--compact keeps every under-way and queued row, counts every omission from
+raw mode, applies no renderer truncation, discloses incomplete snapshot
+evidence, and prints exact full-detail commands.
+--json prints the complete underlying snapshot.
