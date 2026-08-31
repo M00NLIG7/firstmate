@@ -232,7 +232,7 @@ tests/fm-crew-state.test.sh
 
 ## Compact fleet review
 
-The explicit compact fleet view was measured on 2026-08-30 at public-main commit `d71f4b9cf1e6a8c647867d9a92c67ab0a6bb460f` through the public `bin/fm-fleet-view.sh` interface.
+The explicit compact fleet view was measured on 2026-08-31 at commit `166323975d44f84c6e8b7f1f855b336af7713445` through the public `bin/fm-fleet-view.sh` interface.
 The representative fixture carries 12 live rows, 24 queued rows, 8 retained Done rows, long stable identities, project paths, endpoint state, and repeated action guidance.
 The default and explicit raw invocations were byte-identical, while compact output retained every live and queued row, every state and endpoint error, deterministic ordering, exact omission counts, explicit no-truncation disclosure, and raw-detail escape commands.
 
