@@ -1084,7 +1084,30 @@ EOF
     "compact view hid a bounded secondmate hold"
   assert_contains "$compact" "! secondmate evidence bounded-holds: bounded queued omitted=1" \
     "compact view hid the corresponding bounded queued row"
-  pass "compact view discloses contradictory evidence and exact bounded secondmate hold and queued counts"
+
+  awk '
+    /^## Done/ { print "unstructured queued recovery note"; print "" }
+    { print }
+  ' "$secondmate/data/backlog.md" > "$secondmate/data/backlog.next"
+  mv "$secondmate/data/backlog.next" "$secondmate/data/backlog.md"
+
+  snapshot=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$SNAPSHOT" --json)
+  printf '%s' "$snapshot" | jq -e '
+    .secondmate_current.records[] | select(.id == "bounded-holds")
+    | .provenance.selected == "parent-event-fallback"
+      and .current.state == "unknown"
+      and any(.omitted[]; .surface == "holds" and .count == 1)
+      and any(.omitted[]; .surface == "queued" and .count == 1)
+  ' >/dev/null || fail "snapshot fallback did not preserve exact bounded hold and queued counts: $snapshot"
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$VIEW" --compact)
+  assert_contains "$compact" "! secondmate evidence bounded-holds: unavailable; home=" \
+    "compact view hid unavailable fallback secondmate evidence"
+  assert_contains "$compact" "! secondmate evidence bounded-holds: bounded holds omitted=1" \
+    "compact fallback hid a bounded secondmate hold"
+  assert_contains "$compact" "! secondmate evidence bounded-holds: bounded queued omitted=1" \
+    "compact fallback hid the corresponding bounded queued row"
+  pass "compact view discloses bounded secondmate rows through structured and fallback records"
 }
 
 test_compact_view_representative_reduction() {
