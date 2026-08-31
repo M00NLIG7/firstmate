@@ -111,9 +111,11 @@ if [ "$MODE" = compact ]; then
     def secondmate_evidence_issue($r; $home):
       if $r.current.state == "unknown" then
         "! secondmate evidence \($r.id): unavailable; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
-      elif $r.provenance.trust == "partial-structured" then
+      else empty end,
+      if $r.provenance.trust == "partial-structured" then
         "! secondmate evidence \($r.id): partial; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
-      elif ($r.contradiction // false) then
+      else empty end,
+      if ($r.contradiction // false) then
         "! secondmate evidence \($r.id): contradictory; home=\(home_path($r.home; $home))"
       else empty end;
     def secondmate_omission($r):

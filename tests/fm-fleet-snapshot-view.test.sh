@@ -1042,6 +1042,7 @@ EOF
   printf 'bounded-holds\n' > "$secondmate/.fm-secondmate-home"
   cat > "$secondmate/data/backlog.md" <<'EOF'
 ## In flight
+- [ ] orphan-child - Missing child metadata (repo: gamma) (kind: ship)
 
 ## Queued
 - [ ] first-hold - Wait for first dependency (repo: alpha) (kind: ship) (hold: first external dependency) (hold-kind: external)
@@ -1067,7 +1068,7 @@ EOF
   snapshot=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$SNAPSHOT" --json)
   printf '%s' "$snapshot" | jq -e '
     .secondmate_current.records[] | select(.id == "bounded-holds")
-    | .provenance.trust == "complete"
+    | .provenance.trust == "partial-structured"
       and .contradiction == true
       and .counts.holds == 2
       and (.holds | length) == 1
@@ -1075,8 +1076,10 @@ EOF
   ' >/dev/null || fail "snapshot did not disclose contradictory evidence and the exact bounded hold count: $snapshot"
 
   compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=1 "$VIEW" --compact)
+  assert_contains "$compact" "! secondmate evidence bounded-holds: partial; home=" \
+    "compact view hid partial structured secondmate evidence"
   assert_contains "$compact" "! secondmate evidence bounded-holds: contradictory; home=" \
-    "compact view hid contradictory secondmate evidence"
+    "compact view hid contradictory parent evidence alongside partial structured evidence"
   assert_contains "$compact" "! secondmate evidence bounded-holds: bounded holds omitted=1" \
     "compact view hid a bounded secondmate hold"
   assert_contains "$compact" "! secondmate evidence bounded-holds: bounded queued omitted=1" \
