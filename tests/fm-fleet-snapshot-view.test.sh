@@ -800,7 +800,7 @@ test_parked_scout_decision_stays_pending() {
 }
 
 test_compact_view_contract() {
-  local home fakebin help raw explicit_raw snapshot_json view_json compact repeated raw_error compact_error raw_rc compact_rc
+  local home fakebin help invalid invalid_rc raw explicit_raw snapshot_json view_json compact repeated raw_error compact_error raw_rc compact_rc
   local cmux_line decision_line scout_line secondmate_line ship_line recovery_line queued_line unstructured_line captain_line
   home=$(make_home compact-contract)
   write_fixture "$home"
@@ -832,6 +832,11 @@ test_compact_view_contract() {
   help=$("$VIEW" --help)
   assert_contains "$help" "usage: fm-fleet-view.sh [--raw|--compact|--json]" \
     "fleet view help did not publish the compact and full-detail modes"
+  invalid=$("$VIEW" --compact unexpected 2>&1)
+  invalid_rc=$?
+  [ "$invalid_rc" -eq 2 ] || fail "fleet view accepted trailing arguments for a mode: rc=$invalid_rc"
+  assert_contains "$invalid" "usage: fm-fleet-view.sh [--raw|--compact|--json]" \
+    "fleet view trailing-argument refusal did not print usage"
   raw=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW")
   explicit_raw=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$VIEW" --raw)
   [ "$raw" = "$explicit_raw" ] || fail "explicit --raw changed the default fleet view"

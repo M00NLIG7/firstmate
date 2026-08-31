@@ -35,6 +35,7 @@ EOF
 }
 
 MODE=raw
+[ "$#" -le 1 ] || { usage >&2; exit 2; }
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
   --raw|"") ;;
