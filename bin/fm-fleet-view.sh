@@ -10,7 +10,8 @@
 # every under-way and queued row remains in snapshot order, every state and
 # endpoint error remains visible, and open decisions and hold reasons remain
 # explicit.
-# It never truncates output.
+# The renderer never truncates output, and it explicitly discloses bounded or
+# incomplete secondmate evidence inherited from the snapshot.
 # Done-row detail and populated task-path cells are the only deliberate
 # omissions from the historical human view; each class has an exact count and
 # a complete-detail command or path in the output.
@@ -27,7 +28,8 @@ usage: fm-fleet-view.sh [--raw|--compact|--json]
 Render a human fleet view from fm-fleet-snapshot.sh.
 The default and --raw print the complete historical human view.
 --compact keeps every under-way and queued row, counts every omission from
-raw mode, applies no truncation, and prints exact full-detail commands.
+raw mode, applies no renderer truncation, discloses incomplete snapshot
+evidence, and prints exact full-detail commands.
 --json prints the complete underlying snapshot.
 EOF
 }
@@ -106,6 +108,15 @@ if [ "$MODE" = compact ]; then
           + (if hold_detail($r) == null then "" else "; hold=\(hold_detail($r))" end)
           + (if backlog_artifact($r) == null then "" else "; artifact=\(home_path(backlog_artifact($r); $home))" end)
         else "unstructured: \($r.raw)" end);
+    def secondmate_evidence_issue($r; $home):
+      if $r.current.state == "unknown" then
+        "! secondmate evidence \($r.id): unavailable; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
+      elif $r.provenance.trust == "partial-structured" then
+        "! secondmate evidence \($r.id): partial; home=\(home_path($r.home; $home)); reason=\(dash($r.current.reason))"
+      else empty end;
+    def secondmate_omission($r):
+      $r.omitted[]?
+      | "! secondmate evidence \($r.id): bounded \(.surface) omitted=\(.count)";
 
     .fm_home as $home
     | ([.tasks[].id]) as $task_ids
@@ -121,7 +132,7 @@ if [ "$MODE" = compact ]; then
       "Home: \($home)",
       "Rows shown/total: under-way=\($under_way)/\($under_way); queued=\($queued)/\($queued); done=0/\($done).",
       "Raw-view omissions: done detail rows=\($done); task path cells=\($paths_omitted).",
-      "Truncation: none.",
+      "Compact renderer truncation: none.",
       "Full human detail: FM_HOME=\($home | @sh) \($view_script | @sh) --raw",
       "Complete raw snapshot: FM_HOME=\($home | @sh) \($view_script | @sh) --json",
       "Full queued hold detail: tasks-axi show <id> --full, or \(($home + "/data/backlog.md") | @sh).",
@@ -152,7 +163,18 @@ if [ "$MODE" = compact ]; then
       "\($done) detail row(s) omitted; use the full-human-detail command above.",
       "",
       "## Secondmates",
-      .secondmate_guidance.note
+      .secondmate_guidance.note,
+      (if .secondmate_current.registry.available != true then
+         "! secondmate registry unavailable: \(dash(.secondmate_current.registry.reason))"
+       elif .secondmate_current.registry.complete != true then
+         "! secondmate registry incomplete: \((.secondmate_current.registry.reasons // []) | join(","))"
+       else empty end),
+      (if .secondmate_current.truncated > 0 then
+         "! secondmate evidence: bounded records omitted=\(.secondmate_current.truncated); shown=\(.secondmate_current.shown)/\(.secondmate_current.total)"
+       else empty end),
+      (.secondmate_current.records[]? as $record
+       | secondmate_evidence_issue($record; $home),
+         secondmate_omission($record))
   '
   exit $?
 fi

@@ -851,7 +851,7 @@ test_compact_view_contract() {
     "compact view did not retain every live and queued row or account for Done"
   assert_contains "$compact" "Raw-view omissions: done detail rows=1; task path cells=5." \
     "compact view did not count every detail row and path cell omitted from raw mode"
-  assert_contains "$compact" "Truncation: none." "compact view did not make its no-truncation guarantee explicit"
+  assert_contains "$compact" "Compact renderer truncation: none." "compact view did not make its no-truncation guarantee explicit"
   assert_contains "$compact" "Full human detail: FM_HOME='$home' '$VIEW' --raw" \
     "compact view omitted its exact raw-detail escape command"
   assert_contains "$compact" "Complete raw snapshot: FM_HOME='$home' '$VIEW' --json" \
@@ -971,6 +971,61 @@ test_compact_view_missing_backlog_error() {
   pass "compact view surfaces a missing backlog inventory error"
 }
 
+test_compact_view_discloses_incomplete_secondmate_evidence() {
+  local home partial unavailable omitted fakebin compact
+  home=$(make_home compact-secondmate-evidence)
+  partial="$TMP_ROOT/compact-partial-home"
+  unavailable="$TMP_ROOT/compact-unavailable-home"
+  omitted="$TMP_ROOT/compact-omitted-home"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+  mkdir -p "$partial/state" "$partial/data" "$partial/config" "$partial/projects" "$partial/bin"
+  printf '# Firstmate fixture\n' > "$partial/AGENTS.md"
+  printf 'a-partial\n' > "$partial/.fm-secondmate-home"
+  cat > "$partial/data/backlog.md" <<'EOF'
+## In flight
+- [ ] orphan-child - Missing child metadata (repo: alpha) (kind: ship)
+
+## Queued
+
+## Done
+EOF
+  mkdir -p "$omitted/state" "$omitted/data" "$omitted/config" "$omitted/projects" "$omitted/bin"
+  printf '# Firstmate fixture\n' > "$omitted/AGENTS.md"
+  printf 'c-omitted\n' > "$omitted/.fm-secondmate-home"
+  cat > "$omitted/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+  cat > "$home/data/secondmates.md" <<EOF
+- a-partial - fixture (home: $partial; scope: fixture; projects: alpha; added 2026-08-30)
+- b-unavailable - fixture (home: $unavailable; scope: fixture; projects: alpha; added 2026-08-30)
+- c-omitted - fixture (home: $omitted; scope: fixture; projects: alpha; added 2026-08-30)
+EOF
+  fakebin=$(make_fakebin "$home")
+
+  compact=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATES=2 "$VIEW" --compact)
+  assert_contains "$compact" "Compact renderer truncation: none." \
+    "compact view did not distinguish renderer completeness from snapshot bounds"
+  assert_contains "$compact" "! secondmate evidence: bounded records omitted=1; shown=2/3" \
+    "compact view hid a bounded secondmate record"
+  assert_contains "$compact" '! secondmate evidence a-partial: partial; home=' \
+    "compact view hid partial structured secondmate evidence"
+  assert_contains "$compact" 'reason=structured home state invalid: in-flight backlog item has no child metadata: orphan-child' \
+    "compact view hid the partial secondmate reason"
+  assert_contains "$compact" "! secondmate evidence b-unavailable: unavailable; home=$unavailable; reason=invalid home: not a directory" \
+    "compact view hid unavailable secondmate evidence"
+  pass "compact view discloses bounded, unavailable, and partial secondmate evidence"
+}
+
 test_compact_view_representative_reduction() {
   local home fakebin raw compact raw_bytes compact_bytes raw_tokens compact_tokens i id busy_gen
   home=$(make_home compact-measurement)
@@ -1041,4 +1096,5 @@ test_view_renders_dead_secondmate_agent_status
 test_compact_view_contract
 test_compact_view_unmatched_in_flight_records
 test_compact_view_missing_backlog_error
+test_compact_view_discloses_incomplete_secondmate_evidence
 test_compact_view_representative_reduction
