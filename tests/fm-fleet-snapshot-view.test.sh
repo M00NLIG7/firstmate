@@ -939,10 +939,11 @@ test_compact_view_relative_home_escape_hatches() {
 }
 
 test_compact_view_relative_root_override_escape_hatches() {
-  local home relative_root fakebin compact raw snapshot raw_command json_command escaped_raw escaped_json
+  local home relative_root canonical_home fakebin compact raw snapshot raw_command json_command queued_hold_path escaped_raw escaped_json escaped_backlog
   home="$TMP_ROOT/relative-root-override-home"
   relative_root="relative-root-override-home"
   mkdir -p "$home/state" "$home/data" "$home/projects" "$home/config" "$TMP_ROOT/elsewhere"
+  canonical_home=$(cd "$home" && pwd -P)
   write_fixture "$home"
   fakebin=$(make_fakebin "$home")
 
@@ -954,15 +955,19 @@ test_compact_view_relative_root_override_escape_hatches() {
     FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 "$VIEW" --compact)
   raw_command=$(printf '%s\n' "$compact" | sed -n 's/^Full human detail: //p')
   json_command=$(printf '%s\n' "$compact" | sed -n 's/^Complete raw snapshot: //p')
+  queued_hold_path=$(printf '%s\n' "$compact" | sed -n "s|^Full queued hold detail: tasks-axi show <id> --full, or '\(.*\)'\.$|\1|p")
 
   escaped_raw=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
     FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$raw_command")
   escaped_json=$(cd "$TMP_ROOT/elsewhere" && PATH="$fakebin:$PATH" \
     FM_SNAPSHOT_NOW=2026-08-30T12:00:00Z FM_SNAPSHOT_NOW_EPOCH=1788091200 sh -c "$json_command")
+  escaped_backlog=$(cd "$TMP_ROOT/elsewhere" && sed -n '1p' "$queued_hold_path")
   [ "$escaped_raw" = "$raw" ] \
     || fail "relative FM_ROOT_OVERRIDE raw escape command did not recover the original complete fleet view"
   [ "$escaped_json" = "$snapshot" ] \
     || fail "relative FM_ROOT_OVERRIDE JSON escape command did not recover the original complete snapshot"
+  [ "$queued_hold_path" = "$canonical_home/data/backlog.md" ] && [ "$escaped_backlog" = "## In flight" ] \
+    || fail "relative FM_ROOT_OVERRIDE queued-hold escape path did not resolve to the fixture backlog from another directory"
   pass "compact view preserves relative FM_ROOT_OVERRIDE escape hatches"
 }
 

@@ -96,7 +96,17 @@ if [ "$MODE" = compact ]; then
       ;;
   esac
   fi
-  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_home_env "$COMPACT_ESCAPE_HOME_ENV" --arg escape_root_env "$COMPACT_ESCAPE_ROOT_ENV" --arg escape_dir "$COMPACT_ESCAPE_DIR" --argjson escape_has_home "$COMPACT_ESCAPE_HAS_HOME" --argjson escape_has_root "$COMPACT_ESCAPE_HAS_ROOT" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
+  COMPACT_ESCAPE_BACKLOG="$COMPACT_ESCAPE_HOME/data/backlog.md"
+  if [ -z "${FM_HOME:-}" ] && [ "$COMPACT_ESCAPE_HAS_ROOT" = true ]; then
+    case "$FM_ROOT_OVERRIDE" in
+      /*) : ;;
+      *)
+        COMPACT_ESCAPE_BACKLOG_HOME=$(cd "$COMPACT_ESCAPE_HOME" && pwd -P) || exit $?
+        COMPACT_ESCAPE_BACKLOG="$COMPACT_ESCAPE_BACKLOG_HOME/data/backlog.md"
+        ;;
+    esac
+  fi
+  printf '%s\n' "$SNAPSHOT" | jq -r --arg view_script "$SCRIPT_DIR/fm-fleet-view.sh" --arg escape_home "$COMPACT_ESCAPE_HOME" --arg escape_home_env "$COMPACT_ESCAPE_HOME_ENV" --arg escape_root_env "$COMPACT_ESCAPE_ROOT_ENV" --arg escape_dir "$COMPACT_ESCAPE_DIR" --arg escape_backlog "$COMPACT_ESCAPE_BACKLOG" --argjson escape_has_home "$COMPACT_ESCAPE_HAS_HOME" --argjson escape_has_root "$COMPACT_ESCAPE_HAS_ROOT" --argjson escape_needs_directory "$COMPACT_ESCAPE_NEEDS_DIRECTORY" '
     def dash($v): if $v == null or $v == "" then "-" else $v end;
     def endpoint_exists($t):
       if $t.endpoint.exists == null then "unknown"
@@ -199,7 +209,7 @@ if [ "$MODE" = compact ]; then
        else
          "Complete raw snapshot: \(escape_environment) \($view_script | @sh) --json"
        end),
-      "Full queued hold detail: tasks-axi show <id> --full, or \(($escape_home + "/data/backlog.md") | @sh).",
+      "Full queued hold detail: tasks-axi show <id> --full, or \($escape_backlog | @sh).",
       "Actions: peek = bin/fm-peek.sh fm-<row-id>; return = bin/fm-send.sh fm-<row-id> \u0027<request>\u0027, then read status/doc and do not routinely peek a secondmate.",
       "Attention marker: ! means a non-working task, endpoint problem, open decision, captain-actionable row, unstructured row, or inventory error.",
       (if .backlog.present != true then
