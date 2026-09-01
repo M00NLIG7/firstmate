@@ -1,0 +1,4 @@
+ok - Pi revalidates delayed rows after either actor presents them, during queue mutation, after consumption, endpoint replacement, cleanup, and generation change while malformed evidence and current stale, declared-pause, merge, turn-end, and failure events still deliver
+ok - Pi coalesces repeated same-task stale events to the newest durable identity and restores a successor for it
+ok - Pi retry resumes the actionable close queued behind a failed successor
+ok - Pi surfaces a queued failure without disturbing its healthy successor
