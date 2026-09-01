@@ -736,16 +736,23 @@ export default function (pi: ExtensionAPI) {
     void (async () => {
       try {
         while (generationIsLive(owner) && owner.pendingCloses.length > 0) {
-          const pending = owner.pendingCloses.shift();
+          const pending = owner.pendingCloses[0];
           if (!pending) break;
           if (pending.classification.kind === "failure") {
             if (owner.child && establishedArmChildren.has(owner.child)) {
+              owner.pendingCloses.shift();
               surfaceFailure(owner, pending.classification.message);
               continue;
             }
+            // A replacement is still determining whether it is healthy. Keep
+            // the failure queued: scheduleRetry deliberately leaves that child
+            // alone, so removing its notification here would lose it forever.
+            if (owner.child) break;
+            owner.pendingCloses.shift();
             scheduleRetry(owner, pending.classification.message, pending.predecessorArmPid);
             break;
           }
+          owner.pendingCloses.shift();
           owner.retryFailures = 0;
           const restoration = await restoreAfterActionableClose(owner, pending.predecessorArmPid);
           if (!generationIsLive(owner)) return;
@@ -766,7 +773,10 @@ export default function (pi: ExtensionAPI) {
       } finally {
         if (generationIsLive(owner)) {
           owner.restoring = false;
-          if (!owner.retryTimer) processClassifiedCloses(owner);
+          const waitingForSuccessor = owner.pendingCloses[0]?.classification.kind === "failure"
+            && !!owner.child
+            && !establishedArmChildren.has(owner.child);
+          if (!owner.retryTimer && !waitingForSuccessor) processClassifiedCloses(owner);
         }
       }
     })();
@@ -843,6 +853,7 @@ export default function (pi: ExtensionAPI) {
       if (/^watcher: (?:started|attached)\b/m.test(combined)) {
         establishedArmChildren.add(armChild);
         settleReadiness(true);
+        processClassifiedCloses(owner);
       }
     };
     const releaseChild = (): void => {
