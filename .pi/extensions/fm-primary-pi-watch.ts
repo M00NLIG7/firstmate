@@ -139,6 +139,7 @@ let activeGeneration: SessionGeneration | null = null;
 const armReadiness = new WeakMap<ChildProcess, Promise<boolean>>();
 const armClose = new WeakMap<ChildProcess, Promise<void>>();
 const armRecovery = new WeakMap<ChildProcess, { generation: string; watcherPid: string }>();
+const establishedArmChildren = new WeakSet<ChildProcess>();
 const expectedArmRetirements = new WeakSet<ChildProcess>();
 
 function positiveInteger(name: string, fallback: number): number {
@@ -738,6 +739,10 @@ export default function (pi: ExtensionAPI) {
           const pending = owner.pendingCloses.shift();
           if (!pending) break;
           if (pending.classification.kind === "failure") {
+            if (owner.child && establishedArmChildren.has(owner.child)) {
+              surfaceFailure(owner, pending.classification.message);
+              continue;
+            }
             scheduleRetry(owner, pending.classification.message, pending.predecessorArmPid);
             break;
           }
@@ -836,6 +841,7 @@ export default function (pi: ExtensionAPI) {
       const recovery = combined.match(/^watcher: started pid=([0-9]+).* recovery-generation=([A-Za-z0-9._-]+)$/m);
       if (recovery) armRecovery.set(armChild, { watcherPid: recovery[1], generation: recovery[2] });
       if (/^watcher: (?:started|attached)\b/m.test(combined)) {
+        establishedArmChildren.add(armChild);
         settleReadiness(true);
       }
     };
