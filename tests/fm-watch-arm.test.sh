@@ -322,8 +322,7 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   append_wake "$state" check startup-network 'check: startup-network'
 
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
-  sleep 0.25
-  if is_live_non_zombie "$ARM_PID"; then
+  if ! wait_for_exit "$ARM_PID" 80; then
     # End the fixture through an ordinary actionable status transition so this
     # failing pre-fix path leaves no child behind.
     printf 'done: fixture cleanup\n' > "$state/cleanup.status"
