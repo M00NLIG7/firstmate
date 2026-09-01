@@ -283,7 +283,7 @@ while [ "$i" -lt 120 ]; do
 done
 [ -f "$HOME_DIR/state/.pi-turnend-extension-loaded" ] || fail "Pi turn-end extension did not load"
 [ -f "$HOME_DIR/state/.pi-watch-extension-loaded" ] || fail "Pi watcher extension did not load"
-wait_for_text "(openai-codex)" 120 || fail "Pi did not reach its ready composer"
+wait_for_text "gpt-5.6-sol" 120 || fail "Pi did not reach its ready composer"
 sleep 1
 
 send_prompt "/calm"
@@ -304,13 +304,16 @@ printf '%s\n' "$pane" | grep -Fq "Working..." \
   && fail "Calm left Pi's stock working row visible on the credentialed provider path"
 wait_for_exact_line "CALM_LIVE_WORKING_VISIBLE" 120 \
   || fail "Pi did not settle the Calm working-ship provider probe"
+# The streamed answer can become visible just before Pi publishes agent_end.
+# Keep the next local command out of that narrow provider-settlement window.
+sleep 2
 pane=$(capture)
 printf '%s\n' "$pane" | grep -Fq '\__/' \
   && fail "Calm left the working ship on screen after the run settled"
 printf '%s\n' "$pane" | grep -Fq "calm transcript" \
   && fail "Calm added a persistent Calm status row on the credentialed provider path"
 send_prompt "/calm"
-sleep 0.2
+sleep 1
 
 : > "$HOME_DIR/state/pi-e2e.meta"
 send_prompt "Start supervision with fm_watch_arm_pi and never use bash to arm supervision. After the watcher wake arrives, run bin/fm-wake-drain.sh and reply exactly HANDLED."
