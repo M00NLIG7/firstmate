@@ -2,12 +2,18 @@
 # Opt-in credentialed Pi continuity regression on a private tmux socket and
 # isolated project/home state. It uses the existing shared Pi auth store without
 # copying credentials and pins the captain-approved openai-codex model.
+# FM_PI_LIVE_E2E_WATCHER_ONLY=1 keeps the credentialed Calm and watcher path
+# while skipping the unrelated Ahoy transcript matrix.
 set -u
 
 if [ "${FM_PI_LIVE_E2E:-0}" != 1 ]; then
   echo "skip: set FM_PI_LIVE_E2E=1 to run the isolated interactive Pi regression"
   exit 0
 fi
+case "${FM_PI_LIVE_E2E_WATCHER_ONLY:-0}" in
+  0|1) ;;
+  *) echo "error: FM_PI_LIVE_E2E_WATCHER_ONLY must be 0 or 1" >&2; exit 2 ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 unset NO_MISTAKES_GATE
@@ -246,8 +252,10 @@ run_native_ahoy_regressions() {
 
 mkdir -p "$LAB"
 git clone -q "$ROOT" "$PROJECT"
-run_ahoy_transcript_regressions
-run_native_ahoy_regressions
+if [ "${FM_PI_LIVE_E2E_WATCHER_ONLY:-0}" != 1 ]; then
+  run_ahoy_transcript_regressions
+  run_native_ahoy_regressions
+fi
 mkdir -p "$PROJECT/.pi/extensions/lib"
 cp "$ROOT/.pi/extensions/fm-calm.ts" "$PROJECT/.pi/extensions/fm-calm.ts"
 cp "$ROOT/.pi/extensions/fm-primary-pi-watch.ts" "$PROJECT/.pi/extensions/fm-primary-pi-watch.ts"
@@ -342,4 +350,8 @@ wait_for_text "PI_EXIT=0" 60 || fail "Pi did not exit cleanly"
 wait_pid_dead "$watcher_pid" || fail "watcher child survived clean Pi exit"
 wait_pid_dead "$arm_pid" || fail "arm child survived clean Pi exit"
 
-printf 'ok - Pi %s live E2E covered the Calm working ship, Ahoy first/later messages, legacy transcripts, near misses, and watcher continuity\n' "$PI_VERSION"
+if [ "${FM_PI_LIVE_E2E_WATCHER_ONLY:-0}" = 1 ]; then
+  printf 'ok - Pi %s watcher-only live E2E covered the Calm working ship and watcher continuity\n' "$PI_VERSION"
+else
+  printf 'ok - Pi %s live E2E covered the Calm working ship, Ahoy first/later messages, legacy transcripts, near misses, and watcher continuity\n' "$PI_VERSION"
+fi
