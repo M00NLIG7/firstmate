@@ -1,0 +1,6 @@
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: Pi attached delivery replay preserves the watcher ticket while non-Pi output stays unchanged
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M1E0EXJJEETN37HRS2JT64KA/bin/fm-watch-arm.sh: line 573: 37212 Killed: 9               "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
