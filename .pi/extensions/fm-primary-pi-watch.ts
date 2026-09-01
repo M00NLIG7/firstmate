@@ -722,6 +722,8 @@ export default function (pi: ExtensionAPI) {
       const result = startArm(owner, predecessorArmPid);
       if (!result.ok) {
         surfaceFailure(owner, `watcher: FAILED - Pi extension could not launch a continuity retry\n${result.message}`);
+      } else {
+        processClassifiedCloses(owner);
       }
     }, retryDelay(owner.retryFailures));
     timer.unref();
