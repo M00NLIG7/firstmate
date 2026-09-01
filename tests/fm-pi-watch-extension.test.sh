@@ -1767,6 +1767,103 @@ EOF
   pass "Pi retry resumes the actionable close queued behind a failed successor"
 }
 
+test_pi_retry_lock_loss_resumes_actionable_close_queued_behind_failure() {
+  local repo home plugin log stop out status
+  repo="$TMP_ROOT/pi-retry-lock-loss-queued-actionable-root"
+  home="$TMP_ROOT/pi-retry-lock-loss-queued-actionable-home"
+  log="$TMP_ROOT/pi-retry-lock-loss-queued-actionable.log"
+  stop="$TMP_ROOT/pi-retry-lock-loss-queued-actionable.stop"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: original actionable close\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'watcher: FAILED - synthetic successor failure\n'
+  exit 1
+fi
+if [ "$count" -eq 3 ]; then
+  printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+  printf 'signal: actionable close queued behind retry lock loss\n'
+  exit 0
+fi
+printf 'unexpected arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+exit 1
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_WATCH_REARM_RETRY_BASE_MS=100 FM_WATCH_REARM_RETRY_MAX_MS=100 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+const prompts = [];
+const pi = {
+  on() {},
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompts.push(message);
+  },
+};
+const rows = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
+  : [];
+const lock = `${process.env.FM_HOME}/state/.lock`;
+writeFileSync(lock, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-retry-lock-loss-queued-actionable", {}, undefined, undefined, {});
+for (let i = 0; i < 500 && rows().filter((row) => row.startsWith("arm=")).length < 3; i += 1) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+if (rows().filter((row) => row.startsWith("arm=")).length !== 3) {
+  throw new Error(`fixture did not queue the retry behind a failed successor: ${rows().join(" | ")}`);
+}
+const other = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+try {
+  writeFileSync(lock, `${other.pid}\n`);
+  for (let i = 0; i < 750; i += 1) {
+    if (prompts.some((message) => message.includes("actionable close queued behind retry lock loss"))) break;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  const armRows = rows().filter((row) => row.startsWith("arm="));
+  if (armRows.length !== 3) throw new Error(`retry launched a successor after lock loss: ${rows().join(" | ")}`);
+  if (!prompts.some((message) => message.includes("original actionable close"))) {
+    throw new Error(`original actionable close was not delivered: ${prompts.join(" | ")}`);
+  }
+  const queued = prompts.find((message) => message.includes("actionable close queued behind retry lock loss"));
+  if (!queued) throw new Error(`actionable close queued behind retry lock loss was lost: ${prompts.join(" | ")}`);
+  if (!queued.includes("no longer owns the lock")) {
+    throw new Error(`queued actionable close omitted continuity failure after lock loss: ${queued}`);
+  }
+  if (rows().filter((row) => row.startsWith("confirmed ")).length !== 1) {
+    throw new Error(`only the restored original actionable close should be confirmed: ${rows().join(" | ")}`);
+  }
+} finally {
+  other.kill("SIGTERM");
+}
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi retry lock loss must resume actionable closes queued behind a failed successor"
+  [ -z "$out" ] || fail "Pi retry-lock-loss-queued-actionable test printed output: $out"
+  pass "Pi retry lock loss resumes queued actionable closes without a successor"
+}
+
 test_pi_established_empty_close_honors_retry_limit() {
   local repo home plugin log out status
   repo="$TMP_ROOT/pi-established-empty-close-root"
@@ -3270,6 +3367,7 @@ test_pi_unretired_successor_falls_back_without_retry
 test_pi_late_unretired_close_resumes_supervision
 test_pi_empty_close_retries_instead_of_disappearing
 test_pi_retry_resumes_actionable_close_queued_behind_failure
+test_pi_retry_lock_loss_resumes_actionable_close_queued_behind_failure
 test_pi_established_empty_close_honors_retry_limit
 test_pi_actionable_close_rechecks_session_lock
 test_pi_arm_distinguishes_session_lock_ownership
