@@ -41,6 +41,7 @@ Missing, malformed, ambiguous, or mutation-racing evidence delivers rather than 
 The Pi extension waits a bounded interval for an active queue mutation to settle before applying those receipts and queue identity.
 One Pi session generation owns its pending closes and delivered-ticket claims, so same-generation duplicate callbacks coalesce while session replacement clears pending delivery and leaves the replacement session to establish its own watcher.
 Close classification remains serialized through successor restoration but does not await an earlier Pi follow-up, so a blocked follow-up cannot stop a later successor close from restoring continuity and delivering a distinct real event.
+When an actionable close has established a healthy successor, a queued failure is surfaced exactly once without replacing or re-arming that successor.
 OpenCode and every other primary retain their existing delivery surfaces.
 
 Claude's Stop hook starts the successor arm at the next Stop after the handling turn, rather than before notification as Pi and OpenCode do.
