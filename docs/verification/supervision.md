@@ -521,6 +521,7 @@ The declared-pause matrices passed unchanged in both normal and away supervision
 
 `tests/fm-pi-primary-types.test.sh` remained an explicit gate skip because the standalone `@earendil-works/pi-coding-agent` package was not installed, so no type-check success is claimed for that optional surface.
 The credentialed watcher-only refresh command is `FM_PI_LIVE_E2E=1 FM_PI_LIVE_E2E_WATCHER_ONLY=1 bin/fm-test-run.sh tests/fm-pi-primary-live-e2e.test.sh`.
+Its isolated 2026-09-01 run reported `ok - Pi 0.84.0 watcher-only live E2E covered the Calm working ship and watcher continuity` and `FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=44967`.
 
 The once-per-generation recovery bound and immediate handling-successor poll were verified on 2026-08-21 with the tracked Pi extension, real watcher processes, and an isolated home.
 The regression forced handling confirmation to fail, observed one recovery follow-up across the former repeat window, confirmed the successor remained live, and then proved a separate handling successor durably queued a crew event within the bounded poll window.
