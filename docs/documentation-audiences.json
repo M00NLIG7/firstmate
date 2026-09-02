@@ -461,6 +461,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "skills/project-documentation-architecture/SKILL.md",
+      "audience": "public-product"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     }
