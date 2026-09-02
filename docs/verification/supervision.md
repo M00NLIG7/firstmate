@@ -503,6 +503,19 @@ FM_TEST_SUMMARY total=2 failed=0 skipped_gate=1 duration_ms=103004
 
 The Pi extension matrix covered delayed delivery after either actor presented a row, active queue mutation, direct consumption, endpoint replacement, cleanup, repeated same-task stale rows, fresh and changed task generations, session replacement, successor-before-delivery ordering, global merge checks, task turn-end signals, failures, and declared pauses.
 It also proved that a blocked Pi follow-up cannot stop a later successor close from restoring continuity and delivering a distinct event.
+The unready-successor bound was reverified on 2026-09-02 with Pi's tracked extension, Node v25.9.0, and no-mistakes v1.60.2.
+The fixture kept the singleton successor alive but unready through its shared readiness bound, required the queued failure and later actionable close once in order, then established that retained child late and required no replay or overlapping replacement.
+
+```sh
+bin/fm-test-run.sh tests/fm-pi-watch-extension.test.sh
+```
+
+Observed bounded output:
+
+```text
+ok - Pi bounds an unready successor without losing or reordering queued closes
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=84502
+```
 The structured validation matrix proved that fresh current-step log activity resets the short wedge timer, continuously advancing validation still reaches the long bounded resurfacing cadence, and an unchanged-log counterfactual still wedges.
 It also proved that active fix review outranks a stale failure field, terminal top-level state remains terminal, and parked or unattributed runs expose no activity token.
 The declared-pause matrices passed unchanged in both normal and away supervision.
@@ -510,14 +523,17 @@ The declared-pause matrices passed unchanged in both normal and away supervision
 
 | Primary surface | Applicability evidence |
 | --- | --- |
-| Pi and pi-signed | Applicable because both load the tracked Pi extension; the extension and watcher suites above exercise ticket delivery, delayed revalidation, generation replacement, and the live guard below. |
-| OpenCode | Not applicable to Pi tickets because its separate plugin never sets `FM_PI_WATCH_DELIVERY`; the shared extension suite asserts that absence while rerunning OpenCode successor continuity. |
+| Pi and pi-signed | Applicable because both load the tracked Pi extension; the extension and watcher suites above exercise ticket delivery, delayed revalidation, generation replacement, the queued-close readiness bound, and the live guard below. |
+| OpenCode | Not applicable to Pi's pending-close queue because its separate plugin owns restoration directly and never loads the Pi extension or sets `FM_PI_WATCH_DELIVERY`; the shared extension suite reruns OpenCode successor continuity. |
 | Claude | Not applicable because its Stop-owned arm path does not set Pi delivery mode; the Claude auto-arm suite passed unchanged. |
 | Codex | Not applicable because its foreground checkpoint path does not set Pi delivery mode; the supervision renderer and turn-end suites preserve that path. |
 | Grok | Not applicable because its tracked background arm command does not set Pi delivery mode; the renderer suite preserved its command and passive Stop backstop. |
 | Cursor | Not applicable because its stop-hook park does not set Pi delivery mode; the Cursor primary suite passed unchanged. |
 | Standalone Kimi | Not applicable because it has no dedicated primary watcher bridge and the generic primary protocol never enables Pi delivery mode; Kimi hosted under Pi follows the Pi row above. |
 | Muse | Not a primary surface; it remains crewmate/scout-only. |
+
+The runtime-backend axis is not applicable to this correction for tmux, Herdr, Zellij, Orca, and cmux.
+Inspection of the Pi extension and `bin/fm-watch-arm.sh` found no backend target, backend metadata read, or `fm_backend_*` dispatch in the pending-close and readiness path; the extension owns one home-state arm child above every worker endpoint backend.
 
 `tests/fm-pi-primary-types.test.sh` remained an explicit gate skip because the standalone `@earendil-works/pi-coding-agent` package was not installed, so no type-check success is claimed for that optional surface.
 The credentialed watcher-only refresh command is `FM_PI_LIVE_E2E=1 FM_PI_LIVE_E2E_WATCHER_ONLY=1 bin/fm-test-run.sh tests/fm-pi-primary-live-e2e.test.sh`.

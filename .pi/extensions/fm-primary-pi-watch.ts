@@ -140,6 +140,7 @@ const armReadiness = new WeakMap<ChildProcess, Promise<boolean>>();
 const armClose = new WeakMap<ChildProcess, Promise<void>>();
 const armRecovery = new WeakMap<ChildProcess, { generation: string; watcherPid: string }>();
 const establishedArmChildren = new WeakSet<ChildProcess>();
+const readinessExpiredArmChildren = new WeakSet<ChildProcess>();
 const expectedArmRetirements = new WeakSet<ChildProcess>();
 
 function positiveInteger(name: string, fallback: number): number {
@@ -641,10 +642,15 @@ export default function (pi: ExtensionAPI) {
   }
 
   function waitForReadiness(armChild: ChildProcess): Promise<boolean> {
+    if (establishedArmChildren.has(armChild)) return Promise.resolve(true);
+    if (readinessExpiredArmChildren.has(armChild)) return Promise.resolve(false);
     const readiness = armReadiness.get(armChild);
     if (!readiness) return Promise.resolve(false);
     return new Promise((resolveReady) => {
-      const timer = setTimeout(() => resolveReady(false), armReadyTimeoutMs);
+      const timer = setTimeout(() => {
+        readinessExpiredArmChildren.add(armChild);
+        resolveReady(false);
+      }, armReadyTimeoutMs);
       timer.unref();
       void readiness.then((ready) => {
         clearTimeout(timer);
@@ -744,10 +750,18 @@ export default function (pi: ExtensionAPI) {
               surfaceFailure(owner, pending.classification.message);
               continue;
             }
-            // A replacement is still determining whether it is healthy. Keep
-            // the failure queued: scheduleRetry deliberately leaves that child
-            // alone, so removing its notification here would lose it forever.
-            if (owner.child) break;
+            // A replacement is still determining whether it is healthy. Give
+            // that singleton child one shared readiness bound, then surface the
+            // queued failure without replacing it so later closes cannot strand.
+            if (owner.child) {
+              const successorChild = owner.child;
+              await waitForReadiness(successorChild);
+              if (!generationIsLive(owner)) return;
+              if (owner.child !== successorChild || establishedArmChildren.has(successorChild)) continue;
+              owner.pendingCloses.shift();
+              surfaceFailure(owner, pending.classification.message);
+              continue;
+            }
             owner.pendingCloses.shift();
             scheduleRetry(owner, pending.classification.message, pending.predecessorArmPid);
             break;

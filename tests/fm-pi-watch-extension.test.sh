@@ -1951,6 +1951,140 @@ EOF
   pass "Pi surfaces a queued failure without disturbing its healthy successor"
 }
 
+test_pi_unready_successor_boundedly_releases_queued_closes() {
+  local repo home plugin log unready ready out status
+  repo="$TMP_ROOT/pi-unready-successor-queued-closes-root"
+  home="$TMP_ROOT/pi-unready-successor-queued-closes-home"
+  log="$TMP_ROOT/pi-unready-successor-queued-closes.log"
+  unready="$TMP_ROOT/pi-unready-successor-queued-closes.unready"
+  ready="$TMP_ROOT/pi-unready-successor-queued-closes.ready"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: original wake before unready successor\n'
+  exit 0
+fi
+if [ "$count" -eq 2 ]; then
+  printf 'watcher: FAILED - queued failure behind unready successor\n'
+  exit 1
+fi
+if [ "$count" -eq 3 ]; then
+  printf 'signal: later actionable behind queued failure\n'
+  exit 0
+fi
+if [ "$count" -eq 4 ]; then
+  trap 'printf "term=%s\\n" "$$" >> "${FM_ARM_LOG:?}"' TERM INT
+  printf 'unready\n' > "${FM_UNREADY_STARTED_FILE:?}"
+  while [ ! -e "$FM_DELAYED_READY_FILE" ]; do sleep 0.02; done
+  printf 'ready=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+  printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+  trap 'exit 0' TERM INT
+  while :; do sleep 0.02; done
+fi
+printf 'unexpected arm=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+exit 1
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_UNREADY_STARTED_FILE="$unready" FM_DELAYED_READY_FILE="$ready" FM_PI_ARM_READY_TIMEOUT_MS="$ARM_READY_TIMEOUT_MS" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=20 FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=5 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+let shutdown = null;
+const prompts = [];
+const pi = {
+  on(event, handler) {
+    if (event === "session_shutdown") shutdown = handler;
+  },
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    prompts.push(message);
+  },
+};
+const rows = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n")
+  : [];
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 500; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-unready-successor-queued-closes", {}, undefined, undefined, {});
+await waitFor(
+  () => existsSync(process.env.FM_UNREADY_STARTED_FILE),
+  "fixture never reached its live unready successor",
+);
+await new Promise((resolve) => setTimeout(resolve, 40));
+if (rows().filter((row) => row.startsWith("arm=")).length !== 4) {
+  throw new Error(`unready successor was overlapped before its readiness bound: ${rows().join(" | ")}`);
+}
+if (prompts.some((message) => message.includes("queued failure behind unready successor")
+  || message.includes("later actionable behind queued failure"))) {
+  throw new Error(`queued closes escaped before the successor readiness bound: ${prompts.join(" | ")}`);
+}
+await waitFor(
+  () => prompts.some((message) => message.includes("queued failure behind unready successor"))
+    && prompts.some((message) => message.includes("later actionable behind queued failure")),
+  `unready successor indefinitely stranded queued closes: ${prompts.join(" | ")}`,
+);
+const expected = [
+  "original wake before unready successor",
+  "queued failure behind unready successor",
+  "later actionable behind queued failure",
+];
+const indexes = expected.map((needle) => prompts.findIndex((message) => message.includes(needle)));
+if (indexes.some((index) => index < 0) || !(indexes[0] < indexes[1] && indexes[1] < indexes[2])) {
+  throw new Error(`queued closes were delivered out of order: ${prompts.join(" | ")}`);
+}
+for (const needle of expected) {
+  const count = prompts.filter((message) => message.includes(needle)).length;
+  if (count !== 1) throw new Error(`${needle} delivered ${count} times: ${prompts.join(" | ")}`);
+}
+if (rows().filter((row) => row.startsWith("arm=")).length !== 4) {
+  throw new Error(`bounded queue release started an overlapping successor: ${rows().join(" | ")}`);
+}
+writeFileSync(process.env.FM_DELAYED_READY_FILE, "ready\n");
+await waitFor(
+  () => rows().some((row) => row.startsWith("ready=")),
+  "retained successor never reached delayed readiness",
+);
+await new Promise((resolve) => setTimeout(resolve, 80));
+for (const needle of expected) {
+  const count = prompts.filter((message) => message.includes(needle)).length;
+  if (count !== 1) throw new Error(`delayed readiness duplicated ${needle}: ${prompts.join(" | ")}`);
+}
+if (rows().filter((row) => row.startsWith("arm=")).length !== 4) {
+  throw new Error(`delayed readiness replaced the retained successor: ${rows().join(" | ")}`);
+}
+if (!shutdown) throw new Error("session shutdown hook was not registered");
+shutdown();
+await new Promise((resolve) => setTimeout(resolve, 80));
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi must release queued closes after an unready successor exceeds its readiness bound"
+  [ -z "$out" ] || fail "Pi unready-successor queued-close test printed output: $out"
+  pass "Pi bounds an unready successor without losing or reordering queued closes"
+}
+
 test_pi_established_empty_close_honors_retry_limit() {
   local repo home plugin log out status
   repo="$TMP_ROOT/pi-established-empty-close-root"
@@ -3456,6 +3590,7 @@ test_pi_empty_close_retries_instead_of_disappearing
 test_pi_retry_resumes_actionable_close_queued_behind_failure
 test_pi_retry_lock_loss_resumes_actionable_close_queued_behind_failure
 test_pi_healthy_successor_surfaces_failure_queued_during_restore
+test_pi_unready_successor_boundedly_releases_queued_closes
 test_pi_established_empty_close_honors_retry_limit
 test_pi_actionable_close_rechecks_session_lock
 test_pi_arm_distinguishes_session_lock_ownership
