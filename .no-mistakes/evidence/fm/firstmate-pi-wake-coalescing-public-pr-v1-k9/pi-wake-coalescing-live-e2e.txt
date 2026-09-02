@@ -1,0 +1,1 @@
+ok - Pi 0.84.0 watcher-only live E2E covered the Calm working ship and watcher continuity
