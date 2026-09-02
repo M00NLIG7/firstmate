@@ -137,12 +137,12 @@ Do not create a prose command reference that will drift independently of the imp
 
 Apply these actions in order to each candidate claim or document:
 
-1. **Link** when a correct owner already exists and another audience needs only awareness or navigation.
-2. **Rewrite** when the current owner is the right home but its statement is stale, ambiguous, or mixed with another audience.
-3. **Prune** a duplicate or obsolete statement after preserving every unique current fact in the owner and repairing inbound links.
-4. **Retire or relocate** a whole document when its only durable value belongs to another owner or to clearly labeled historical evidence.
-5. **Create** a document only when no existing owner fits and all new-document checks below pass.
-6. **Decline** the new document when it would only duplicate an owner, preserve temporary chronology as current guidance, copy executable help, or create a category with no stable audience.
+- Link when a correct owner already exists and another audience needs only awareness or navigation.
+- Rewrite when the current owner is the right home but its statement is stale, ambiguous, or mixed with another audience.
+- Prune a duplicate or obsolete statement after preserving every unique current fact in the owner and repairing inbound links.
+- Retire or relocate a whole document when its only durable value belongs to another owner or to clearly labeled historical evidence.
+- Create a document only when no existing owner fits and all new-document checks below pass.
+- Decline the new document when it would only duplicate an owner, preserve temporary chronology as current guidance, copy executable help, or create a category with no stable audience.
 
 A new document must satisfy every check:
 
