@@ -175,7 +175,8 @@ A mature protocol repository may justify separate registries and evidence maps.
 ## Validate with project-native evidence
 
 Discover required checks from the repository's contribution guide, CI, task runner, package metadata, and executable help before choosing commands.
-Run the narrow checks while iterating and the repository's full required documentation, lint, and test suite before completion.
+Run the smallest repository-prescribed relevant documentation inventory, link, lint, and focused tests locally.
+Leave broad regression to CI unless the project's documented contribution policy explicitly requires a full local suite.
 
 At minimum, validate the applicable parts of this list:
 
@@ -183,7 +184,8 @@ At minimum, validate the applicable parts of this list:
 - Repository-local links and heading fragments through the existing link checker or documentation build.
 - Cited setup and operator commands against current help or a safe smoke path.
 - Focused executable tests for every behavior or contract changed.
-- The required formatter, linter, documentation build, and full project test suite.
+- The smallest repository-required formatter, linter, documentation build, and focused test scope that covers the change.
+- Broader regression in CI unless the project explicitly requires the full suite locally.
 - The complete branch diff after all review, documentation, and lint fixes.
 
 Add behavioral tests when an executable contract changes or a new executable documentation check is justified by an existing repeated need.
@@ -228,7 +230,7 @@ For an authorized change, leave and report:
 - Repaired indexes and local links with no orphaned new document.
 - Unique facts preserved from every pruned or retired file.
 - Focused tests for executable behavior changes and no source-string documentation tests.
-- The exact project-required checks run, their outcomes, and any unverified limitation.
+- The exact relevant local checks run, their outcomes, CI-owned broad regression, and any unverified limitation.
 
 ## Completion criteria
 
@@ -240,6 +242,6 @@ The documentation architecture is complete only when:
 - Contributors and agents can route a change to its owner and executable evidence without reading the whole documentation tree.
 - Exact command mechanics resolve to executable help, task definitions, or script headers.
 - Durable decisions are evidence-backed, and historical or task evidence is not presented as current authority.
-- Existing inventory, link, documentation, lint, and test checks pass as applicable.
+- The smallest relevant local inventory, link, documentation, lint, and focused test checks pass as applicable, with broader regression owned by CI unless the project explicitly requires a full local suite.
 - The complete diff has passed the anti-sprawl review.
 - Any failure or evidence gap is stated plainly rather than hidden behind a completion claim.
