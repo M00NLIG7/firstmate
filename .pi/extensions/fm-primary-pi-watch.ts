@@ -668,7 +668,24 @@ export default function (pi: ExtensionAPI) {
     surfaceFailure(owner, message);
   }
 
-  async function flushMain(owner: SessionGeneration, finalTurn = false): Promise<void> {
+  function mainPresentationOwns(pending: PendingActionableClose): boolean {
+    if (!pending.source) return false;
+    try {
+      const rows = readFileSync(`${state}/.main-eligible-rows`, "utf8")
+        .trim()
+        .split(/\r?\n/);
+      if (rows.length === 0 || rows.some((row) => !/^[1-9][0-9]*$/.test(row))) return false;
+      const claimed = new Set(
+        rows,
+      );
+      const sourceRows = pending.source.rows.map((row) => row.split("\t")[1]);
+      return sourceRows.length > 0 && sourceRows.every((row) => claimed.has(row));
+    } catch {
+      return false;
+    }
+  }
+
+  async function flushMain(owner: SessionGeneration, finalTurn = false, allowMainPresented = false): Promise<void> {
     if (!generationIsLive(owner) || owner.restoring || owner.mainFlushing) return;
     if (lockOwnership() !== "owned") {
       if (owner.pendingActionables.some(item => item.deferred)) mainDeliveryFailure(owner, "watcher: FAILED - deferred delivery lost session ownership; its source records remain pending");
@@ -690,7 +707,13 @@ export default function (pi: ExtensionAPI) {
         if (wake.pending.deferred) owner.unconsumedWakes.delete(token);
       }
     }
-    const candidates = owner.pendingActionables.filter(item => item.deferred && !item.delivered && !owner.unconsumedWakes.has(item.token) && (idle || finalTurn || !(item.attempts ?? 0)));
+    const candidates = owner.pendingActionables.filter(item =>
+      item.deferred &&
+      !item.delivered &&
+      !owner.unconsumedWakes.has(item.token) &&
+      (idle || finalTurn || !(item.attempts ?? 0)) &&
+      !(mainPresentationOwns(item) && !allowMainPresented),
+    );
     const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
     if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
       mainDeliveryFailure(owner, `watcher: FAILED - no positive source acknowledgement after ${retryLimit} delivery attempts; pending notification records are retained for recovery`);
@@ -1380,7 +1403,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on?.("agent_settled", (_event, ctx) => {
     mainContext = ctx;
-    void flushMain(generation);
+    queueMicrotask(() => { void flushMain(generation, false, true); });
   });
   // A terminal no-tool response is a native follow-up opportunity even when
   // a stream of human continuations prevents an agent_settled idle boundary.
@@ -1405,6 +1428,7 @@ export default function (pi: ExtensionAPI) {
     markLoaded();
     if (lockOwnership() !== "owned") return;
     activateOwnedWatch(generation);
+    queueMicrotask(() => { void flushMain(generation, false, true); });
   });
   pi.on?.("session_shutdown", async (event) => {
     const replacement = event.reason === "reload" || event.reason === "new" || event.reason === "resume" || event.reason === "fork";

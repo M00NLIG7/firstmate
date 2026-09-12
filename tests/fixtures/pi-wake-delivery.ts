@@ -138,6 +138,8 @@ async function exercise() {
       api.on("message_start", event => {
         if (event.message.role === "user" || event.message.role === "custom") events.push({kind: "message", role: event.message.role, customType: event.message.role === "custom" ? event.message.customType : undefined, text: text(event.message.content)});
       });
+      api.on("turn_end", () => { events.push({kind: "turn-end"}); });
+      api.on("agent_settled", () => { events.push({kind: "agent-settled"}); });
       api.on("session_shutdown", (event, ctx) => { events.push({kind: "shutdown", reason: event.reason, session: ctx.sessionManager.getSessionId()}); });
       api.on("context", async (event, ctx) => {
         if ((intercepted && scenario !== "retry-repair") || !event.messages.some(isCustom)) return;
@@ -284,11 +286,29 @@ async function exercise() {
       await wait(() => branchSettled >= index, "late-ack settlement");
       return;
     }
+    if (scenario === "main-owned") {
+      await wait(() => existsSync(`${home}/refused-${index}`), "main-owned grant barrier");
+      writeFileSync(`${home}/release-${index}`, "release");
+      await wait(() => branchSettled >= index, "main-owned settlement");
+      return;
+    }
     if (protectedSource || (scenario === "branch-failure" && index === 1)) await wait(() => events.filter(e => e.kind === "input" && e.source === "extension").length >= index, "protected direct delivery");
     else await wait(() => pending().some((p: any) => p.deferred && p.source?.rows.some((r: string) => r.split("\t")[1] === String(index))), "durable pending source");
     if (earlyAck) ack(latestDrain);
   };
   await trigger(1);
+  if (scenario === "main-owned") {
+    assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "main-owned grant did not retain the presented main row");
+    assert.ok(!queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source received a custom wake before its owner finished");
+    release(); await running;
+    await wait(() => events.some(event => event.kind === "agent-settled"), "main owner turn settlement");
+    assert.ok(events.some(event => event.kind === "provider" && event.number === 2 && event.pending.length === 1 && event.pending[0].deferred), "main-owned source was not durable until post-settlement delivery");
+    assert.ok(events.some(event => event.kind === "acknowledgement"), "main-owned source was not acknowledged after post-settlement delivery");
+    writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
+    if (runtime) await runtime.dispose(); else session.dispose();
+    console.log("ok - real Pi pending delivery main-owned: no custom wake before the owning main turn settles, with durable unacknowledged source");
+    return;
+  }
   if (!noHuman) await session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});
   await trigger(2); await trigger(3);
   if (scenario === "missing-receipt") unlinkSync(`${home}/state/.wake-acknowledged`);
