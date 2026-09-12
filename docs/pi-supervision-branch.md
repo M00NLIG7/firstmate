@@ -28,7 +28,8 @@ The supervision branch itself is Pi-only by construction:
   For a stale row, `scopeForUnreadWake` folds the mapped task's status log and excludes the row when any `needs-decision` remains open or the current meaningful declaration is `captain-held`; an unreadable or symlinked status log fails the scope closed rather than influencing routing.
   The dispatcher resolves trigger keys and every currently unread excluded decision row to task identity before cross-referencing them: any signal or stale trigger containing a decision-owned task goes wholly to main, including a batch that also contains routine rows, and an unread decision for one task keeps every later signal or stale trigger for that same task on main until the decision row is read, regardless of whether the rows use its status-file key or window alias.
   Other tasks remain independently eligible.
-  The wake message itself retains its existing shape, so other harness-arm scripts remain unchanged.
+  The arm protocol retains its existing shape, so other harness-arm scripts remain unchanged.
+  The grant's main-owned result is an explicit offer fact, not a branch-failure inference; the watcher extension header owns subsequent main delivery and ordinary-source coalescing.
   Heartbeat handling remains independent.
   A fleet-wide heartbeat keeps its own all-or-nothing rule (see "Heartbeat routing" below): it takes every branch-ownable unread row or none of them.
   A co-present main-owned check row no longer defers that review to main, because it is not fleet context the branch is missing and main is woken for it on its own triggering close.
@@ -40,7 +41,8 @@ The supervision branch itself is Pi-only by construction:
   Nothing captain-facing rides on that conversation: the durable outcome store and its processed marker are what carry unacknowledged outcomes across the boundary, and they re-present on the new main session exactly as they do after a crash.
   It checks the current extension generation and `state/.lock` ownership before each guarded branch side effect so replacement or lock loss cannot let an old continuation mutate the new session.
   Those checks and the store calls around them are awaited rather than synchronous, and an explicit queue inside the extension is what keeps them serialized (see "Off-thread delivery" below).
-  Every accepted path that cannot reach a working branch rejects its settlement to the watcher, which retains delivery ownership and routes the wake to main as a follow-up that counts as delivered once Pi accepts it; a broken branch declines later offers so they take that path directly.
+  Every accepted path that cannot reach a working branch rejects its settlement to the watcher, which retains main-delivery ownership; actual branch failures bypass ordinary deferral, while a broken branch declines later offers.
+  Native submission is not source acknowledgement, and the watcher extension owns its pending delivery and replay contract.
   After wake rows are claimed, a branch prompt counts as handled only when `fm_branch_report` appends a durable outcome before that prompt settles; a settled provider error or a settled prompt with no report releases the grant and rejects delivery ownership back to the watcher.
   While a signal or stale prompt is open, `fm_branch_report` accepts only the tasks that prompt's claimed rows resolve to (a signal row by its status-log key, a stale row through the task record naming that endpoint); a report for any other task id, `fleet` included, is refused before the store is touched, so a task remembered from an earlier wake cannot become a delivered outcome, while a heartbeat review is not scoped by task.
   The branch's guarded commands never tell it to drain queued rows mid-handling: for that actor `bin/fm-guard.sh` keeps the queued-wakes warning silent, and an acknowledgement that consumed nothing reports that plainly with the exact command for the current wake (`docs/watcher-continuity.md` "Per-actor acknowledgement").
@@ -104,6 +106,7 @@ The branch prompt frames mirrored text as context for judgment, never as instruc
 
 ## Two-stage noise filter
 
+Raw main-notification coalescing is separately owned by the watcher extension and does not change the outcome verdict, rendering or processing rules below.
 Stage one is unchanged: the bash watcher absorbs everything provably fine at zero token cost.
 Stage two is the branch's verdict on each handled event, reported through its `fm_branch_report` tool: `routine` keeps the existing custom-message path without a follow-up turn, while `captain` appends a versioned `fm-branch-visible-outcome` custom session entry.
 The captain entry contains the store sequence, task, verdict, exact summary, and silent flag, and its renderer presents the exact task and summary with an anchor prefix.
@@ -164,6 +167,7 @@ The branch-offer, heartbeat-offer, heartbeat-not-ridden-by-main-only-rows, main-
 It also covers the off-thread delivery contract behaviorally: that a delivery leaves the event loop running rather than blocking it, that interleaved reports stay ordered and exactly once, that a session replaced mid-delivery neither loses nor duplicates an outcome, and that a failing store script surfaces without losing or doubling one.
 `tests/fm-watch-triage.test.sh` covers `bin/fm-watch.sh`'s side of the contract end to end: needs-decision, no-verb captain-held, and pending-reply second-mate escalation signal rows are marked `needs-decision:`, a needs-decision whose key transition was rejected by the reserved-key vocabulary (`fm-classify-lib.sh`'s `reconciliation-required:` wrapper) is still marked, and ordinary blocked or captain-relevant signals stay unmarked.
 Live guards: `FM_PI_BRANCH_LIVE_E2E=1 tests/fm-pi-branch-live-e2e.test.sh` exercises the real installed Pi SDK's immediate active-transcript appendEntry rendering, persistence, custom-entry model exclusion, branch-session surfaces, and watcher-owned fallback after rejected branch settlement.
+`FM_PI_WAKE_SDK_E2E=1 FM_PI_LIVE_E2E=0 tests/fm-pi-primary-live-e2e.test.sh` runs the token-free native queue/provider-boundary guard, including main-owned fallback, positive acknowledgement, human input, dropped delivery and cold recovery.
 `FM_PI_BRANCH_RESPONSIVENESS_E2E=1 tests/fm-pi-branch-responsiveness-live-e2e.test.sh` answers the question only a real TUI can: it types into an isolated Pi pane while outcomes are delivered and fails if keystroke echo leaves the class of the same machine's extension-free floor.
 Record dated current results in [docs/verification/runtime-backends.md](verification/runtime-backends.md).
 The strict typecheck in `tests/fm-pi-primary-types.test.sh` pins the extension against the installed Pi package.

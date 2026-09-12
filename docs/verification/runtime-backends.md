@@ -1698,6 +1698,79 @@ The same guard against the pre-change extension in the same lab measured a 676.9
 Measured through the same real `fm_branch_report` tool and real `bin/` scripts with a 1 ms interval timer, the largest single block of the JavaScript thread fell from 273 ms to 2.0 ms for a routine outcome, from 286 ms to 2.0 ms for a captain outcome, and from 134 ms to 1.9 ms for main's acknowledgement, against a 1.3-2.2 ms idle-loop floor.
 Those absolute figures are specific to this host and Pi version; the guards assert the relationship (delivery must stay in the class of the same machine's own floor) rather than a remembered millisecond number.
 
+### 2026-09-12 Pi pending main delivery
+
+Observed on 2026-09-12 UTC with compiled Pi 0.84.0.
+The token-free guard uses the real Pi CLI, SDK, native message queues, provider serialization and session recovery in isolated homes.
+Provider responses and handling decisions are scripted, and the arm process is controlled; grants, drains and acknowledgements use the real scripts.
+No credential or live fleet is used and no request leaves the process.
+This is not an interactive-TUI or real-model-judgment claim.
+
+```sh
+FM_PI_WAKE_SDK_E2E=1 FM_PI_LIVE_E2E=0 bin/fm-test-run.sh --jobs 1 tests/fm-pi-primary-live-e2e.test.sh
+```
+
+```text
+ok - real Pi pending delivery ordinary: 3 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery idle: 2 provider calls without a later human request
+ok - real Pi pending delivery acknowledged: 2 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery late-ack: 2 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery protected: 5 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery quiet: 2 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery branch-failure: 4 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery mixed: 5 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery missing-receipt: 3 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery corrupt-receipt: 3 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery drop-once: 5 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery drop-no-human: 3 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery retry-repair: 9 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery delayed-context: 3 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery continuous: 9 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery continuous-unacknowledged: 14 bounded provider calls, retained unacknowledged sources
+ok - real Pi pending delivery replacement: 2 provider calls, acknowledged sources, preserved human input
+ok - real Pi pending delivery exhaustion-crash-prepare: interrupted after native alarm acceptance, before consumption, with five durable attempts
+ok - real Pi pending delivery exhaustion-recover: six provider calls, real reload/replacement and five generation alarms
+ok - real Pi pending delivery crash-prepare: durable sources survive interruption after native consumption
+ok - real Pi pending delivery recover: one provider call handles interrupted sources without replacing human history
+```
+
+The unchanged-upstream ordinary control made five scripted provider calls: original work, one human follow-up and three native automated follow-ups.
+The adapted ordinary burst makes three calls: original work, one human follow-up and one grouped notification; the acknowledged burst needs only original work and the human request.
+The protected open-blocker control intentionally retains its three separate notifications, and the existing quiet branch path remains turn-free beyond the two user requests.
+The missing/corrupt-receipt cases require notification followed by a new explicit append/drain/ack of the unchanged source, not assumed recovery from an empty queue.
+The retry-repair case preserves unacknowledged sources after the bounded failure and verifies that the existing explicit repair tool resumes delivery once the interfering filter is removed.
+The delayed-context case holds native model preparation, adds human input and another source notification, and verifies that no duplicate automated message enters the native queue.
+The interruption pair exits after native consumption but before source handling, then reopens the real session and recovers with one provider call while preserving the original human request exactly once.
+The exhaustion pair instead exits after native alarm acceptance but before consumption, with five ordinary delivery attempts persisted and no source acknowledgement.
+Its recovery preserves the human history and source identities, observes two actual reloads with native reload events and unchanged session identity, and observes two actual session replacements with new identities.
+Those five generations produce five actionable alarms and no renewed ordinary delivery; the sixth provider call occurs only after explicit repair and positively acknowledges the retained sources.
+The fixture binds the SDK host's real command actions, so the reload command executes `AgentSession.reload()` rather than an unbound no-op, and its queue barrier never treats input preflight as native acceptance.
+The provider usage numbers are synthetic counters, not representative token or dollar savings.
+
+Current-upstream reload and rollback are separate compatibility characterizations against public base `ad14a8db06fd7a6655c2c4cc351d7add92448ecf`:
+
+```sh
+FM_TEST_SCENARIO=current-reload FM_PI_PREVIOUS_REF=ad14a8db06fd7a6655c2c4cc351d7add92448ecf FM_PI_WAKE_SDK_E2E=1 FM_PI_LIVE_E2E=0 tests/fm-pi-primary-live-e2e.test.sh
+```
+
+```text
+ok - real Pi pending delivery current-reload-control: 8 calls, three existing legacy replays, exact accepted-message and source ordering
+ok - real Pi pending delivery current-reload-rollback: 8 legacy reload calls, upgraded burst 3 calls, rollback 3 calls plus one new check, exact native/source preservation
+```
+
+Both the unchanged-upstream reload control and activation of this correction retain three existing legacy replays when those messages were already accepted before reload.
+The guard holds consumption until all three replays reach native acceptance, then requires exactly eight calls, exact human/native ordering, unchanged source and delivery identities before consumption, and acknowledgement only after acceptance.
+A subsequent ordinary burst uses the new three-call path without replacing the session.
+Rollback to the stated prior version automatically restores delivery of its retained v1 handoff, keeps source identity and attempts unchanged before consumption, and handles a fresh check after that obligation clears.
+Already accepted native messages remain untouched; preventing this pre-existing legacy reload replay is outside the correction, so these results do not claim that every duplicate notification is fixed.
+
+`tests/fm-pi-watch-extension.test.sh` supplies the passing portable owner-loss, reload, stale-callback and branch-failure counterpart, including successor restoration while either native or branch delivery remains unsettled.
+`tests/fm-wake-queue.test.sh` adds exact actor-scoped receipt, bounded-retention and optional-evidence assertions; its existing foreign-queue one-second checkpoint fails on both the unchanged base and candidate before those new assertions execute.
+The existing resource-result acknowledgement fixture in `tests/fm-pi-branch-extension.test.sh` also exceeds its unchanged settle bound on both versions.
+Those full suites are not verified green here, their causes remain unproved, and neither deadline was widened.
+The matching Pi 0.84.0 SDK passes `tests/fm-pi-primary-types.test.sh` with strict no-emit extension typechecking.
+The Pi watcher extension header and `bin/fm-wake-drain.sh` remain the delivery and evidence-format owners.
+
 ## Native Codex through Pi
 
 Verified on 2026-09-08 with Pi 0.85.1 and the installed `pi-codex-native` 0.2.1 adapter.

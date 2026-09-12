@@ -74,6 +74,212 @@ export const Type = {
 JS
 }
 
+test_pi_pending_sources_survive_reload_and_owner_loss() {
+  local repo home status
+  repo="$TMP_ROOT/pi-pending-root"
+  home="$TMP_ROOT/pi-pending-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  cp -R "$ROOT/bin/." "$repo/bin/"
+  git init -q -b main "$repo" || fail "could not initialize pending-source fixture"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
+printf 'arm %s\n' "$$" >> "$FM_HOME/arms"
+trap 'exit 0' TERM INT
+printf 'watcher: started pid=%s recovery-generation=portable\n' "$$"
+while [ ! -f "$FM_HOME/trigger" ]; do sleep 0.02; done
+reason=$(cat "$FM_HOME/trigger")
+rm "$FM_HOME/trigger"
+printf '%s\n' "$reason"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  PLUGIN="$repo/.pi/extensions/fm-primary-pi-watch.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" \
+    FM_SUPERVISION_ACTOR=main node --input-type=module > "$home/result" 2>&1 <<'EOF'
+import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
+import {existsSync, lstatSync, readFileSync, writeFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+const home=process.env.FM_HOME, root=process.env.FM_ROOT_OVERRIDE;
+const handoff=`${home}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
+const records=()=>existsSync(handoff)?JSON.parse(readFileSync(handoff,"utf8")).pending:[];
+const shell=command=>execFileSync("bash",["-c",command],{cwd:root,encoding:"utf8",env:process.env});
+const drain=()=>shell("bin/fm-wake-drain.sh 2>&1");
+const acknowledge=()=>{
+  const output=drain();
+  const match=output.match(/WAKE_ACK_REQUIRED: after handling completes run ([^\n]+)/);
+  assert.ok(match,output); shell(match[1]);
+};
+const wait=async(predicate,label)=>{
+  for(let i=0;i<1500;i++){if(predicate())return;await new Promise(r=>setTimeout(r,20));}
+  throw new Error(`timeout: ${label}`);
+};
+writeFileSync(`${home}/state/.lock`,`${process.pid}\n`);
+writeFileSync(`${home}/state/sample.meta`,"project=/fixture/project\nwindow=fm-sample\n");
+writeFileSync(`${home}/state/sample.status`,"working: fixture activity\n");
+let busy=true, hooks, tool, branchFailure=false;
+// This is only the portable state-machine double. The installed-Pi guard
+// independently proves actual native queue and provider-boundary behavior.
+const queue=[], sends=[];
+const ctx={isIdle:()=>!busy,hasPendingMessages:()=>queue.length>0,ui:{notify(){}}};
+const makeApi=()=>{
+  hooks=new Map();
+  return {
+    on(name,fn){hooks.set(name,fn);},registerCommand(){},
+    registerTool(value){if(value.name==="fm_watch_arm_pi")tool=value;},
+    events:{on(){},emit(name,offer){if(name!=="fm-branch-supervision:dispatch")return;offer.mainOwned=!branchFailure;offer.accept(Promise.reject(new Error("fixture rejection")));}},
+    sendUserMessage(content){const m={role:"user",content};queue.push(m);sends.push(m);busy=true;},
+    sendMessage(message){const m={role:"custom",...message};queue.push(m);sends.push(m);busy=true;},
+  };
+};
+const mod=await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(makeApi());
+await hooks.get("session_start")({},ctx);
+const trigger=async(index)=>{
+  shell(". bin/fm-wake-lib.sh; fm_wake_append signal sample.status 'working: fixture activity'");
+  drain();
+  writeFileSync(`${home}/trigger`,`signal: ${home}/state/sample.status\n`);
+  await wait(()=>records().some(p=>p.source?.rows.some(row=>row.split("\t")[1]===String(index))),"pending source");
+};
+await trigger(1);await trigger(2);await trigger(3);
+assert.equal(queue.length,0);
+assert.equal(records().length,3);
+assert.equal(readFileSync(`${home}/arms`,"utf8").trim().split("\n").length,4);
+const beforeLoss=readFileSync(handoff,"utf8"), beforeLossStat=lstatSync(handoff);
+writeFileSync(`${home}/state/.lock`,"1\n");busy=false;
+await hooks.get("agent_settled")({},ctx);
+assert.equal(readFileSync(handoff,"utf8"),beforeLoss,"owner loss mutated pending records");
+assert.equal(queue.length,1);assert.match(queue[0].content,/lost session ownership/);
+await hooks.get("session_shutdown")({reason:"reload"});
+assert.equal(lstatSync(handoff).ino,beforeLossStat.ino,"shutdown after owner loss replaced pending records");
+assert.equal(lstatSync(handoff).mtimeMs,beforeLossStat.mtimeMs,"shutdown after owner loss rewrote pending records");
+queue.shift();writeFileSync(`${home}/state/.lock`,`${process.pid}\n`);busy=false;
+mod.default(makeApi());await hooks.get("session_start")({},ctx);
+await wait(()=>queue.length===1,"owned recovery after lock loss");
+assert.equal(queue.length,1);assert.equal(queue[0].role,"custom");
+const first=queue.shift();
+await hooks.get("message_start")({message:first},ctx);
+assert.equal(records().length,3,"native consumption retired unacknowledged sources");
+assert.ok(readFileSync(`${home}/state/.wake-queue`,"utf8").trim());
+const oldHooks=hooks;
+await hooks.get("session_shutdown")({reason:"reload"});
+mod.default(makeApi());busy=false;
+await hooks.get("session_start")({},ctx);
+await wait(()=>queue.length===1,"replay after reload");
+assert.equal(records().length,3);
+const afterReload=readFileSync(handoff,"utf8"), sent=sends.length;
+await oldHooks.get("message_start")({message:first},ctx);
+await oldHooks.get("agent_settled")({},ctx);
+assert.equal(readFileSync(handoff,"utf8"),afterReload,"stale callback overwrote replacement records");
+assert.equal(sends.length,sent,"stale callback sent into the replacement");
+const replay=queue.shift();
+await hooks.get("message_start")({message:replay},ctx);
+assert.equal(records().length,3);
+acknowledge();busy=false;
+await hooks.get("agent_settled")({},ctx);
+assert.equal(records().length,0);
+assert.equal(queue.length,0);
+// A real branch failure cannot be mistaken for the typed main-owned route.
+branchFailure=true;busy=true;
+shell(". bin/fm-wake-lib.sh; fm_wake_append signal sample.status 'working: fixture activity'");
+drain();writeFileSync(`${home}/trigger`,`signal: ${home}/state/sample.status\n`);
+await wait(()=>queue.length===1,"branch failure delivery");
+assert.equal(queue[0].role,"user");assert.match(queue[0].content,/Supervision branch delivery failed/);
+await hooks.get("session_shutdown")({reason:"quit"});
+console.log("pending sources preserved across consumption, owner loss, reload, stale callbacks and branch failure");
+EOF
+  status=$?
+  [ "$status" -eq 0 ] || fail "Pi pending-source lifecycle failed: $(cat "$home/result")"
+  pass "Pi pending groups require source acknowledgement and survive owner loss, reload and stale callbacks"
+}
+
+test_pi_exhausted_deferred_delivery_stays_bounded_across_reload_until_repair() {
+  local repo home status
+  repo="$TMP_ROOT/pi-exhausted-deferred-root"
+  home="$TMP_ROOT/pi-exhausted-deferred-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  cp -R "$ROOT/bin/." "$repo/bin/"
+  git init -q -b main "$repo" || fail "could not initialize exhausted-deferred fixture"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
+printf 'watcher: started pid=%s recovery-generation=portable\n' "$$"
+while [ ! -f "$FM_HOME/trigger" ]; do sleep 0.02; done
+cat "$FM_HOME/trigger"
+rm "$FM_HOME/trigger"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  PLUGIN="$repo/.pi/extensions/fm-primary-pi-watch.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" \
+    FM_SUPERVISION_ACTOR=main FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 \
+    node --input-type=module > "$home/result" 2>&1 <<'EOF'
+import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
+import {readFileSync, writeFileSync} from "node:fs";
+import {pathToFileURL} from "node:url";
+
+const home=process.env.FM_HOME, root=process.env.FM_ROOT_OVERRIDE;
+const handoff=`${home}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
+const shell=command=>execFileSync("bash",["-c",command],{cwd:root,encoding:"utf8",env:process.env});
+const records=()=>JSON.parse(readFileSync(handoff,"utf8")).pending;
+const wait=async(predicate,label)=>{
+  for(let i=0;i<500;i++){if(predicate())return;await new Promise(resolve=>setTimeout(resolve,20));}
+  throw new Error(`timeout: ${label}`);
+};
+
+writeFileSync(`${home}/state/.lock`,`${process.pid}\n`);
+writeFileSync(`${home}/state/sample.meta`,"project=/fixture/project\nwindow=fm-sample\n");
+writeFileSync(`${home}/state/sample.status`,"working: fixture activity\n");
+const prompts=[];
+let hooks, tool, idleChecks=0;
+const ctx={isIdle:()=>{idleChecks++;return true;},hasPendingMessages:()=>false,ui:{notify(){}}};
+const api=()=>{
+  hooks=new Map();
+  return {
+    on(name,handler){hooks.set(name,handler);},
+    registerCommand(){},
+    registerTool(candidate){if(candidate.name==="fm_watch_arm_pi")tool=candidate;},
+    events:{on(){},emit(){}},
+    sendUserMessage:async()=>{},
+    sendMessage(message){prompts.push(message);},
+  };
+};
+const mod=await import(pathToFileURL(process.env.PLUGIN).href);
+const start=async()=>{mod.default(api());await hooks.get("session_start")({},ctx);};
+const replace=async()=>{
+  await hooks.get("session_shutdown")({reason:"reload"});
+  const before=idleChecks;
+  await start();
+  // Observe the actual ready-successor reconciliation, not a guessed startup sleep.
+  await wait(()=>idleChecks>before,"replacement deferred-source reconciliation");
+};
+
+await start();
+shell(". bin/fm-wake-lib.sh; fm_wake_append signal sample.status 'working: fixture activity'");
+shell("bin/fm-wake-drain.sh >/dev/null 2>&1");
+writeFileSync(`${home}/trigger`,`signal: ${home}/state/sample.status\n`);
+await wait(()=>prompts.length===2,"the initial bounded dropped deliveries");
+assert.equal(records().length,1);
+assert.equal(records()[0].attempts,2);
+
+await replace();
+assert.equal(prompts.length,2,"reload reopened an exhausted delivery budget");
+assert.equal(records()[0].attempts,2,"reload rewrote the exhausted delivery budget");
+
+await replace();
+assert.equal(prompts.length,2,"repeated reload reopened an exhausted delivery budget");
+assert.equal(records()[0].attempts,2,"repeated reload rewrote the exhausted delivery budget");
+
+await tool.execute("repair-exhausted-deferred",{},undefined,undefined,{});
+await wait(()=>prompts.length===4,"the explicit repair retry");
+assert.equal(records()[0].attempts,2,"repair did not consume only its bounded retry budget");
+await hooks.get("session_shutdown")({reason:"quit"});
+EOF
+  status=$?
+  [ "$status" -eq 0 ] || fail "Pi exhausted deferred-reload lifecycle failed: $(cat "$home/result")"
+  pass "Pi reload preserves exhausted deferred delivery bounds until explicit repair"
+}
+
 test_pi_extension_reports_external_healthy_watcher() {
   local repo home plugin out status
   repo="$TMP_ROOT/pi-external-healthy-root"
@@ -358,6 +564,11 @@ if [ "$count" -eq 1 ]; then
 fi
 printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
 trap 'exit 0' TERM INT
+if [ "$count" -eq 2 ]; then
+  while [ ! -e "$FM_STOP_FILE.next" ]; do sleep 0.02; done
+  printf 'signal: synthetic later close\n'
+  exit 0
+fi
 while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
@@ -367,6 +578,7 @@ import { pathToFileURL } from "node:url";
 
 let tool = null;
 let deliveryStarted = false;
+const deliveries = [];
 let rowsAtDelivery = 0;
 let releaseDelivery = () => {};
 const deliveryBlocked = new Promise((resolve) => {
@@ -378,7 +590,8 @@ const pi = {
   registerTool(candidate) {
     if (candidate.name === "fm_watch_arm_pi") tool = candidate;
   },
-  sendUserMessage: async () => {
+  sendUserMessage: async (content) => {
+    deliveries.push(content);
     rowsAtDelivery = existsSync(process.env.FM_ARM_LOG)
       ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter((row) => row.startsWith("arm=")).length
       : 0;
@@ -414,6 +627,17 @@ if (stableRows.filter((row) => row.startsWith("arm=")).length !== 2) {
 if (stableRows.filter((row) => row.startsWith("confirmed ")).length !== 1) {
   throw new Error(`successful prompt delivery was not confirmed exactly once: ${stableRows.join(" | ")}`);
 }
+writeFileSync(`${process.env.FM_STOP_FILE}.next`, "next\n");
+for (let i = 0; i < 250 && deliveries.length < 2; i++) {
+  await new Promise((resolve) => setTimeout(resolve, 10));
+}
+const laterRows = readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n");
+if (laterRows.filter(row => row.startsWith("arm=")).length !== 3) {
+  throw new Error("later successor restoration waited for the earlier native delivery settlement");
+}
+if (deliveries.length !== 2 || !deliveries[0].includes("signal: synthetic actionable close") || !deliveries[1].includes("signal: synthetic later close")) {
+  throw new Error(`independent delivery lost, duplicated or reordered closes: ${JSON.stringify(deliveries)}`);
+}
 releaseDelivery();
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
@@ -422,7 +646,7 @@ EOF
   status=$?
   expect_code 0 "$status" "Pi actionable close must start one successor before wake delivery settles"
   [ -z "$out" ] || fail "Pi continuous-rearm test printed output: $out"
-  pass "Pi actionable close starts one successor before wake delivery settles"
+  pass "Pi actionable closes restore each successor independently of earlier native delivery settlement"
 }
 
 test_pi_branch_offer_owns_actionable_wake() {
@@ -2500,11 +2724,10 @@ EOF
 }
 
 # A verified successor can die while the wake it was started for is still
-# being delivered (a branch turn can take minutes). Its failure close arrives
-# while the pipeline is busy, so the ordinary retry path must be deferred to
-# the end of that delivery rather than skipped, or the live generation is left
-# with no watcher and no retry.
-test_pi_successor_failure_during_delivery_is_retried_after_delivery() {
+# being delivered (a branch turn can take minutes). Restoration must progress
+# independently of that settlement, with exactly one bounded retry rather
+# than leaving the live generation without a watcher until the branch returns.
+test_pi_successor_failure_during_delivery_is_retried_independently() {
   local repo home plugin log stop out status
   repo="$TMP_ROOT/pi-successor-dies-mid-delivery-root"
   home="$TMP_ROOT/pi-successor-dies-mid-delivery-home"
@@ -2579,11 +2802,10 @@ mod.default(pi);
 await tool.execute("initial-arm", {}, undefined, undefined, {});
 await waitFor(() => branchAccepted, "branch accepted the wake behind a verified successor");
 if (arms() !== 2) throw new Error(`expected the verified successor before delivery, got ${arms()} arms`);
-// The successor dies while the branch still holds the delivery.
-await new Promise((resolve) => setTimeout(resolve, 300));
-if (arms() !== 2) throw new Error(`a retry launched while the delivery was still in flight: ${arms()} arms`);
+// The successor dies while the branch still holds the delivery. Unlike
+// native acceptance, branch settlement can take minutes and cannot own re-arm.
+await waitFor(() => arms() === 3, "a retry watcher before branch delivery settles");
 releaseBranch();
-await waitFor(() => arms() === 3, "a retry watcher after the delivery settled");
 await new Promise((resolve) => setTimeout(resolve, 150));
 if (arms() !== 3) throw new Error(`the deferred retry was not single-flight: ${arms()} arms`);
 if (prompts.length !== 0) throw new Error(`a bounded retry surfaced a failure prompt: ${prompts.join(" | ")}`);
@@ -2592,9 +2814,9 @@ process.exit(0);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi must retry a verified successor that failed during wake delivery"
+  expect_code 0 "$status" "Pi must retry a verified successor that failed during wake delivery: $out"
   [ -z "$out" ] || fail "Pi successor-dies-mid-delivery test printed output: $out"
-  pass "Pi retries a verified successor that failed during wake delivery once that delivery settles"
+  pass "Pi retries a verified successor independently of a delayed branch delivery settlement"
 }
 
 test_pi_late_retiring_actionable_reaches_replacement() {
@@ -3974,6 +4196,8 @@ EOF
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
 }
 
+test_pi_pending_sources_survive_reload_and_owner_loss
+test_pi_exhausted_deferred_delivery_stays_bounded_across_reload_until_repair
 test_pi_extension_reports_external_healthy_watcher
 test_pi_tool_returns_agent_tool_result
 test_pi_redundant_tool_call_is_owned_noop
@@ -4001,7 +4225,7 @@ test_pi_session_transition_generation_owner
 test_pi_session_replacement_carries_inflight_actionable_close
 test_pi_streaming_followup_is_replayed_after_replacement
 test_pi_streaming_time_delivery_keeps_the_successor_chain
-test_pi_successor_failure_during_delivery_is_retried_after_delivery
+test_pi_successor_failure_during_delivery_is_retried_independently
 test_pi_late_retiring_actionable_reaches_replacement
 test_pi_replacement_tokens_are_process_unique
 test_pi_replacement_persistence_failure_stops_arm_child

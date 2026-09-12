@@ -11,9 +11,9 @@ import { runCommandAsync } from "./fm-async-exec.ts";
 // synchronously up to their first await), so after emit returns the watcher
 // reads `accepted`: true means the branch owns handling the wake, and its
 // settlement promise keeps the watcher outcome pending until handling finishes
-// or rejects back to the watcher's consumption-acknowledged main path; false
-// means no branch took it and the watcher delivers to main exactly as it did
-// before the branch existed. Watcher-failure alarms are never offered - only
+// or rejects back to watcher-owned main delivery; false means no branch took
+// it. The watcher extension header owns pending main delivery and source
+// acknowledgement. Watcher-failure alarms are never offered - only
 // main can repair the watcher cycle (fm_watch_arm_pi lives on main).
 
 export const FM_BRANCH_DISPATCH_EVENT = "fm-branch-supervision:dispatch";
@@ -423,6 +423,8 @@ export interface BranchDispatchOffer {
   eligible: boolean;
   /** Set by accept(); read by the watcher after emit returns. */
   accepted: boolean;
+  /** Set only for the grant owner's main-owned result, never inferred from error text. */
+  mainOwned: boolean;
   settlement: Promise<void>;
   accept(settlement?: Promise<void>): void;
 }
@@ -439,6 +441,7 @@ export function createBranchDispatchOffer(
     heartbeat,
     eligible,
     accepted: false,
+    mainOwned: false,
     settlement: Promise.resolve(),
     accept(settlement = Promise.resolve()) {
       offer.accepted = true;

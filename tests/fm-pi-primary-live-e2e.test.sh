@@ -7,6 +7,105 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
+# This token-free lane exercises actual compiled or npm Pi, including the main
+# provider boundary. Keep the credentialed TUI lane below independently opt-in.
+run_wake_delivery_sdk_guard() (
+  fm_live_gate default-on FM_PI_WAKE_SDK_E2E pi git
+  local lab repo version scenario home out
+  lab=$(fm_test_tmproot fm-pi-wake-sdk)
+  repo="$lab/repo"
+  version=$(pi --version) || fail "could not identify installed Pi"
+  mkdir -p "$repo/.pi" "$repo/docs" "$lab/tmp"
+  cp -R "$ROOT/bin" "$ROOT/.agents" "$repo/"
+  cp -R "$ROOT/.pi/extensions" "$repo/.pi/"
+  cp -R "$ROOT/docs/supervision-protocols" "$repo/docs/"
+  cp "$ROOT/AGENTS.md" "$repo/AGENTS.md"
+  cp "$ROOT/tests/fixtures/pi-wake-delivery.ts" "$repo/probe.ts"
+  git init -q -b main "$repo" || fail "could not initialize the isolated SDK fixture"
+  if [ -n "${FM_PI_PREVIOUS_REF:-}" ]; then
+    local previous path
+    previous=$(git -C "$ROOT" rev-parse --verify --end-of-options "$FM_PI_PREVIOUS_REF^{commit}") || fail "previous version is not a local commit"
+    for path in .pi/extensions/fm-primary-pi-watch.ts .pi/extensions/fm-branch-supervision.ts .pi/extensions/lib/fm-branch-dispatch.ts bin/fm-wake-drain.sh; do
+      mkdir -p "$repo/previous/$(dirname "$path")" "$repo/candidate/$(dirname "$path")"
+      git -C "$ROOT" show "$previous:$path" > "$repo/previous/$path" || fail "previous version lacks $path"
+      if [ "$(git -C "$ROOT" ls-tree "$previous" -- "$path" | cut -d ' ' -f 1)" = 100755 ]; then chmod +x "$repo/previous/$path"; fi
+      cp "$ROOT/$path" "$repo/candidate/$path"
+    done
+  elif [[ "${FM_TEST_SCENARIO:-}" == current-reload-* ]]; then
+    fail "current-reload cases require an explicit local FM_PI_PREVIOUS_REF"
+  fi
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+set -eu
+if [ "${1:-}" = --handling-delivered ]; then exit 0; fi
+printf 'arm %s\n' "$$" >> "$FM_HOME/arms"
+trap 'exit 0' TERM INT
+printf 'watcher: started pid=%s recovery-generation=fixture\n' "$$"
+while [ ! -f "$FM_HOME/trigger" ]; do sleep 0.02; done
+reason=$(cat "$FM_HOME/trigger")
+rm "$FM_HOME/trigger"
+printf '%s\n' "$reason"
+SH
+  mv "$repo/bin/fm-wake-grant.sh" "$repo/bin/fm-wake-grant-real.sh"
+  cat > "$repo/bin/fm-wake-grant.sh" <<'SH'
+#!/usr/bin/env bash
+"$(dirname "$0")/fm-wake-grant-real.sh" "$@"
+result=$?
+if [ "$result" = 3 ] && [ "${FM_TEST_SCENARIO:-}" = late-ack ]; then
+  seq=${3:?}
+  : > "$FM_HOME/refused-$seq"
+  while [ ! -f "$FM_HOME/release-$seq" ]; do sleep 0.02; done
+fi
+exit "$result"
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-wake-grant.sh"
+  # FM_TEST_SCENARIO selects one case, or exhaustion for its two-process pair.
+  # FM_PI_WAKE_EVIDENCE_DIR optionally retains native JSON receipts in an
+  # existing private evidence directory; normal CI keeps only ephemeral files.
+  if [ -n "${FM_PI_WAKE_EVIDENCE_DIR:-}" ]; then
+    [ -d "$FM_PI_WAKE_EVIDENCE_DIR" ] || fail "Pi evidence directory does not exist"
+  fi
+  local ran=0
+  for scenario in baseline current-reload-control current-reload-rollback ordinary idle acknowledged late-ack protected quiet branch-failure mixed missing-receipt corrupt-receipt drop-once drop-no-human retry-repair delayed-context continuous continuous-unacknowledged replacement exhaustion-crash-prepare exhaustion-recover crash-prepare recover; do
+    case "${FM_TEST_SCENARIO:-}" in
+      "$scenario") ;;
+      "")
+        [ "$scenario" != baseline ] || continue
+        [[ "$scenario" != current-reload-* ]] || [ -n "${FM_PI_PREVIOUS_REF:-}" ] || continue
+        ;;
+      exhaustion) case "$scenario" in exhaustion-*) ;; *) continue ;; esac ;;
+      current-reload) case "$scenario" in current-reload-*) ;; *) continue ;; esac ;;
+      *) continue ;;
+    esac
+    ran=$((ran + 1))
+    home="$lab/$scenario"
+    case "$scenario" in crash-prepare|recover) home="$lab/interrupted";; exhaustion-*) home="$lab/exhaustion";; esac
+    out="$lab/$scenario.out"
+    mkdir -p "$home/state" "$home/config" "$home/agent"
+    if ! env -i PATH="$PATH" HOME="$home" TMPDIR="$lab/tmp" \
+      PI_CODING_AGENT_DIR="$home/agent" PI_OFFLINE=1 PI_TELEMETRY=0 \
+      FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_TEST_ROOT="$repo" FM_GATE_REFUSE_BYPASS=1 \
+      FM_TEST_SCENARIO="$scenario" FM_TEST_OUTPUT="$lab/$scenario.json" \
+      pi --offline --no-extensions --no-skills --no-prompt-templates --no-themes \
+      --no-context-files --no-tools --no-session -e "$repo/probe.ts" \
+      -p /wake-delivery-test > "$out" 2>&1; then
+      fail "real Pi $version pending delivery $scenario failed: $(cat "$out")"
+    fi
+    [ -s "$lab/$scenario.json" ] || fail "real Pi $version produced no $scenario evidence: $(cat "$out")"
+    grep '^ok - real Pi pending delivery ' "$out" || fail "real Pi $version omitted its $scenario verdict"
+    if [[ "$scenario" == current-reload-* ]]; then
+      for path in .pi/extensions/fm-primary-pi-watch.ts .pi/extensions/fm-branch-supervision.ts .pi/extensions/lib/fm-branch-dispatch.ts bin/fm-wake-drain.sh; do
+        cp "$repo/candidate/$path" "$repo/$path"
+      done
+    fi
+    if [ -n "${FM_PI_WAKE_EVIDENCE_DIR:-}" ]; then
+      cp "$lab/$scenario.json" "$FM_PI_WAKE_EVIDENCE_DIR/" || fail "could not retain Pi $scenario evidence"
+    fi
+  done
+  [ "$ran" -gt 0 ] || fail "unknown Pi delivery scenario: ${FM_TEST_SCENARIO:-}"
+)
+run_wake_delivery_sdk_guard || exit 1
+
 fm_live_gate opt-in FM_PI_LIVE_E2E pi tmux
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -609,6 +609,50 @@ print_status_presentation() {  # [<deduped-raw-rows>]
   return "$rc"
 }
 
+# Positive, bounded evidence for Pi's pending delivery records, never a queue
+# or an acknowledgement authority. Written under the queue lock before the
+# corresponding atomic removal; readers must also prove the exact row absent.
+# The sidecar has a v1 header and at most 128 exact acknowledged raw rows,
+# bounded to a 64 KiB body. Oversized/evicted rows confer no positive evidence.
+# Failure to write this optional evidence cannot change the ack's semantics:
+# a reader without proof must keep its pending delivery actionable.
+record_acknowledged_rows() {
+  local remaining=$1 receipt="$STATE/.wake-acknowledged" tmp header links
+  if { [ -e "$receipt" ] || [ -L "$receipt" ]; } && { [ ! -f "$receipt" ] || [ -L "$receipt" ]; }; then
+    return 1
+  fi
+  if [ -f "$receipt" ]; then
+    links=$(stat -c '%h' -- "$receipt" 2>/dev/null) \
+      || links=$(stat -f '%l' "$receipt" 2>/dev/null) || return 1
+    [ "$links" = 1 ] || return 1
+  fi
+  tmp=$(mktemp "$STATE/.wake-acknowledged.XXXXXX") || return 1
+  if ! {
+    printf 'firstmate-wake-acknowledged: v1\n'
+    {
+      if [ -f "$receipt" ]; then
+        IFS= read -r header < "$receipt" || header=
+        if [ "$header" = 'firstmate-wake-acknowledged: v1' ]; then
+          awk 'NR > 1' "$receipt"
+        fi
+      fi
+      awk 'FILENAME == ARGV[1] { retained[$0]=1; next } !($0 in retained)' "$remaining" "$FM_WAKE_QUEUE"
+    } | tail -n 128 | LC_ALL=C awk '
+      { rows[NR]=$0 }
+      END {
+        for (i=NR; i>0; i--) {
+          size=length(rows[i])+1
+          if (bytes+size <= 65536) { keep[i]=1; bytes+=size }
+        }
+        for (i=1; i<=NR; i++) if (i in keep) print rows[i]
+      }
+    '
+  } > "$tmp" || ! chmod 0600 "$tmp" || ! mv -f -- "$tmp" "$receipt"; then
+    rm -f -- "$tmp"
+    return 1
+  fi
+}
+
 # shellcheck disable=SC2317,SC2329 # Invoked by trap handlers below.
 cleanup() {
   local status=$?
@@ -722,6 +766,9 @@ if [ -n "$ACK_THROUGH" ]; then
     if [ "${RECOVERY_MARKER_TOKEN##*:}" != "$ACK_GENERATION" ]; then
       RECOVERY_ACK_MOVED=true
     fi
+  fi
+  if [ "$ACK_REMOVED" -gt 0 ] && ! record_acknowledged_rows "$DRAIN_TMP"; then
+    echo "wake drain: optional acknowledgement evidence unavailable; pending notifications remain actionable" >&2
   fi
   if ! _fm_atomic_replace "$DRAIN_TMP" "$FM_WAKE_QUEUE"; then
     echo "wake drain: acknowledged wakes could not be consumed safely" >&2

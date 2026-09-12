@@ -1390,7 +1390,7 @@ ${context.command}
     }
   }
 
-  function enqueueWake(message: string, acceptedGeneration: number, recoveryProbe = false): Promise<void> {
+  function enqueueWake(message: string, acceptedGeneration: number, recoveryProbe = false, mainOwned?: () => void): Promise<void> {
     const acceptedSelectionRevision = branchSelectionRevision;
     const delivery = branchChain
       .then(async () => {
@@ -1437,7 +1437,10 @@ ${context.command}
           wakeGrantScript,
           String(acceptedGeneration),
         );
-        if (grant === "main-owned") throw new Error("the wake rows are already claimed by main");
+        if (grant === "main-owned") {
+          mainOwned?.();
+          throw new Error("the wake rows are already claimed by main");
+        }
         if (grant !== "published") throw new Error("could not record the branch's eligible row snapshot");
         // A row can still arrive between this re-check and the model starting
         // the drain; that residual is accepted by the confused-agent-grade boundary.
@@ -1556,7 +1559,7 @@ ${context.command}
     if (branchBroken && !recoveryProbe) return; // main owns every wake inside the cooldown window
     if (!collectCurrentMainDialog()) return;
     if (recoveryProbe && providerRecovery) providerRecovery.probeInFlight = true;
-    offer.accept(enqueueWake(offer.message, generation, recoveryProbe));
+    offer.accept(enqueueWake(offer.message, generation, recoveryProbe, () => { offer.mainOwned = true; }));
   });
 
   // Pi awaits every extension event handler, so an awaited ownership read

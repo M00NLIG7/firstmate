@@ -19,6 +19,51 @@ GUARD="$ROOT/bin/fm-guard.sh"
 TMP_ROOT=$(fm_test_tmproot fm-wake-tests)
 
 
+test_acknowledgement_receipts_are_exact_bounded_and_optional() {
+  local dir state first second header_bytes bytes lines
+  dir=$(make_case acknowledgement-receipts)
+  state="$dir/state"
+  append_wake "$state" signal first.status 'working: first' || fail "receipt first append failed"
+  append_wake "$state" signal second.status 'working: second' || fail "receipt second append failed"
+  first=$(awk -F '\t' '$2 == 1 { print }' "$state/.wake-queue")
+  second=$(awk -F '\t' '$2 == 2 { print }' "$state/.wake-queue")
+  FM_STATE_OVERRIDE="$state" "$GRANT" activate "$$" receipt-test || fail "receipt branch activation failed"
+  FM_STATE_OVERRIDE="$state" "$GRANT" publish receipt-test 2 || fail "receipt branch grant failed"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/main.out" 2> "$dir/main.err" || fail "receipt main drain failed"
+  [ ! -e "$state/.wake-acknowledged" ] || fail "presentation fabricated acknowledgement evidence"
+  ack_drain_err "$state" "$dir/main.err" || fail "receipt main ack failed"
+  grep -Fx "$first" "$state/.wake-acknowledged" >/dev/null || fail "acknowledged row missing from receipt"
+  if grep -Fx "$second" "$state/.wake-acknowledged" >/dev/null; then fail "main receipt included a branch-owned row"; fi
+  grep -Fx "$second" "$state/.wake-queue" >/dev/null || fail "branch row disappeared during main ack"
+  FM_SUPERVISION_ACTOR=branch FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/branch.out" 2> "$dir/branch.err" || fail "receipt branch drain failed"
+  FM_SUPERVISION_ACTOR=branch ack_drain_err "$state" "$dir/branch.err" || fail "receipt branch ack failed"
+  grep -Fx "$second" "$state/.wake-acknowledged" >/dev/null || fail "branch acknowledgement missing from receipt"
+  [ ! -s "$state/.wake-queue" ] || fail "acknowledged receipt rows remained queued"
+
+  FM_STATE_OVERRIDE="$state" FM_REAL_ROOT="$ROOT" bash -c '
+    . "$FM_REAL_ROOT/bin/fm-wake-lib.sh"
+    payload=$(printf "%02048d" 0)
+    for ((i=1; i<=130; i++)); do fm_wake_append check "bulk-$i" "$payload" || exit 1; done
+  ' || fail "bounded receipt fixture append failed"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/bulk.out" 2> "$dir/bulk.err" || fail "bulk receipt drain failed"
+  ack_drain_err "$state" "$dir/bulk.err" || fail "bulk receipt ack failed"
+  header_bytes=$(printf 'firstmate-wake-acknowledged: v1\n' | wc -c | tr -d ' ')
+  bytes=$(wc -c < "$state/.wake-acknowledged" | tr -d ' ')
+  lines=$(wc -l < "$state/.wake-acknowledged" | tr -d ' ')
+  [ "$bytes" -le "$((65536 + header_bytes))" ] && [ "$lines" -le 129 ] || fail "receipt exceeded its bounded format"
+  grep -F "$(printf '\t132\tcheck\tbulk-130\t')" "$state/.wake-acknowledged" >/dev/null || fail "receipt lost its newest row"
+
+  cp "$state/.wake-acknowledged" "$dir/receipt-before"
+  ln "$state/.wake-acknowledged" "$dir/receipt-alias" || fail "receipt hardlink fixture failed"
+  append_wake "$state" check last 'check: final fixture' || fail "optional receipt append failed"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$dir/final.out" 2> "$dir/final.err" || fail "optional receipt drain failed"
+  ack_drain_err "$state" "$dir/final.err" > "$dir/ack.out" 2> "$dir/ack.err" || fail "optional receipt failure changed acknowledgement semantics"
+  [ ! -s "$state/.wake-queue" ] || fail "optional evidence failure blocked a valid acknowledgement"
+  cmp -s "$dir/receipt-before" "$dir/receipt-alias" || fail "receipt writer modified a linked file"
+  grep -F 'optional acknowledgement evidence unavailable' "$dir/ack.err" >/dev/null || fail "receipt failure was silent"
+  pass "acknowledgement receipts contain only consumed rows, stay bounded and cannot weaken actor ownership"
+}
+
 test_concurrent_append_and_drain() {
   local dir state out1 out2 pids i pid count unique malformed sequence generation
   dir=$(make_case concurrent)
@@ -1921,6 +1966,7 @@ test_acknowledged_stall_publication_survives_pre_marker_crash
 test_empty_prefix_mate_preserves_other_mate_receipt
 test_self_announced_append_guards
 test_historical_annotation_skips_announced_status
+test_acknowledgement_receipts_are_exact_bounded_and_optional
 test_concurrent_append_and_drain
 test_signal_catchup_without_running_watcher
 test_stale_enqueue_before_suppressor

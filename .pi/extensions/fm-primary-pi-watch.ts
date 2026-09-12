@@ -11,26 +11,33 @@
 // Terminal quit leaves the final generation stopped so late callbacks cannot rearm.
 // Stale callbacks from a prior generation are no-ops against the active replacement.
 //
-// Delivery versus consumption (stated once here):
-// A main follow-up is delivered once Pi accepts it (sendUserMessage resolves).
-// The successor pipeline never waits for the model to read it: a follow-up
-// queued while main is streaming joins the running run without ever raising
-// before_agent_start, so waiting on that event stalls every later close.
-// Consumption is tracked only so a replacement can replay a follow-up Pi had
-// not consumed. An idle main consumes at before_agent_start; a streaming main
-// consumes at the user message_start carrying the exact wake text; either
-// event finishes the pending record, and a still-unconsumed record rides the
-// replacement handoff.
+// Main delivery (one owner): successor creation never waits for main. Ordinary
+// working-only signal closes may wait in the existing pending handoff while
+// main is busy and share one custom operational message at a terminal no-tool
+// response or idle boundary. Decisions, unknown evidence and failures retain
+// their direct path. No model setting or native user queue is changed.
+// Deferred groups use Pi's supported custom-message API, not user-input
+// preflight: sendUserMessage returns void and idle/pending predicates do not
+// cover an asynchronous input handler. Machine delivery must not impersonate
+// or bypass the meaning of human input. Native consumption only marks a group
+// as observed; its exact sources retire solely on positive acknowledgement.
+// bin/fm-wake-drain.sh owns the bounded acknowledgement-evidence format.
+// Missing/changed evidence remains actionable. An idle native-empty boundary
+// may recover an unacknowledged custom group, with the existing retry bound;
+// a still-queued or actively handled group is never duplicated. Replacement
+// replays pending records rather than relying on an old session's acceptance.
+// Direct legacy user notifications keep their existing consumption/replay path.
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { Box, Container, Text, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { registerFirstmateTool } from "./lib/fm-native-contract.ts";
 import {
+  type BranchDispatchOffer,
   createBranchDispatchOffer,
   FM_BRANCH_DISPATCH_EVENT,
   scopeForUnreadWake,
@@ -54,12 +61,21 @@ type CloseClassification = {
   message: string;
 };
 
+type WakeSource = {
+  rows: string[];
+  files: Array<{name: string; identity: string; hash: string}>;
+};
+
 type PendingActionableClose = {
   version: 1;
   token: string;
   message: string;
   predecessorArmPid: string;
   delivered?: true;
+  deferred?: true;
+  source?: WakeSource;
+  attempts?: number;
+  consumed?: true;
 };
 
 type ReplacementActionableHandoff = {
@@ -88,6 +104,7 @@ type SessionGeneration = {
   stopping: boolean;
   replacement: boolean;
   child: ChildProcess | null;
+  continuityReady: boolean;
   retryTimer: ReturnType<typeof setTimeout> | null;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
   retryFailures: number;
@@ -95,6 +112,8 @@ type SessionGeneration = {
   seq: number;
   pendingActionables: PendingActionableClose[];
   cleanupFailure: string;
+  mainFlushing: boolean;
+  mainDeliveryFailure: string;
   // Main follow-ups Pi has accepted but not yet consumed, by pending token.
   // Never cleared at shutdown: a delivery continuation that runs after the
   // replacement began reads it to tell a main-queued wake (replayed) from a
@@ -148,6 +167,7 @@ const armReadyTimeoutMs = positiveInteger(
   process.platform === "win32" ? 35000 : 12000,
 );
 const armRetireTimeoutMs = positiveInteger("FM_WATCH_ARM_RETIRE_TIMEOUT_MS", 1000);
+const deferredMessageType = "fm-watcher-pending";
 const repairOnlyHint = "call fm_watch_arm_pi again only after a later notification says the cycle is missing, failed, or unhealthy";
 const shuttingDownMessage = "watcher: not armed - Pi session is shutting down";
 
@@ -270,13 +290,104 @@ function nodeErrorCode(error: unknown): string {
     : "";
 }
 
+function readStateEvidence(name: string): {text: string; identity: string; hash: string} {
+  if (!/^[A-Za-z0-9._-]+$/.test(name)) throw new Error("invalid source filename");
+  const path = `${state}/${name}`;
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size > 256 * 1024) throw new Error("unsafe or oversized source");
+    const version = (value: typeof stat) => `${value.dev}:${value.ino}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`;
+    const text = readFileSync(fd, "utf8");
+    if (version(stat) !== version(fstatSync(fd)) || version(stat) !== version(lstatSync(path))) throw new Error("source changed during read");
+    return {text, identity: version(stat), hash: createHash("sha256").update(text).digest("hex")};
+  } finally { closeSync(fd); }
+}
+
+function captureWakeSource(message: string): WakeSource | undefined {
+  if (!/^signal:/.test(message)) return;
+  try {
+    const keys = message.slice(7).trim().split(/\s+/).map(path => path.split("/").pop()!);
+    if (keys.length === 0 || keys.length > 16 || keys.some(key => !/^[A-Za-z0-9._-]+\.status$/.test(key))) return;
+    const queue = readStateEvidence(".wake-queue");
+    const rows = queue.text.split("\n").filter(Boolean).filter(line => {
+      const fields = line.split("\t");
+      return fields.length === 5 && /^[0-9]+$/.test(fields[0]) && /^[1-9][0-9]*$/.test(fields[1]) && fields[2] === "signal" && keys.includes(fields[3]);
+    });
+    if (rows.length > 128 || rows.join("\n").length > 16 * 1024 || keys.some(key => !rows.some(row => row.split("\t")[3] === key))) return;
+    const files = [...new Set(keys.flatMap(key => [key, key.replace(/\.status$/, ".meta")]))].map(name => {
+      const evidence = readStateEvidence(name);
+      return {name, identity: evidence.identity, hash: evidence.hash};
+    });
+    if (readStateEvidence(".wake-queue").identity !== queue.identity) return;
+    return {rows, files};
+  } catch { return; }
+}
+
+function sourceAcknowledged(pending: PendingActionableClose): boolean {
+  if (!pending.source) return false;
+  try {
+    const queue = new Set(readStateEvidence(".wake-queue").text.split("\n"));
+    const receipt = readStateEvidence(".wake-acknowledged").text.split("\n");
+    if (receipt.shift() !== "firstmate-wake-acknowledged: v1") return false;
+    const acknowledged = new Set(receipt);
+    let unchanged: boolean | undefined;
+    const sourceUnchanged = (): boolean => {
+      if (unchanged !== undefined) return unchanged;
+      try {
+        unchanged = pending.source!.files.every(file => {
+          const current = readStateEvidence(file.name);
+          return current.identity === file.identity && current.hash === file.hash;
+        });
+      } catch { unchanged = false; }
+      return unchanged;
+    };
+    if (!pending.source.rows.every(row => {
+      if (queue.has(row)) return false;
+      if (acknowledged.has(row)) return true;
+      if (!sourceUnchanged()) return false;
+      const original = row.split("\t");
+      // A later real acknowledgement can cover an identical repeated source
+      // after bounded receipt eviction. Key/text similarity alone cannot:
+      // every captured status/meta identity and byte hash must still match.
+      return receipt.some(later => {
+        const fields = later.split("\t");
+        return fields.length === 5 && /^[0-9]+$/.test(fields[0]) && /^[1-9][0-9]*$/.test(fields[1]) &&
+          fields.slice(2).join("\t") === original.slice(2).join("\t") &&
+          BigInt(fields[0]) >= BigInt(original[0]) && BigInt(fields[1]) > BigInt(original[1]);
+      });
+    })) return false;
+    // Changed evidence still needs a notification. Once that notification has
+    // actually reached main, these older exact rows can retire on their own
+    // acknowledgement without deleting or claiming any newer source row.
+    return pending.consumed === true || sourceUnchanged();
+  } catch { return false; }
+}
+
 function createPendingActionable(message: string, predecessorArmPid: string): PendingActionableClose {
   return {
     version: 1,
     token: `${process.pid}-${Date.now()}-${++replacementCoordinator.nextTokenId}`,
     message,
     predecessorArmPid,
+    source: captureWakeSource(message),
   };
+}
+
+function validWakeSource(value: unknown): value is WakeSource {
+  if (typeof value !== "object" || value === null) return false;
+  const source = value as WakeSource;
+  if (!Array.isArray(source.rows) || source.rows.length === 0 || source.rows.length > 128 || !Array.isArray(source.files) || source.files.length > 32) return false;
+  const names = new Set<string>();
+  for (const row of source.rows) {
+    if (typeof row !== "string" || row.includes("\n") || row.includes("\r")) return false;
+    const fields = row.split("\t");
+    if (fields.length !== 5 || !/^[0-9]+$/.test(fields[0]) || !/^[1-9][0-9]*$/.test(fields[1]) || fields[2] !== "signal" || !/^[A-Za-z0-9._-]+\.status$/.test(fields[3])) return false;
+    names.add(fields[3]);
+    names.add(fields[3].replace(/\.status$/, ".meta"));
+  }
+  if (source.rows.join("\n").length > 16 * 1024 || names.size !== source.files.length || new Set(source.files.map(file => file?.name)).size !== names.size) return false;
+  return source.files.every(file => file && names.has(file.name) && typeof file.identity === "string" && /^[0-9]+:[0-9]+:[0-9]+:[0-9.]+:[0-9.]+$/.test(file.identity) && typeof file.hash === "string" && /^[0-9a-f]{64}$/.test(file.hash));
 }
 
 function validatePendingActionable(value: unknown): PendingActionableClose {
@@ -290,11 +401,20 @@ function validatePendingActionable(value: unknown): PendingActionableClose {
     typeof (value as { predecessorArmPid?: unknown }).predecessorArmPid !== "string" ||
     !/^[0-9]*$/.test((value as { predecessorArmPid: string }).predecessorArmPid) ||
     ((value as { delivered?: unknown }).delivered !== undefined &&
-      (value as { delivered?: unknown }).delivered !== true)
+      (value as { delivered?: unknown }).delivered !== true) ||
+    ((value as { deferred?: unknown }).deferred !== undefined &&
+      (value as { deferred?: unknown }).deferred !== true)
   ) {
     throw new Error(`invalid Pi replacement actionable handoff at ${actionableHandoff}`);
   }
-  return value as PendingActionableClose;
+  const pending = value as PendingActionableClose;
+  if ((pending.source !== undefined && !validWakeSource(pending.source)) ||
+      (pending.deferred && !pending.source) ||
+      (pending.consumed !== undefined && (pending.consumed !== true || !pending.deferred)) ||
+      (pending.attempts !== undefined && (!pending.deferred || !Number.isSafeInteger(pending.attempts) || pending.attempts < 0))) {
+    throw new Error(`invalid Pi pending source evidence at ${actionableHandoff}`);
+  }
+  return pending;
 }
 
 function validateReplacementHandoff(value: unknown): PendingActionableClose[] {
@@ -414,6 +534,7 @@ function createGeneration(): SessionGeneration {
     stopping: false,
     replacement: false,
     child: null,
+    continuityReady: false,
     retryTimer: null,
     cleanupTimer: null,
     retryFailures: 0,
@@ -421,6 +542,8 @@ function createGeneration(): SessionGeneration {
     seq: 0,
     pendingActionables: [],
     cleanupFailure: "",
+    mainFlushing: false,
+    mainDeliveryFailure: "",
     unconsumedWakes: new Map(),
     deferredClose: null,
   };
@@ -463,7 +586,7 @@ async function stopSessionGeneration(generation: SessionGeneration, replacement:
   generation.replacement = replacement;
   let persistedTokens = "";
   try {
-    if (replacement && generation.pendingActionables.length > 0) {
+    if (replacement && lockOwnership() === "owned" && generation.pendingActionables.length > 0) {
       persistReplacementHandoff(generation.pendingActionables);
       persistedTokens = generation.pendingActionables.map((pending) => pending.token).join("\n");
     }
@@ -482,7 +605,7 @@ async function stopSessionGeneration(generation: SessionGeneration, replacement:
     await waitForGenerationChildClose(child);
   }
   const currentTokens = generation.pendingActionables.map((pending) => pending.token).join("\n");
-  if (replacement && currentTokens && currentTokens !== persistedTokens) {
+  if (replacement && lockOwnership() === "owned" && currentTokens && currentTokens !== persistedTokens) {
     persistReplacementHandoff(generation.pendingActionables);
   }
 }
@@ -495,6 +618,112 @@ process.once("exit", cleanupOnProcessExit);
 export default function (pi: ExtensionAPI) {
   let generation = createGeneration();
   activateGeneration(generation);
+  let mainContext: ExtensionContext | undefined;
+
+  // Deliberately narrow structural eligibility, not semantic novelty: every
+  // source line must declare ordinary working activity. Any other verb/history,
+  // decision, check or uncertain source keeps the established direct path.
+  function canDeferOrdinarySignal(pending: PendingActionableClose, message: string): boolean {
+    if (!pending.source || !/^signal:/.test(message) || message.includes("watcher: FAILED")) return false;
+    const scope = scopeForUnreadWake(state, false);
+    if (scope.corrupted || scope.needsDecisionKeys.length > 0) return false;
+    try {
+      if (!pending.source.files.every(file => {
+        const current = readStateEvidence(file.name);
+        return current.identity === file.identity && current.hash === file.hash;
+      })) return false;
+      const keys = message.slice(7).trim().split(/\s+/).map(path => path.split("/").pop()!);
+      // The exact producer snapshot survives an acknowledgement during branch
+      // fallback. Requiring its rows to remain queued would miss that race.
+      const rows = pending.source.rows.map(line => line.split("\t"));
+      return keys.length > 0 && keys.every(key => {
+        if (!/^[A-Za-z0-9._-]+\.status$/.test(key)) return false;
+        const matching = rows.filter(row => row[2] === "signal" && row[3] === key);
+        if (matching.length === 0 || matching.some(row => row.length !== 5 || !/^working:/.test(row[4]))) return false;
+        const history = readStateEvidence(key).text.trim().split("\n");
+        return history.length > 0 && history.every(line => /^working:/.test(line));
+      });
+    } catch { return false; }
+  }
+
+  function reconcileMainSources(owner: SessionGeneration): void {
+    if (!generationIsLive(owner) || lockOwnership() !== "owned") return;
+    for (const pending of [...owner.pendingActionables]) {
+      if (!pending.deferred || !sourceAcknowledged(pending)) continue;
+      owner.unconsumedWakes.delete(pending.token);
+      pending.delivered = true;
+      try {
+        finishPendingActionable(owner, pending);
+      } catch (error) {
+        surfaceCleanupFailure(owner, error);
+        schedulePendingCleanup(owner);
+      }
+    }
+    if (!owner.pendingActionables.some(item => item.deferred)) owner.mainDeliveryFailure = "";
+  }
+
+  function mainDeliveryFailure(owner: SessionGeneration, message: string): void {
+    if (owner.mainDeliveryFailure === message) return;
+    owner.mainDeliveryFailure = message;
+    surfaceFailure(owner, message);
+  }
+
+  async function flushMain(owner: SessionGeneration, finalTurn = false): Promise<void> {
+    if (!generationIsLive(owner) || owner.restoring || owner.mainFlushing) return;
+    if (lockOwnership() !== "owned") {
+      if (owner.pendingActionables.some(item => item.deferred)) mainDeliveryFailure(owner, "watcher: FAILED - deferred delivery lost session ownership; its source records remain pending");
+      return;
+    }
+    reconcileMainSources(owner);
+    if (!owner.pendingActionables.some(item => item.deferred && !item.delivered) || !owner.continuityReady) return;
+    if (typeof mainContext?.isIdle !== "function" || typeof mainContext.hasPendingMessages !== "function" || typeof pi.sendMessage !== "function") {
+      mainDeliveryFailure(owner, "watcher: FAILED - Pi lacks the required custom-delivery observations; pending source records are retained");
+      return;
+    }
+    const idle = mainContext.isIdle() && !mainContext.hasPendingMessages();
+    if (!idle && !finalTurn) return;
+    // Only idle AND an empty native pending set proves that a previously
+    // accepted but unconsumed group cannot still be queued. Never infer this
+    // from sendUserMessage resolving or from an input hook running.
+    if (idle) {
+      for (const [token, wake] of owner.unconsumedWakes) {
+        if (wake.pending.deferred) owner.unconsumedWakes.delete(token);
+      }
+    }
+    const candidates = owner.pendingActionables.filter(item => item.deferred && !item.delivered && !owner.unconsumedWakes.has(item.token) && (idle || finalTurn || !(item.attempts ?? 0)));
+    const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
+    if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
+      mainDeliveryFailure(owner, `watcher: FAILED - no positive source acknowledgement after ${retryLimit} delivery attempts; pending notification records are retained for recovery`);
+    }
+    if (pending.length === 0) return;
+    owner.mainFlushing = true;
+    // A corrupt/missing/changed source is still actionable, never silent.
+    const source = scopeForUnreadWake(state, false);
+    const content = encodeFirstmateOperationalInput("watcher", `FIRSTMATE WATCHER WAKE: ${[...new Set(pending.map(item => item.message))].join("\n")}\n\nRun bin/fm-wake-drain.sh first and handle the queued wake. Watcher continuity is extension-owned.${source.corrupted ? " Source revalidation was uncertain; preserve and reconcile every pending obligation." : ""}`);
+    for (const item of pending) {
+      item.attempts = (item.attempts ?? 0) + 1;
+      delete item.consumed;
+      owner.unconsumedWakes.set(item.token, {content, pending: item});
+    }
+    try {
+      persistReplacementHandoff(owner.pendingActionables);
+      pi.sendMessage({customType: deferredMessageType, content, display: false}, {deliverAs: "followUp", triggerTurn: true});
+    } catch (error) {
+      for (const item of pending) owner.unconsumedWakes.delete(item.token);
+      mainDeliveryFailure(owner, `watcher: FAILED - deferred delivery failed; pending source records retained: ${String(error)}`);
+    } finally {
+      owner.mainFlushing = false;
+      if (generationIsLive(owner)) {
+        reconcileMainSources(owner);
+        // A synchronous rejected custom send may leave no new lifecycle event.
+        // Retry only native-idle/native-empty custom delivery, within the bound;
+        // never apply this inference to the opaque user-input preflight path.
+        if (mainContext?.isIdle() && !mainContext.hasPendingMessages() && pending.some(item => owner.pendingActionables.includes(item) && (item.attempts ?? 0) < retryLimit)) {
+          void flushMain(owner);
+        }
+      }
+    }
+  }
 
   let calmPresentation: CalmPresentationState = {
     active: false,
@@ -537,10 +766,20 @@ export default function (pi: ExtensionAPI) {
 
   // Pi consumed a main follow-up: an idle main at before_agent_start, a
   // streaming main at the user message_start that joins the running run.
-  function consumeWake(owner: SessionGeneration, text: string): void {
+  function consumeWake(owner: SessionGeneration, text: string, custom = false): void {
+    if (!generationIsLive(owner) || lockOwnership() !== "owned") return;
     for (const [token, wake] of owner.unconsumedWakes) {
-      if (wake.content !== text) continue;
+      if (wake.content !== text || (wake.pending.deferred && !custom)) continue;
       owner.unconsumedWakes.delete(token);
+      if (wake.pending.deferred) {
+        wake.pending.consumed = true;
+        try {
+          persistReplacementHandoff(owner.pendingActionables);
+        } catch (error) {
+          mainDeliveryFailure(owner, `watcher: FAILED - could not persist pending source handling: ${String(error)}`);
+        }
+        continue;
+      }
       wake.pending.delivered = true;
       try {
         finishPendingActionable(owner, wake.pending);
@@ -548,7 +787,6 @@ export default function (pi: ExtensionAPI) {
         surfaceCleanupFailure(owner, error);
         schedulePendingCleanup(owner);
       }
-      return;
     }
   }
 
@@ -594,7 +832,7 @@ export default function (pi: ExtensionAPI) {
     return confirmHandlingDelivery(snapshot());
   }
 
-  function offerWakeToBranch(message: string): Promise<void> | null {
+  function offerWakeToBranch(message: string): BranchDispatchOffer | null {
     const heartbeat = /^heartbeat($|:)/.test(message);
     // A check-kind close (merge-confirmation polls, Relay mentions,
     // credential/auth failures, and every other legitimately main-only
@@ -629,7 +867,7 @@ export default function (pi: ExtensionAPI) {
     const eligible = !isCheckTrigger && !isNeedsDecisionTrigger && scope.eligible;
     const offer = createBranchDispatchOffer(message, scope.projects, heartbeat, eligible);
     pi.events?.emit?.(FM_BRANCH_DISPATCH_EVENT, offer);
-    return offer.accepted ? offer.settlement : null;
+    return offer.accepted ? offer : null;
   }
 
   async function deliverActionableWake(
@@ -638,7 +876,7 @@ export default function (pi: ExtensionAPI) {
     repairFailed: boolean,
     pending: PendingActionableClose,
     recovery?: { generation: string; watcherPid: string },
-  ): Promise<boolean> {
+  ): Promise<boolean | "deferred"> {
     if (!generationIsLive(owner)) return false;
     if (recovery) {
       const confirmed = confirmHandlingDeliveryWithRetry(owner, recovery);
@@ -654,10 +892,20 @@ export default function (pi: ExtensionAPI) {
       const branchDelivery = offerWakeToBranch(message);
       if (branchDelivery) {
         try {
-          await branchDelivery;
+          await branchDelivery.settlement;
           return true;
-        } catch {}
+        } catch {
+          if (!branchDelivery.mainOwned) {
+            return await sendWake(owner, `${message}\n\nSupervision branch delivery failed; handle this notification on main and preserve its source rows.`, pending);
+          }
+        }
       }
+    }
+    if (!generationIsLive(owner)) return false;
+    if (!repairFailed && lockOwnership() === "owned" && pending.source && typeof mainContext?.isIdle === "function" && typeof mainContext.hasPendingMessages === "function" && typeof pi.sendMessage === "function" && canDeferOrdinarySignal(pending, message)) {
+      pending.deferred = true;
+      persistReplacementHandoff(owner.pendingActionables);
+      return "deferred";
     }
     return await sendWake(owner, message, pending);
   }
@@ -674,7 +922,7 @@ export default function (pi: ExtensionAPI) {
   ): void {
     if (owner.pendingActionables.some((item) => item.token === pending.token)) return;
     owner.pendingActionables.push(pending);
-    if (owner.stopping && owner.replacement) {
+    if (owner.stopping && owner.replacement && lockOwnership() === "owned") {
       let replacementPending = pending;
       try {
         mergeReplacementHandoff(pending);
@@ -725,6 +973,16 @@ export default function (pi: ExtensionAPI) {
     owner.restoring = true;
     const attemptedCleanup = new Set<string>();
     try {
+      // A recovered deferred group still owes successor verification. Skipping
+      // its old delivery loop must not let it prompt before the new arm is ready.
+      if (!owner.continuityReady && owner.pendingActionables.some(item => item.deferred && !item.delivered) && owner.pendingActionables.every(item => item.deferred || item.delivered)) {
+        const restoration = await restoreAfterActionableClose(owner, owner.pendingActionables[0].predecessorArmPid);
+        if (!generationIsLive(owner)) return;
+        if (restoration.failure) {
+          mainDeliveryFailure(owner, restoration.failure);
+          return;
+        }
+      }
       while (generationIsLive(owner) && owner.pendingActionables.length > 0) {
         for (const delivered of owner.pendingActionables.filter((item) => item.delivered && !attemptedCleanup.has(item.token))) {
           attemptedCleanup.add(delivered.token);
@@ -737,7 +995,7 @@ export default function (pi: ExtensionAPI) {
         // A record Pi has accepted but not consumed is neither redelivered
         // nor finished here: consumption finishes it, replacement replays it.
         const pending = owner.pendingActionables.find(
-          (item) => !item.delivered && !owner.unconsumedWakes.has(item.token),
+          (item) => !item.delivered && !item.deferred && !owner.unconsumedWakes.has(item.token) && replacementCoordinator.deliveries.get(item.token)?.owner !== owner,
         );
         if (!pending) break;
         const existingClaim = replacementCoordinator.deliveries.get(pending.token);
@@ -773,33 +1031,41 @@ export default function (pi: ExtensionAPI) {
             releaseClaim();
             return;
           }
-          const message = restoration.failure ? `${pending.message}\n\n${restoration.failure}` : pending.message;
-          const delivered = await deliverActionableWake(owner, message, Boolean(restoration.failure), pending, restoration.recovery);
-          if (!delivered) {
-            settleClaim("failed");
-            releaseClaim();
-            return;
-          }
-          const awaitingConsumption = owner.unconsumedWakes.has(pending.token);
-          if (awaitingConsumption && !generationIsLive(owner)) {
-            // Pi accepted the follow-up, then the session was replaced before
-            // this continuation ran: the shutdown persisted the still-pending
-            // record, so a replacement waiting on this claim must replay it.
-            settleClaim("failed");
-            releaseClaim();
-            return;
-          }
-          settleClaim("delivered");
-          if (!awaitingConsumption) {
-            // The branch handled it, or Pi consumed it before this ran.
-            pending.delivered = true;
+          // An accepted branch turn or native submission must not hold up
+          // the next close's successor. The exact delivery claim prevents
+          // duplicate dispatch while restoration progresses independently.
+          void (async () => {
+            let completed = false;
             try {
-              finishPendingActionable(owner, pending);
+              const message = restoration.failure ? `${pending.message}\n\n${restoration.failure}` : pending.message;
+              const delivered = await deliverActionableWake(owner, message, Boolean(restoration.failure), pending, restoration.recovery);
+              if (!delivered || delivered === "deferred") {
+                settleClaim("failed");
+                completed = delivered === "deferred";
+                return;
+              }
+              const awaitingConsumption = owner.unconsumedWakes.has(pending.token);
+              if (awaitingConsumption && !generationIsLive(owner)) {
+                // Replacement replays native-accepted but unconsumed records.
+                settleClaim("failed");
+                return;
+              }
+              settleClaim("delivered");
+              if (!awaitingConsumption) {
+                pending.delivered = true;
+                try { finishPendingActionable(owner, pending); }
+                catch (error) { surfaceCleanupFailure(owner, error); }
+              }
+              completed = true;
             } catch (error) {
-              surfaceCleanupFailure(owner, error);
+              settleClaim("failed");
+              surfaceFailure(owner, `watcher: FAILED - Pi extension could not deliver an actionable wake\n${String(error)}`);
+            } finally {
+              releaseClaim();
+              // Do not turn a rejected delivery into a new retry policy.
+              if (completed && generationIsLive(owner)) void processPendingActionables(owner);
             }
-          }
-          releaseClaim();
+          })();
         } catch (error) {
           settleClaim("failed");
           releaseClaim();
@@ -826,6 +1092,7 @@ export default function (pi: ExtensionAPI) {
         if (deferred && !owner.child && !owner.retryTimer) {
           scheduleRetry(owner, deferred.message, deferred.predecessorArmPid);
         }
+        void flushMain(owner);
       }
     }
   }
@@ -969,6 +1236,7 @@ export default function (pi: ExtensionAPI) {
       stdio: ["ignore", "pipe", "pipe"],
     });
     owner.child = armChild;
+    owner.continuityReady = false;
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -988,6 +1256,7 @@ export default function (pi: ExtensionAPI) {
       if (readinessSettled) return;
       readinessSettled = true;
       verified = ready;
+      if (generationIsLive(owner) && owner.child === armChild) owner.continuityReady = ready;
       resolveReadiness(ready);
     };
     const observeEstablishedArm = (): void => {
@@ -1003,9 +1272,15 @@ export default function (pi: ExtensionAPI) {
         armPendingActionable.set(armChild, pending);
         enqueuePendingActionable(owner, pending);
       }
+      if (generationIsLive(owner) && owner.continuityReady && !owner.restoring && !armPendingActionable.has(armChild)) {
+        void processPendingActionables(owner);
+      }
     };
     const releaseChild = (): void => {
-      if (owner.child === armChild) owner.child = null;
+      if (owner.child === armChild) {
+        owner.child = null;
+        owner.continuityReady = false;
+      }
     };
     armChild.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
@@ -1060,9 +1335,15 @@ export default function (pi: ExtensionAPI) {
     };
   }
 
-  function activateOwnedWatch(owner: SessionGeneration): ArmResult {
+  function activateOwnedWatch(owner: SessionGeneration, explicitRepair = false): ArmResult {
     if (!generationIsLive(owner)) return { ok: false, message: shuttingDownMessage };
     if (lockOwnership() !== "owned") return startArm(owner);
+    if (explicitRepair) {
+      for (const pending of owner.pendingActionables) {
+        if (pending.deferred && (pending.attempts ?? 0) >= retryLimit && !owner.unconsumedWakes.has(pending.token)) pending.attempts = 0;
+      }
+      owner.mainDeliveryFailure = "";
+    }
     replacementCoordinator.receiver = receiveReplacementActionable;
     let pending: PendingActionableClose[] = [];
     let loadFailure = "";
@@ -1074,6 +1355,9 @@ export default function (pi: ExtensionAPI) {
     }
     const inProcessPending = replacementCoordinator.pending.splice(0);
     for (const actionable of [...pending, ...inProcessPending]) {
+      if (actionable.deferred && !owner.pendingActionables.some(item => item.token === actionable.token)) {
+        delete actionable.consumed;
+      }
       enqueuePendingActionable(owner, actionable);
     }
     if (owner.pendingActionables.length > 0) {
@@ -1090,15 +1374,32 @@ export default function (pi: ExtensionAPI) {
     return result;
   }
 
-  pi.on?.("before_agent_start", (event) => {
+  pi.on?.("before_agent_start", (event, ctx) => {
+    mainContext = ctx;
     consumeWake(generation, event.prompt);
   });
+  pi.on?.("agent_settled", (_event, ctx) => {
+    mainContext = ctx;
+    void flushMain(generation);
+  });
+  // A terminal no-tool response is a native follow-up opportunity even when
+  // a stream of human continuations prevents an agent_settled idle boundary.
+  pi.on?.("turn_end", (event, ctx) => {
+    if (event.message.role !== "assistant" || !["stop", "length"].includes(event.message.stopReason) || event.toolResults.length > 0) return;
+    mainContext = ctx;
+    void flushMain(generation, true);
+  });
   pi.on?.("message_start", (event) => {
-    if (event.message.role !== "user") return;
-    consumeWake(generation, userMessageText(event.message.content));
+    const message = event.message;
+    if (message.role === "user") {
+      consumeWake(generation, userMessageText(message.content));
+    } else if (message.role === "custom" && message.customType === deferredMessageType) {
+      consumeWake(generation, userMessageText(message.content), true);
+    }
   });
 
-  pi.on?.("session_start", async () => {
+  pi.on?.("session_start", async (_event, ctx) => {
+    mainContext = ctx;
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
@@ -1114,7 +1415,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand?.("fm-watch-arm-pi", {
     description: "Arm firstmate watcher supervision through the Pi extension instead of foreground bash.",
     handler: async (_args, ctx) => {
-      const result = activateOwnedWatch(generation);
+      const result = activateOwnedWatch(generation, true);
       ctx.ui.notify(result.message, result.ok ? "info" : "warning");
     },
   });
@@ -1155,7 +1456,7 @@ export default function (pi: ExtensionAPI) {
       return new Container();
     },
     execute: async () => {
-      const result = activateOwnedWatch(generation);
+      const result = activateOwnedWatch(generation, true);
       return {
         content: [{ type: "text", text: result.message }],
         details: result,
