@@ -292,6 +292,10 @@ async function exercise() {
       await wait(() => branchSettled >= index, "main-owned settlement");
       return;
     }
+    if (scenario === "main-owned-late-settlement") {
+      await wait(() => existsSync(`${home}/refused-${index}`), "late main-owned grant barrier");
+      return;
+    }
     if (protectedSource || (scenario === "branch-failure" && index === 1)) await wait(() => events.filter(e => e.kind === "input" && e.source === "extension").length >= index, "protected direct delivery");
     else await wait(() => pending().some((p: any) => p.deferred && p.source?.rows.some((r: string) => r.split("\t")[1] === String(index))), "durable pending source");
     if (earlyAck) ack(latestDrain);
@@ -307,6 +311,22 @@ async function exercise() {
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
     if (runtime) await runtime.dispose(); else session.dispose();
     console.log("ok - real Pi pending delivery main-owned: no custom wake before the owning main turn settles, with durable unacknowledged source");
+    return;
+  }
+  if (scenario === "main-owned-late-settlement") {
+    assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "late main-owned grant did not retain the presented main row");
+    assert.ok(!queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "late main-owned source received a custom wake before its owner finished");
+    release(); await running;
+    await wait(() => events.some(event => event.kind === "agent-settled"), "late main owner turn settlement");
+    assert.equal(calls.length, 1, "late branch settlement delivered before its grant was released");
+    writeFileSync(`${home}/release-1`, "release");
+    await wait(() => branchSettled >= 1, "late main-owned settlement");
+    await wait(() => calls.length === 2 && !session.isStreaming && !rows().trim() && pending().length === 0, "late main-owned post-settlement delivery");
+    assert.ok(events.some(event => event.kind === "provider" && event.number === 2 && event.pending.length === 1 && event.pending[0].deferred), "late main-owned source was not durable until post-settlement delivery");
+    assert.ok(events.some(event => event.kind === "acknowledgement"), "late main-owned source was not acknowledged after post-settlement delivery");
+    writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
+    if (runtime) await runtime.dispose(); else session.dispose();
+    console.log("ok - real Pi pending delivery main-owned-late-settlement: retained source delivers after the owner settles before grant release");
     return;
   }
   if (!noHuman) await session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});

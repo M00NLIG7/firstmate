@@ -51,7 +51,7 @@ SH
 #!/usr/bin/env bash
 "$(dirname "$0")/fm-wake-grant-real.sh" "$@"
 result=$?
-if [ "$result" = 3 ] && { [ "${FM_TEST_SCENARIO:-}" = late-ack ] || [ "${FM_TEST_SCENARIO:-}" = main-owned ]; }; then
+if [ "$result" = 3 ] && { [ "${FM_TEST_SCENARIO:-}" = late-ack ] || [ "${FM_TEST_SCENARIO:-}" = main-owned ] || [ "${FM_TEST_SCENARIO:-}" = main-owned-late-settlement ]; }; then
   seq=${3:?}
   : > "$FM_HOME/refused-$seq"
   while [ ! -f "$FM_HOME/release-$seq" ]; do sleep 0.02; done
@@ -66,7 +66,7 @@ SH
     [ -d "$FM_PI_WAKE_EVIDENCE_DIR" ] || fail "Pi evidence directory does not exist"
   fi
   local ran=0
-  for scenario in baseline current-reload-control current-reload-rollback ordinary idle acknowledged late-ack main-owned protected quiet branch-failure mixed missing-receipt corrupt-receipt drop-once drop-no-human retry-repair delayed-context continuous continuous-unacknowledged replacement exhaustion-crash-prepare exhaustion-recover crash-prepare recover; do
+  for scenario in baseline current-reload-control current-reload-rollback ordinary idle acknowledged late-ack main-owned main-owned-late-settlement protected quiet branch-failure mixed missing-receipt corrupt-receipt drop-once drop-no-human retry-repair delayed-context continuous continuous-unacknowledged replacement exhaustion-crash-prepare exhaustion-recover crash-prepare recover; do
     case "${FM_TEST_SCENARIO:-}" in
       "$scenario") ;;
       "")

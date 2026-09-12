@@ -619,6 +619,7 @@ export default function (pi: ExtensionAPI) {
   let generation = createGeneration();
   activateGeneration(generation);
   let mainContext: ExtensionContext | undefined;
+  let mainHandling = false;
 
   // Deliberately narrow structural eligibility, not semantic novelty: every
   // source line must declare ordinary working activity. Any other verb/history,
@@ -685,7 +686,7 @@ export default function (pi: ExtensionAPI) {
     }
   }
 
-  async function flushMain(owner: SessionGeneration, finalTurn = false, allowMainPresented = false): Promise<void> {
+  async function flushMain(owner: SessionGeneration, finalTurn = false): Promise<void> {
     if (!generationIsLive(owner) || owner.restoring || owner.mainFlushing) return;
     if (lockOwnership() !== "owned") {
       if (owner.pendingActionables.some(item => item.deferred)) mainDeliveryFailure(owner, "watcher: FAILED - deferred delivery lost session ownership; its source records remain pending");
@@ -712,7 +713,7 @@ export default function (pi: ExtensionAPI) {
       !item.delivered &&
       !owner.unconsumedWakes.has(item.token) &&
       (idle || finalTurn || !(item.attempts ?? 0)) &&
-      !(mainPresentationOwns(item) && !allowMainPresented),
+      !(mainPresentationOwns(item) && mainHandling),
     );
     const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
     if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
@@ -1399,11 +1400,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("before_agent_start", (event, ctx) => {
     mainContext = ctx;
+    mainHandling = true;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("agent_settled", (_event, ctx) => {
     mainContext = ctx;
-    queueMicrotask(() => { void flushMain(generation, false, true); });
+    mainHandling = false;
+    void flushMain(generation);
   });
   // A terminal no-tool response is a native follow-up opportunity even when
   // a stream of human continuations prevents an agent_settled idle boundary.
@@ -1423,14 +1426,15 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("session_start", async (_event, ctx) => {
     mainContext = ctx;
+    mainHandling = false;
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
     if (lockOwnership() !== "owned") return;
     activateOwnedWatch(generation);
-    queueMicrotask(() => { void flushMain(generation, false, true); });
   });
   pi.on?.("session_shutdown", async (event) => {
+    mainHandling = false;
     const replacement = event.reason === "reload" || event.reason === "new" || event.reason === "resume" || event.reason === "fork";
     if (replacementCoordinator.receiver === receiveReplacementActionable) replacementCoordinator.receiver = null;
     await stopSessionGeneration(generation, replacement);
