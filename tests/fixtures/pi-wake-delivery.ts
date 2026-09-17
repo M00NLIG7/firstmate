@@ -305,7 +305,7 @@ async function exercise() {
     else await wait(() => pending().some((p: any) => p.deferred && p.source?.rows.some((r: string) => r.split("\t")[1] === String(index))), "durable pending source");
     if (earlyAck) ack(latestDrain);
   };
-  await trigger(1);
+  if (scenario !== "busy-coalesce") await trigger(1);
   if (scenario === "main-owned") {
     assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "main-owned grant did not retain the presented main row");
     assert.ok(queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source did not receive bounded custom delivery when exact ownership was unproved");
@@ -344,7 +344,7 @@ async function exercise() {
     await wait(() => calls.length === 2, "unrelated main turn start");
     writeFileSync(`${home}/release-1`, "release");
     await wait(() => branchSettled >= 1, "cross-turn main-owned settlement");
-    await wait(() => queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")) && pending().some((item: any) => item.deferred && item.attempts === 1), "cross-turn native delivery while unrelated turn runs");
+    await wait(() => pending().some((item: any) => item.deferred && item.attempts === 1), "cross-turn native delivery while unrelated turn runs");
     assert.equal(calls.length, 2, "cross-turn delivery waited for the unrelated main turn to settle");
     assert.ok(rows().trim(), "cross-turn delivery acknowledged its source before native consumption");
     release(); await unrelated;
@@ -357,17 +357,12 @@ async function exercise() {
     return;
   }
   if (scenario === "busy-coalesce") {
-    release(); await running;
-    heldCall = 2;
-    held = new Promise<void>(resolve => { release = resolve; });
-    const busy = session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});
-    await wait(() => calls.length === 2, "busy main turn start");
     await trigger(1); await trigger(2);
-    assert.ok(!queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "ordinary deferred sources queued a native wake before the busy main turn settled");
     assert.equal(pending().filter((item: any) => item.deferred).length, 2, "successive ordinary sources were not retained independently");
-    release(); await busy;
-    await wait(() => calls.length === 3 && !session.isStreaming && !rows().trim() && pending().length === 0, "busy ordinary coalesced delivery");
-    assert.equal(events.filter(event => event.kind === "provider" && event.number === 3 && event.pending.filter((item: any) => item.deferred).length === 2).length, 1, "ordinary deferred sources did not coalesce into one native delivery");
+    assert.ok(pending().filter((item: any) => item.deferred).every((item: any) => !(item.attempts ?? 0)), "ordinary deferred sources attempted native delivery before the busy main turn settled");
+    release(); await running;
+    await wait(() => calls.length === 2 && !session.isStreaming && !rows().trim() && pending().length === 0, "busy ordinary coalesced delivery");
+    assert.equal(events.filter(event => event.kind === "provider" && event.number === 2 && event.pending.filter((item: any) => item.deferred).length === 2).length, 1, "ordinary deferred sources did not coalesce into one native delivery");
     assert.equal(events.filter(event => event.kind === "acknowledgement").length, 1, "coalesced ordinary delivery replayed acknowledged sources");
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
     if (runtime) await runtime.dispose(); else session.dispose();

@@ -4,8 +4,15 @@
 # copying credentials and pins the captain-approved openai-codex model.
 set -u
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+fail() {
+  printf 'not ok - %s\n' "$1" >&2
+  exit 1
+}
+
 # shellcheck source=tests/lib.sh
-. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+. "$ROOT/tests/lib.sh" || exit 1
 
 # This token-free lane exercises actual compiled or npm Pi, including the main
 # provider boundary. Keep the credentialed TUI lane below independently opt-in.
@@ -109,13 +116,7 @@ run_wake_delivery_sdk_guard || exit 1
 
 fm_live_gate opt-in FM_PI_LIVE_E2E pi tmux
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 unset NO_MISTAKES_GATE
-
-fail() {
-  printf 'not ok - %s\n' "$1" >&2
-  exit 1
-}
 
 TMUX=$(command -v tmux)
 SOCKET="fm-pi-live-e2e-$$"
