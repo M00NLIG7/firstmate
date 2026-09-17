@@ -28,7 +28,7 @@ async function exercise() {
   const installVersion = (version: "previous" | "candidate") => {
     for (const path of [".pi/extensions/fm-primary-pi-watch.ts", ".pi/extensions/fm-branch-supervision.ts", ".pi/extensions/lib/fm-branch-dispatch.ts", "bin/fm-wake-drain.sh"]) copyFileSync(`${root}/${version}/${path}`, `${root}/${path}`);
   };
-  if (lifecycle) installVersion("previous");
+  if (legacy) installVersion("previous");
   const handoff = `${home}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
   const human = "Please include a review step in the sample diagram.";
   const rows = () => readFileSync(`${home}/state/.wake-queue`, "utf8");
