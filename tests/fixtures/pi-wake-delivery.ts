@@ -292,7 +292,7 @@ async function exercise() {
       await wait(() => branchSettled >= index, "main-owned settlement");
       return;
     }
-    if (scenario === "main-owned-late-settlement") {
+    if (scenario === "main-owned-late-settlement" || scenario === "main-owned-cross-turn") {
       await wait(() => existsSync(`${home}/refused-${index}`), "late main-owned grant barrier");
       return;
     }
@@ -303,14 +303,14 @@ async function exercise() {
   await trigger(1);
   if (scenario === "main-owned") {
     assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "main-owned grant did not retain the presented main row");
-    assert.ok(!queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source received a custom wake before its owner finished");
+    assert.ok(queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source did not receive bounded custom delivery when exact ownership was unproved");
     release(); await running;
     await wait(() => events.some(event => event.kind === "agent-settled"), "main owner turn settlement");
     assert.ok(events.some(event => event.kind === "provider" && event.number === 2 && event.pending.length === 1 && event.pending[0].deferred), "main-owned source was not durable until post-settlement delivery");
     assert.ok(events.some(event => event.kind === "acknowledgement"), "main-owned source was not acknowledged after post-settlement delivery");
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
     if (runtime) await runtime.dispose(); else session.dispose();
-    console.log("ok - real Pi pending delivery main-owned: no custom wake before the owning main turn settles, with durable unacknowledged source");
+    console.log("ok - real Pi pending delivery main-owned: unproved ownership receives bounded custom delivery with durable source");
     return;
   }
   if (scenario === "main-owned-late-settlement") {
@@ -327,6 +327,28 @@ async function exercise() {
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
     if (runtime) await runtime.dispose(); else session.dispose();
     console.log("ok - real Pi pending delivery main-owned-late-settlement: retained source delivers after the owner settles before grant release");
+    return;
+  }
+  if (scenario === "main-owned-cross-turn") {
+    assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "cross-turn main-owned grant did not retain the presented main row");
+    release(); await running;
+    await wait(() => events.some(event => event.kind === "agent-settled"), "original main owner turn settlement");
+    heldCall = 2;
+    held = new Promise<void>(resolve => { release = resolve; });
+    const unrelated = session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});
+    await wait(() => calls.length === 2, "unrelated main turn start");
+    writeFileSync(`${home}/release-1`, "release");
+    await wait(() => branchSettled >= 1, "cross-turn main-owned settlement");
+    await wait(() => queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")) && pending().some((item: any) => item.deferred && item.attempts === 1), "cross-turn native delivery while unrelated turn runs");
+    assert.equal(calls.length, 2, "cross-turn delivery waited for the unrelated main turn to settle");
+    assert.ok(rows().trim(), "cross-turn delivery acknowledged its source before native consumption");
+    release(); await unrelated;
+    await wait(() => calls.length === 3 && !session.isStreaming && !rows().trim() && pending().length === 0, "cross-turn positive acknowledgement");
+    assert.ok(events.some(event => event.kind === "provider" && event.number === 3 && event.pending.length === 1 && event.pending[0].deferred), "cross-turn source was not retained until native consumption");
+    assert.equal(events.filter(event => event.kind === "acknowledgement").length, 1, "cross-turn acknowledgement replayed the source");
+    writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
+    if (runtime) await runtime.dispose(); else session.dispose();
+    console.log("ok - real Pi pending delivery main-owned-cross-turn: unproved ownership does not delay native delivery behind another turn");
     return;
   }
   if (!noHuman) await session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});

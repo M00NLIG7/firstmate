@@ -619,7 +619,6 @@ export default function (pi: ExtensionAPI) {
   let generation = createGeneration();
   activateGeneration(generation);
   let mainContext: ExtensionContext | undefined;
-  let mainHandling = false;
 
   // Deliberately narrow structural eligibility, not semantic novelty: every
   // source line must declare ordinary working activity. Any other verb/history,
@@ -669,23 +668,6 @@ export default function (pi: ExtensionAPI) {
     surfaceFailure(owner, message);
   }
 
-  function mainPresentationOwns(pending: PendingActionableClose): boolean {
-    if (!pending.source) return false;
-    try {
-      const rows = readFileSync(`${state}/.main-eligible-rows`, "utf8")
-        .trim()
-        .split(/\r?\n/);
-      if (rows.length === 0 || rows.some((row) => !/^[1-9][0-9]*$/.test(row))) return false;
-      const claimed = new Set(
-        rows,
-      );
-      const sourceRows = pending.source.rows.map((row) => row.split("\t")[1]);
-      return sourceRows.length > 0 && sourceRows.every((row) => claimed.has(row));
-    } catch {
-      return false;
-    }
-  }
-
   async function flushMain(owner: SessionGeneration, finalTurn = false): Promise<void> {
     if (!generationIsLive(owner) || owner.restoring || owner.mainFlushing) return;
     if (lockOwnership() !== "owned") {
@@ -699,7 +681,6 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const idle = mainContext.isIdle() && !mainContext.hasPendingMessages();
-    if (!idle && !finalTurn) return;
     // Only idle AND an empty native pending set proves that a previously
     // accepted but unconsumed group cannot still be queued. Never infer this
     // from sendUserMessage resolving or from an input hook running.
@@ -712,8 +693,7 @@ export default function (pi: ExtensionAPI) {
       item.deferred &&
       !item.delivered &&
       !owner.unconsumedWakes.has(item.token) &&
-      (idle || finalTurn || !(item.attempts ?? 0)) &&
-      !(mainPresentationOwns(item) && mainHandling),
+      (idle || finalTurn || !(item.attempts ?? 0)),
     );
     const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
     if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
@@ -1400,12 +1380,10 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("before_agent_start", (event, ctx) => {
     mainContext = ctx;
-    mainHandling = true;
     consumeWake(generation, event.prompt);
   });
   pi.on?.("agent_settled", (_event, ctx) => {
     mainContext = ctx;
-    mainHandling = false;
     void flushMain(generation);
   });
   // A terminal no-tool response is a native follow-up opportunity even when
@@ -1426,7 +1404,6 @@ export default function (pi: ExtensionAPI) {
 
   pi.on?.("session_start", async (_event, ctx) => {
     mainContext = ctx;
-    mainHandling = false;
     if (generation.stopping) generation = createGeneration();
     activateGeneration(generation);
     markLoaded();
@@ -1434,7 +1411,6 @@ export default function (pi: ExtensionAPI) {
     activateOwnedWatch(generation);
   });
   pi.on?.("session_shutdown", async (event) => {
-    mainHandling = false;
     const replacement = event.reason === "reload" || event.reason === "new" || event.reason === "resume" || event.reason === "fork";
     if (replacementCoordinator.receiver === receiveReplacementActionable) replacementCoordinator.receiver = null;
     await stopSessionGeneration(generation, replacement);
