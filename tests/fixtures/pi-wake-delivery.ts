@@ -308,6 +308,7 @@ async function exercise() {
   if (scenario !== "busy-coalesce") await trigger(1);
   if (scenario === "main-owned") {
     assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "main-owned grant did not retain the presented main row");
+    await wait(() => queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")) && pending().some((item: any) => item.deferred && item.attempts === 1), "main-owned native delivery after branch settlement");
     assert.ok(queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source did not receive bounded custom delivery when exact ownership was unproved");
     release(); await running;
     await wait(() => events.some(event => event.kind === "agent-settled"), "main owner turn settlement");
