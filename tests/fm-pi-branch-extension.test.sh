@@ -982,7 +982,7 @@ function directlyRequestsResourceReport(mirror) {
   return requestsDelivery && namesReport && namesResources;
 }
 
-globalThis.__fmOnBranchPrompt = async ({ session }) => {
+async function reportResourceResult(session) {
   const mirror = session.ops
     .filter((op) => op.kind === "custom" && op.message.customType === "fm-main-mirror")
     .map((op) => op.message.content);
@@ -1011,7 +1011,14 @@ globalThis.__fmOnBranchPrompt = async ({ session }) => {
   );
   if (result.isError) throw new Error(`branch report failed: ${JSON.stringify(result)}`);
   await runFleetCommand(session, ["--ack-through", ack[1], "--recovery-generation", ack[2]]);
-};
+}
+
+// The fake AgentSession awaits this hook as its prompt settlement. Keep the
+// simulated provider turn open here, then run its drain/report/ack sequence
+// through the exposed tools below; awaiting those tools inside this hook would
+// make the fixture wait for its own prompt settlement rather than model it.
+let finishWakePrompt;
+globalThis.__fmOnBranchPrompt = () => new Promise((resolve) => { finishWakePrompt = resolve; });
 
 const explicitRequest = "Please give me a fresh mini system-resource report.";
 const longRequests = [
@@ -1050,7 +1057,12 @@ entries.push({ type: "message", message: { role: "user", content: legacyOperatio
 await fire("agent_start", {}, mainCtx);
 const unsolicited = dispatch("signal: healthy resource result");
 if (!unsolicited.accepted) throw new Error("branch did not accept the unsolicited result");
-await settle(() => fleetOperations.length === 2, "unsolicited result acknowledgement");
+await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "unsolicited branch prompt");
+const branchSession = globalThis.__fmSessions[0];
+await reportResourceResult(branchSession);
+finishWakePrompt();
+await unsolicited.settlement;
+if (fleetOperations.length !== 2) throw new Error("unsolicited branch result did not drain and acknowledge exactly once");
 if (sentToMain.length !== 1 || sentToMain[0].options.triggerTurn) {
   throw new Error(`unsolicited healthy result opened a main turn: ${JSON.stringify(sentToMain)}`);
 }
@@ -1079,6 +1091,10 @@ for (let index = 0; index < requestedPrompts.length; index += 1) {
   await fire("agent_start", {}, mainCtx);
   const requested = dispatch("signal: healthy resource result");
   if (!requested.accepted) throw new Error(`branch did not accept requested result ${index}`);
+  await settle(() => (globalThis.__fmPrompts ?? []).length === index + 2, `requested result ${index} branch prompt`);
+  await reportResourceResult(branchSession);
+  finishWakePrompt();
+  await requested.settlement;
   await settle(() => fleetOperations.length === 4 + (index * 2), `requested result ${index} acknowledgement`);
   const deliveredRequestMirror = globalThis.__fmSessions[0].ops
     .filter((op) => op.kind === "custom" && op.message.customType === "fm-main-mirror")
