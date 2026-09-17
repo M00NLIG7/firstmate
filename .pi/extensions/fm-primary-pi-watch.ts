@@ -73,7 +73,6 @@ type PendingActionableClose = {
   predecessorArmPid: string;
   delivered?: true;
   deferred?: true;
-  mainOwned?: true;
   source?: WakeSource;
   attempts?: number;
   consumed?: true;
@@ -404,16 +403,13 @@ function validatePendingActionable(value: unknown): PendingActionableClose {
     ((value as { delivered?: unknown }).delivered !== undefined &&
       (value as { delivered?: unknown }).delivered !== true) ||
     ((value as { deferred?: unknown }).deferred !== undefined &&
-      (value as { deferred?: unknown }).deferred !== true) ||
-    ((value as { mainOwned?: unknown }).mainOwned !== undefined &&
-      (value as { mainOwned?: unknown }).mainOwned !== true)
+      (value as { deferred?: unknown }).deferred !== true)
   ) {
     throw new Error(`invalid Pi replacement actionable handoff at ${actionableHandoff}`);
   }
   const pending = value as PendingActionableClose;
   if ((pending.source !== undefined && !validWakeSource(pending.source)) ||
       (pending.deferred && !pending.source) ||
-      (pending.mainOwned && !pending.deferred) ||
       (pending.consumed !== undefined && (pending.consumed !== true || !pending.deferred)) ||
       (pending.attempts !== undefined && (!pending.deferred || !Number.isSafeInteger(pending.attempts) || pending.attempts < 0))) {
     throw new Error(`invalid Pi pending source evidence at ${actionableHandoff}`);
@@ -623,6 +619,7 @@ export default function (pi: ExtensionAPI) {
   let generation = createGeneration();
   activateGeneration(generation);
   let mainContext: ExtensionContext | undefined;
+  let settledMainTurns = 0;
 
   // Deliberately narrow structural eligibility, not semantic novelty: every
   // source line must declare ordinary working activity. Any other verb/history,
@@ -672,7 +669,7 @@ export default function (pi: ExtensionAPI) {
     surfaceFailure(owner, message);
   }
 
-  async function flushMain(owner: SessionGeneration, finalTurn = false): Promise<void> {
+  async function flushMain(owner: SessionGeneration, finalTurn = false, lateMainOwnedToken?: string): Promise<void> {
     if (!generationIsLive(owner) || owner.restoring || owner.mainFlushing) return;
     if (lockOwnership() !== "owned") {
       if (owner.pendingActionables.some(item => item.deferred)) mainDeliveryFailure(owner, "watcher: FAILED - deferred delivery lost session ownership; its source records remain pending");
@@ -685,7 +682,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const idle = mainContext.isIdle() && !mainContext.hasPendingMessages();
-    if (!idle && !finalTurn && !owner.pendingActionables.some(item => item.deferred && item.mainOwned && !item.delivered && !owner.unconsumedWakes.has(item.token) && !(item.attempts ?? 0))) return;
+    if (!idle && !finalTurn && !lateMainOwnedToken) return;
     // Only idle AND an empty native pending set proves that a previously
     // accepted but unconsumed group cannot still be queued. Never infer this
     // from sendUserMessage resolving or from an input hook running.
@@ -698,7 +695,7 @@ export default function (pi: ExtensionAPI) {
       item.deferred &&
       !item.delivered &&
       !owner.unconsumedWakes.has(item.token) &&
-      (idle || finalTurn || (item.mainOwned && !(item.attempts ?? 0))),
+      (idle || finalTurn || (item.token === lateMainOwnedToken && !(item.attempts ?? 0))),
     );
     const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
     if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
@@ -897,7 +894,9 @@ export default function (pi: ExtensionAPI) {
         return await sendWake(owner, `${message}\n\n${confirmed.detail}`, pending);
       }
     }
+    let lateMainOwned = false;
     if (!repairFailed) {
+      const settledBeforeOffer = settledMainTurns;
       const branchDelivery = offerWakeToBranch(message);
       if (branchDelivery) {
         try {
@@ -907,7 +906,7 @@ export default function (pi: ExtensionAPI) {
           if (!branchDelivery.mainOwned) {
             return await sendWake(owner, `${message}\n\nSupervision branch delivery failed; handle this notification on main and preserve its source rows.`, pending);
           }
-          pending.mainOwned = true;
+          lateMainOwned = settledMainTurns > settledBeforeOffer;
         }
       }
     }
@@ -915,6 +914,7 @@ export default function (pi: ExtensionAPI) {
     if (!repairFailed && lockOwnership() === "owned" && pending.source && typeof mainContext?.isIdle === "function" && typeof mainContext.hasPendingMessages === "function" && typeof pi.sendMessage === "function" && canDeferOrdinarySignal(pending, message)) {
       pending.deferred = true;
       persistReplacementHandoff(owner.pendingActionables);
+      if (lateMainOwned) await flushMain(owner, false, pending.token);
       return "deferred";
     }
     return await sendWake(owner, message, pending);
@@ -1390,6 +1390,7 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on?.("agent_settled", (_event, ctx) => {
     mainContext = ctx;
+    settledMainTurns++;
     void flushMain(generation);
   });
   // A terminal no-tool response is a native follow-up opportunity even when

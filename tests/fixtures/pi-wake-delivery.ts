@@ -308,10 +308,9 @@ async function exercise() {
   if (scenario !== "busy-coalesce") await trigger(1);
   if (scenario === "main-owned") {
     assert.equal(readFileSync(`${home}/state/.main-eligible-rows`, "utf8").trim(), "1", "main-owned grant did not retain the presented main row");
-    await wait(() => queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")) && pending().some((item: any) => item.deferred && item.attempts === 1), "main-owned native delivery after branch settlement");
-    assert.ok(queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "main-owned source did not receive bounded custom delivery when exact ownership was unproved");
+    assert.ok(!pending().some((item: any) => item.deferred && item.attempts), "main-owned source attempted custom delivery while its original main turn was still active");
     release(); await running;
-    await wait(() => events.some(event => event.kind === "agent-settled"), "main owner turn settlement");
+    await wait(() => calls.length === 2 && !session.isStreaming && pending().length === 0 && !rows().trim(), "main-owned delivery after the original main turn settles");
     assert.ok(events.some(event => event.kind === "provider" && event.number === 2 && event.pending.length === 1 && event.pending[0].deferred), "main-owned source was not durable until post-settlement delivery");
     assert.ok(events.some(event => event.kind === "acknowledgement"), "main-owned source was not acknowledged after post-settlement delivery");
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
