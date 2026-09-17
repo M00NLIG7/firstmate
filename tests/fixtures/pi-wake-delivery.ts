@@ -121,6 +121,7 @@ async function exercise() {
 
   writeFileSync(`${home}/state/.lock`, `${process.pid}\n`);
   if (scenario === "branch-failure") writeFileSync(`${home}/config/supervision-branch-model`, "missing/fixture\n");
+  if (scenario === "busy-coalesce") writeFileSync(`${home}/state/.afk`, "fixture\n");
   const agentDir = `${home}/agent`;
   mkdirSync(agentDir, {recursive: true});
   writeFileSync(`${agentDir}/models.json`, JSON.stringify({providers: {fixture: {baseUrl: "https://fixture.invalid/v1", api: "openai-completions", apiKey: "fixture-only", models: [{id: "fixture", name: "fixture", contextWindow: 1000000, maxTokens: 64}]}}}));
@@ -296,6 +297,10 @@ async function exercise() {
       await wait(() => existsSync(`${home}/refused-${index}`), "late main-owned grant barrier");
       return;
     }
+    if (scenario === "busy-coalesce") {
+      await wait(() => pending().some((item: any) => item.deferred && item.source?.rows.some((row: string) => row.split("\t")[1] === String(index))), "busy ordinary durable source");
+      return;
+    }
     if (protectedSource || (scenario === "branch-failure" && index === 1)) await wait(() => events.filter(e => e.kind === "input" && e.source === "extension").length >= index, "protected direct delivery");
     else await wait(() => pending().some((p: any) => p.deferred && p.source?.rows.some((r: string) => r.split("\t")[1] === String(index))), "durable pending source");
     if (earlyAck) ack(latestDrain);
@@ -349,6 +354,24 @@ async function exercise() {
     writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
     if (runtime) await runtime.dispose(); else session.dispose();
     console.log("ok - real Pi pending delivery main-owned-cross-turn: unproved ownership does not delay native delivery behind another turn");
+    return;
+  }
+  if (scenario === "busy-coalesce") {
+    release(); await running;
+    heldCall = 2;
+    held = new Promise<void>(resolve => { release = resolve; });
+    const busy = session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});
+    await wait(() => calls.length === 2, "busy main turn start");
+    await trigger(1); await trigger(2);
+    assert.ok(!queues.at(-1)?.followUp.some((message: string) => message.includes("FIRSTMATE WATCHER WAKE")), "ordinary deferred sources queued a native wake before the busy main turn settled");
+    assert.equal(pending().filter((item: any) => item.deferred).length, 2, "successive ordinary sources were not retained independently");
+    release(); await busy;
+    await wait(() => calls.length === 3 && !session.isStreaming && !rows().trim() && pending().length === 0, "busy ordinary coalesced delivery");
+    assert.equal(events.filter(event => event.kind === "provider" && event.number === 3 && event.pending.filter((item: any) => item.deferred).length === 2).length, 1, "ordinary deferred sources did not coalesce into one native delivery");
+    assert.equal(events.filter(event => event.kind === "acknowledgement").length, 1, "coalesced ordinary delivery replayed acknowledged sources");
+    writeFileSync(process.env.FM_TEST_OUTPUT!, JSON.stringify({scenario, scriptedJudgment: true, paidCalls: 0, providerCalls: calls.length, calls, events, queues, pending: pending()}, null, 2));
+    if (runtime) await runtime.dispose(); else session.dispose();
+    console.log("ok - real Pi pending delivery busy-coalesce: ordinary busy-main sources coalesce before native acceptance");
     return;
   }
   if (!noHuman) await session.prompt(human, {source: "interactive", streamingBehavior: "followUp"});

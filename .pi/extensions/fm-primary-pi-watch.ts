@@ -73,6 +73,7 @@ type PendingActionableClose = {
   predecessorArmPid: string;
   delivered?: true;
   deferred?: true;
+  mainOwned?: true;
   source?: WakeSource;
   attempts?: number;
   consumed?: true;
@@ -403,13 +404,16 @@ function validatePendingActionable(value: unknown): PendingActionableClose {
     ((value as { delivered?: unknown }).delivered !== undefined &&
       (value as { delivered?: unknown }).delivered !== true) ||
     ((value as { deferred?: unknown }).deferred !== undefined &&
-      (value as { deferred?: unknown }).deferred !== true)
+      (value as { deferred?: unknown }).deferred !== true) ||
+    ((value as { mainOwned?: unknown }).mainOwned !== undefined &&
+      (value as { mainOwned?: unknown }).mainOwned !== true)
   ) {
     throw new Error(`invalid Pi replacement actionable handoff at ${actionableHandoff}`);
   }
   const pending = value as PendingActionableClose;
   if ((pending.source !== undefined && !validWakeSource(pending.source)) ||
       (pending.deferred && !pending.source) ||
+      (pending.mainOwned && !pending.deferred) ||
       (pending.consumed !== undefined && (pending.consumed !== true || !pending.deferred)) ||
       (pending.attempts !== undefined && (!pending.deferred || !Number.isSafeInteger(pending.attempts) || pending.attempts < 0))) {
     throw new Error(`invalid Pi pending source evidence at ${actionableHandoff}`);
@@ -681,6 +685,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     const idle = mainContext.isIdle() && !mainContext.hasPendingMessages();
+    if (!idle && !finalTurn && !owner.pendingActionables.some(item => item.deferred && item.mainOwned && !item.delivered && !owner.unconsumedWakes.has(item.token) && !(item.attempts ?? 0))) return;
     // Only idle AND an empty native pending set proves that a previously
     // accepted but unconsumed group cannot still be queued. Never infer this
     // from sendUserMessage resolving or from an input hook running.
@@ -693,7 +698,7 @@ export default function (pi: ExtensionAPI) {
       item.deferred &&
       !item.delivered &&
       !owner.unconsumedWakes.has(item.token) &&
-      (idle || finalTurn || !(item.attempts ?? 0)),
+      (idle || finalTurn || (item.mainOwned && !(item.attempts ?? 0))),
     );
     const pending = candidates.filter(item => (item.attempts ?? 0) < retryLimit);
     if (candidates.some(item => (item.attempts ?? 0) >= retryLimit)) {
@@ -902,6 +907,7 @@ export default function (pi: ExtensionAPI) {
           if (!branchDelivery.mainOwned) {
             return await sendWake(owner, `${message}\n\nSupervision branch delivery failed; handle this notification on main and preserve its source rows.`, pending);
           }
+          pending.mainOwned = true;
         }
       }
     }
