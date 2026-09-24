@@ -228,7 +228,7 @@
     "credential": "absent",
     "exit_code": 0,
     "stdout": "",
-    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n",
     "elapsed_seconds": 0.038,
     "observed_http_requests": []
   },
@@ -239,7 +239,7 @@
     "credential": "absent",
     "exit_code": 0,
     "stdout": "",
-    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n",
     "elapsed_seconds": 0.048,
     "observed_http_requests": []
   },
@@ -250,7 +250,7 @@
     "credential": "absent",
     "exit_code": 0,
     "stdout": "",
-    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n",
     "elapsed_seconds": 0.035,
     "observed_http_requests": []
   },
