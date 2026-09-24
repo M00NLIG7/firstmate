@@ -1,0 +1,231 @@
+{
+  "scope": "Real resolver and real curl with synthetic local Jev and quota responses; no inference, production credentials, hosted requests or fleet actions.",
+  "observations": [
+    {
+      "scenario": "environment base (no suffix)",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 0   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "environment base /",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 0   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "environment base /jev/",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/jev/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 0   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "dotenv base and key",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/dotenv/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 0   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "empty environment falls back to dotenv",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/dotenv/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 0   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "nonempty environment overrides dotenv",
+      "exit": 0,
+      "http_requests": 1,
+      "received_path": "/environment/v1/systemone",
+      "output": "dispatch-resolve:\n  status: clear\n  model: jev-fixture   latency_ms: 1000   tokens: 20/5\n  rule: rule_1 (A small bug fix.)   confidence: 0.95\n  probabilities: rule_1=0.95 default=0.05\n  note: rule matched\n  candidate: claude:sonnet  provider=claude  scope=all_models  remaining=80%  spendPriority=0.5  runway=through_reset  -> eligible\n  profile: --harness 'claude' --model 'sonnet' --effort 'high'\n"
+    },
+    {
+      "scenario": "disabled with base loopback",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n"
+    },
+    {
+      "scenario": "disabled with base malformed",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n"
+    },
+    {
+      "scenario": "disabled with dotenv base only",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and <isolated-home>/.env)\n"
+    },
+    {
+      "scenario": "unreachable override does not fall back",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve:\n  status: error\n  reason: http 000 after 5000 ms: \ndispatch-resolve: error (http 000 after 5000 ms: )\n"
+    },
+    {
+      "scenario": "hosted default destination captured (transport stub)",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve:\n  status: error\n  reason: http 000 after 0 ms: \ndispatch-resolve: error (http 000 after 0 ms: )\n",
+      "captured_destination": "https://api.typesafe.ai/v1/systemone"
+    },
+    {
+      "scenario": "hosted default destination captured (transport stub)",
+      "exit": 0,
+      "http_requests": 0,
+      "received_path": null,
+      "output": "dispatch-resolve:\n  status: error\n  reason: http 000 after 1000 ms: \ndispatch-resolve: error (http 000 after 1000 ms: )\n",
+      "captured_destination": "https://api.typesafe.ai/v1/systemone"
+    }
+  ],
+  "local_requests": [
+    {
+      "path": "/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    },
+    {
+      "path": "/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    },
+    {
+      "path": "/jev/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    },
+    {
+      "path": "/dotenv/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    },
+    {
+      "path": "/dotenv/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    },
+    {
+      "path": "/environment/v1/systemone",
+      "request": {
+        "model": "jev-latest",
+        "state": {
+          "task": {
+            "project": "pager",
+            "brief": "Fix a pager off-by-one error.\n"
+          }
+        },
+        "questions": {
+          "rule": {
+            "type": "choice",
+            "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+            "criteria": {
+              "rule_1": "A small bug fix.",
+              "default": "No listed rule applies to this task."
+            }
+          }
+        }
+      },
+      "dummy_bearer_received": true
+    }
+  ]
+}

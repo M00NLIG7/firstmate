@@ -1,0 +1,290 @@
+[
+  {
+    "scenario": "Environment URL reaches local root endpoint",
+    "base_environment": "http://127.0.0.1:60277",
+    "base_dotenv": null,
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 3.272,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Trailing slash does not double the endpoint separator",
+    "base_environment": "http://127.0.0.1:60277/",
+    "base_dotenv": null,
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 3.709,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Base path prefix survives endpoint construction",
+    "base_environment": "http://127.0.0.1:60277/jev/",
+    "base_dotenv": null,
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 1.193,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/jev/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Dotenv URL supplies endpoint when environment is absent",
+    "base_environment": null,
+    "base_dotenv": "\"http://127.0.0.1:60277/dotenv/\"",
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 1.905,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/dotenv/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Empty environment URL falls back to dotenv",
+    "base_environment": "",
+    "base_dotenv": "http://127.0.0.1:60277/dotenv",
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 1.553,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/dotenv/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Nonempty environment URL overrides conflicting dotenv",
+    "base_environment": "http://127.0.0.1:60277/env",
+    "base_dotenv": "http://127.0.0.1:60277/wrong",
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> \n",
+    "stderr": "dispatch-resolve: error (http 501 after 0 ms: <!DOCTYPE HTML> <html lang=\"en\">     <head>         <meta charset=\"utf-8\">         <style type=\"text/css\">             :root {                 color-scheme: light dark;             }         </style> )\n",
+    "elapsed_seconds": 1.341,
+    "observed_http_requests": [
+      {
+        "method": "POST",
+        "path": "/env/v1/systemone",
+        "status": 501,
+        "dummy_bearer_received": true,
+        "body": {
+          "model": "jev-latest",
+          "state": {
+            "task": {
+              "project": "synthetic-validation",
+              "brief": "# Task\nCheck an isolated synthetic pager bug.\n"
+            }
+          },
+          "questions": {
+            "rule": {
+              "type": "choice",
+              "instructions": "Which ONE dispatch rule best fits `task` (read `task.brief` and `task.project`)? Each option is the rule's own matching condition; pick `default` when no rule's condition is met, including when a rule's own exemption text excludes this task.",
+              "criteria": {
+                "rule_1": "A simple bug fix.",
+                "default": "No listed rule applies to this task."
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  {
+    "scenario": "Environment URL alone cannot enable dispatch",
+    "base_environment": "http://127.0.0.1:60277",
+    "base_dotenv": null,
+    "credential": "absent",
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "elapsed_seconds": 0.038,
+    "observed_http_requests": []
+  },
+  {
+    "scenario": "Dotenv URL alone cannot enable dispatch",
+    "base_environment": null,
+    "base_dotenv": "http://127.0.0.1:60277/dotenv",
+    "credential": "absent",
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "elapsed_seconds": 0.048,
+    "observed_http_requests": []
+  },
+  {
+    "scenario": "Malformed URL without a credential stays disabled",
+    "base_environment": "://invalid",
+    "base_dotenv": null,
+    "credential": "absent",
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": "dispatch-resolve: off (TYPESAFE_API_KEY absent from the environment and /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3A9NE7SFZZACYH0MNDEYHQC/.test-jev-validation/live/home/.env)\n",
+    "elapsed_seconds": 0.035,
+    "observed_http_requests": []
+  },
+  {
+    "scenario": "Unavailable local service returns an error without a profile",
+    "base_environment": "http://127.0.0.1:60348",
+    "base_dotenv": null,
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 000 after 5000 ms: \n",
+    "stderr": "dispatch-resolve: error (http 000 after 5000 ms: )\n",
+    "elapsed_seconds": 6.188,
+    "observed_http_requests": []
+  },
+  {
+    "scenario": "Absent URL retains the hosted default",
+    "base_environment": null,
+    "base_dotenv": null,
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 401 after 1000 ms: {\"detail\":{\"error_type\":\"authentication_error\",\"message\":\"Cannot authenticate with the server. Please check your API key and try again.\"}}\n",
+    "stderr": "dispatch-resolve: error (http 401 after 1000 ms: {\"detail\":{\"error_type\":\"authentication_error\",\"message\":\"Cannot authenticate with the server. Please check your API key and try again.\"}})\n",
+    "elapsed_seconds": 1.654,
+    "observed_http_requests": []
+  },
+  {
+    "scenario": "Empty URL settings retain the hosted default",
+    "base_environment": "",
+    "base_dotenv": "\"\"",
+    "credential": "dummy",
+    "exit_code": 0,
+    "stdout": "dispatch-resolve:\n  status: error\n  reason: http 401 after 0 ms: {\"detail\":{\"error_type\":\"authentication_error\",\"message\":\"Cannot authenticate with the server. Please check your API key and try again.\"}}\n",
+    "stderr": "dispatch-resolve: error (http 401 after 0 ms: {\"detail\":{\"error_type\":\"authentication_error\",\"message\":\"Cannot authenticate with the server. Please check your API key and try again.\"}})\n",
+    "elapsed_seconds": 1.23,
+    "observed_http_requests": []
+  }
+]
