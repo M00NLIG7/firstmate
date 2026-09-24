@@ -306,7 +306,7 @@ for base in "$LOCAL_JEV_BASE" "$LOCAL_JEV_BASE/" "$LOCAL_JEV_BASE/jev/"; do
   TYPESAFE_API_KEY=$KEY TYPESAFE_BASE_URL="$base" run code out err "$BRIEF" --project pager
   expect_code 0 "$code" "local endpoint exits 0"
   assert_contains "$out" '  status: clear' "local response follows ordinary resolution"
-  assert_contains "$out" "  profile: --harness 'cursor'" "local response selects the ordinary profile"
+  assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "local response selects the ordinary profile"
   assert_equals "${base%/}/v1/systemone" "$LOCAL_JEV_BASE$(jq -sr 'last.path' "$TMP_ROOT/requests.jsonl")" "base preserves prefixes and trims trailing slash"
   assert_not_contains "$out$err" "$KEY" "local request does not print the key"
 done
@@ -314,19 +314,39 @@ printf 'TYPESAFE_BASE_URL=%s/jev\n' "$LOCAL_JEV_BASE" > "$HOME_DIR/.env"
 TYPESAFE_API_KEY=$KEY run code out err "$BRIEF"
 assert_contains "$out" '  status: clear' ".env base selects local Jev"
 assert_equals '/jev/v1/systemone' "$(jq -sr 'last.path' "$TMP_ROOT/requests.jsonl")" ".env base preserves its path prefix"
+TYPESAFE_API_KEY=$KEY TYPESAFE_BASE_URL='' run code out err "$BRIEF"
+expect_code 0 "$code" "empty environment base falls back to .env"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "empty environment base resolves the local response"
+assert_equals '/jev/v1/systemone' "$(jq -sr 'last.path' "$TMP_ROOT/requests.jsonl")" "empty environment base retains .env prefix"
 TYPESAFE_API_KEY=$KEY TYPESAFE_BASE_URL="$LOCAL_JEV_BASE" run code out err "$BRIEF"
+expect_code 0 "$code" "environment base override exits 0"
+assert_contains "$out" "  profile: --harness 'cursor' --model 'cursor-grok-4.6-medium'" "environment override resolves the local response"
 assert_equals '/v1/systemone' "$(jq -sr 'last.path' "$TMP_ROOT/requests.jsonl")" "environment base wins over .env"
+reset_log
 run code out err "$BRIEF"
+expect_code 0 "$code" "dotenv base alone exits 0"
 assert_equals '' "$out" "base alone does not activate dispatch"
 assert_contains "$err" 'dispatch-resolve: off' "local endpoint still requires opt-in"
-assert_equals 5 "$(jq -s length "$TMP_ROOT/requests.jsonl")" "disabled resolver sends no local request"
+for base in "$LOCAL_JEV_BASE" 'not a URL'; do
+  TYPESAFE_BASE_URL="$base" run code out err "$BRIEF"
+  expect_code 0 "$code" "environment base alone exits 0"
+  assert_equals '' "$out" "environment base alone prints no profile"
+  assert_contains "$err" 'dispatch-resolve: off' "environment base alone stays off even when malformed"
+done
+assert_absent "$LOG/quota-axi.calls" "disabled resolver never reads quota"
+assert_equals 6 "$(jq -s length "$TMP_ROOT/requests.jsonl")" "disabled resolver sends no local request"
 assert_equals true "$(jq -s 'all(.[]; .auth_ok and .body.model == "jev-latest")' "$TMP_ROOT/requests.jsonl")" "local requests retain bearer authentication and model"
 rm -f "$HOME_DIR/.env"
 unset LOCAL_JEV_BASE
 reset_log
 TYPESAFE_API_KEY=$KEY TYPESAFE_BASE_URL='' run code out err "$BRIEF"
 assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "empty base keeps hosted default"
-pass "configurable Jev base preserves routing, paths, authentication and opt-in"
+printf 'TYPESAFE_BASE_URL=\n' > "$HOME_DIR/.env"
+reset_log
+TYPESAFE_API_KEY=$KEY TYPESAFE_BASE_URL='' run code out err "$BRIEF"
+assert_contains "$(cat "$LOG/argv")" 'https://api.typesafe.ai/v1/systemone' "empty environment and dotenv bases keep hosted default without a hosted call"
+rm -f "$HOME_DIR/.env"
+pass "configurable Jev base preserves routing, paths, authentication and opt-in (fixture responses, not inference)"
 
 # --- rules are snapshotted and line output is injection-safe -------------------
 MUTATED_RULES="$TMP_ROOT/mutated-rules.json"
