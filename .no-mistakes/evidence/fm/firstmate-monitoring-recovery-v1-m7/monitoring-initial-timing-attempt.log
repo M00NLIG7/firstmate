@@ -1,0 +1,18 @@
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.g9ebpen6
+exit=0 elapsed=0.525s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.g9ebpen6
+
+baseline: real watcher PID=36669; 32 settled records; two live correlation locks held; beacon_refreshed=False
+baseline: new report appended; watcher_returned=False; latency=12.098s; phase=awaiting_report
+
+BASELINE REPRODUCED: settled lock prevents later report processing and beacon refresh.
+baseline: lab and owned processes removed
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.kj_1g3g9
+exit=0 elapsed=0.078s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.kj_1g3g9
+
+target: real watcher PID=77089; 32 settled records; two live correlation locks held; beacon_refreshed=False
+target: new report appended; watcher_returned=True; latency=8.400s; phase=awaiting_report
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.kj_1g3g9/state/mate.status
+
+target: lab and owned processes removed

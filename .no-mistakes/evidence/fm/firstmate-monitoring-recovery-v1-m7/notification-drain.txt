@@ -1,0 +1,5 @@
+1790373472	2	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6/state/mate.status
+wake annotation: latest wake-EVENT observed at drain, not current state: mate.status: done [corr=e6dc6719f223110d]: monitoring live reply = \literal
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+mate done [corr=e6dc6719f223110d]: monitoring live reply = \literal
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 14303.1790373471.YiXrIF

@@ -1,0 +1,154 @@
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.gz2yentm
+exit=0 elapsed=0.139s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.gz2yentm
+
+baseline: real watcher PID=64911; 32 settled records; two live correlation locks held; beacon_refreshed=False
+baseline: new report appended; watcher_returned=False; latency=12.118s; phase=awaiting_report
+
+BASELINE REPRODUCED: settled lock prevents later report processing and beacon refresh.
+baseline: lab and owned processes removed
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6
+exit=0 elapsed=0.056s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6
+
+target: real watcher PID=94889; 32 settled records; two live correlation locks held; beacon_refreshed=True
+target: new report appended; watcher_returned=True; latency=7.313s; phase=resolved
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6/state/mate.status
+
+Durable wake queue:
+1790373471	1	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6/state/mate.status
+1790373472	2	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6/state/mate.status
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=3.982s
+1790373472	2	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.uy9blvo6/state/mate.status
+wake annotation: latest wake-EVENT observed at drain, not current state: mate.status: done [corr=e6dc6719f223110d]: monitoring live reply = \literal
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+mate done [corr=e6dc6719f223110d]: monitoring live reply = \literal
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 14303.1790373471.YiXrIF
+
+Settled history hashes unchanged; new correlation resolved and delivered while old locks remain held.
+target: lab and owned processes removed
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.jz8g6vpx
+exit=0 elapsed=0.087s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.jz8g6vpx
+
+Resolved record survived an actual mode-400 status-write failure, with no close receipt yet:
+blocked [key=pending-reply-0382bd7b84025bd3] [at=1790373478]: pending-reply-recovery-delivery-failed: task=mate pending-reply-id=0382bd7b84025bd3 request=retry close safely
+blocked [key=unrelated]: still needs human approval
+done [corr=0382bd7b84025bd3]: late answer
+
+Watcher retried close without losing history:
+blocked [key=pending-reply-0382bd7b84025bd3] [at=1790373478]: pending-reply-recovery-delivery-failed: task=mate pending-reply-id=0382bd7b84025bd3 request=retry close safely
+blocked [key=unrelated]: still needs human approval
+done [corr=0382bd7b84025bd3]: late answer
+resolved [key=pending-reply-0382bd7b84025bd3] [at=1790373481]: pending-reply-resolved: task=mate pending-reply-id=0382bd7b84025bd3 via=status
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=9.328s
+1790373485	2	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.jz8g6vpx/state/mate.status
+wake annotation: unread wake-EVENT since last drain, not current state: mate.status: blocked [key=pending-reply-0382bd7b84025bd3] [at=1790373478]: pending-reply-recovery-delivery-failed: task=mate pending-reply-id=0382bd7b84025bd3 request=retry close safely
+wake annotation: unread wake-EVENT since last drain, not current state: mate.status: blocked [key=unrelated]: still needs human approval
+wake annotation: unread wake-EVENT since last drain, not current state: mate.status: done [corr=0382bd7b84025bd3]: late answer
+wake annotation: latest wake-EVENT observed at drain, not current state: mate.status: resolved [key=pending-reply-0382bd7b84025bd3] [at=1790373481]: pending-reply-resolved: task=mate pending-reply-id=0382bd7b84025bd3 via=status
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+mate resolved [key=pending-reply-0382bd7b84025bd3] [at=1790373481]: pending-reply-resolved: task=mate pending-reply-id=0382bd7b84025bd3 via=status
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+mate [key=unrelated] blocked: still needs human approval
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 26911.1790373485.KBGMbd
+
+Current open decisions (production fold):
+unrelated	blocked	still needs human approval
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.mf6ew0pw
+exit=0 elapsed=0.061s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.mf6ew0pw
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.k8vwj68o
+exit=0 elapsed=0.064s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.k8vwj68o
+
+24-task initial drain elapsed=24.455s
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=31.023s
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+task-00 note: answer = \literal
+task-00 note: routine follow-up
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+task-23 done: ready-for-review-23
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=55.921s
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=36.380s
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+task-00 note: genuinely-new-answer
+
+Persisted presentation cursor (24 tasks):
+task-00	strong:16777231:207014211:1790373571.440412166	94	0
+task-01	strong:16777231:207014212:1790373571.440807999	19	0
+task-02	strong:16777231:207014213:1790373571.441184458	19	0
+task-03	strong:16777231:207014214:1790373571.441520583	19	0
+task-04	strong:16777231:207014215:1790373571.441903791	19	0
+task-05	strong:16777231:207014216:1790373571.442312208	19	0
+task-06	strong:16777231:207014217:1790373571.442494833	19	0
+task-07	strong:16777231:207014218:1790373571.442789124	19	0
+task-08	strong:16777231:207014219:1790373571.443111791	19	0
+task-09	strong:16777231:207014220:1790373571.443653291	19	0
+task-10	strong:16777231:207014221:1790373571.443837041	19	0
+task-11	strong:16777231:207014222:1790373571.444198083	19	0
+task-12	strong:16777231:207014223:1790373571.444815791	19	0
+task-13	strong:16777231:207014224:1790373571.445183291	19	0
+task-14	strong:16777231:207014225:1790373571.445740416	19	0
+task-15	strong:16777231:207014226:1790373571.445983249	19	0
+task-16	strong:16777231:207014227:1790373571.446402624	19	0
+task-17	strong:16777231:207014228:1790373571.446611333	19	0
+task-18	strong:16777231:207014229:1790373571.447026749	19	0
+task-19	strong:16777231:207014230:1790373571.447421916	19	0
+task-20	strong:16777231:207014231:1790373571.448114833	19	0
+task-21	strong:16777231:207014232:1790373571.448677083	19	0
+task-22	strong:16777231:207014233:1790373571.449000666	19	0
+task-23	strong:16777231:207014234:1790373571.449254791	19	45
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.69k0wyf7
+exit=0 elapsed=0.063s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab.69k0wyf7
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/baseline/bin/fm-branch-outcome.sh processed-init
+exit=1 elapsed=1.179s
+error: outcome index migration could not be completed safely
+
+BASELINE REPRODUCED: legacy label prevents derived index rebuild.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab._e_g9j0s
+exit=0 elapsed=0.098s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/.monitor-test-tmp/fm-lab._e_g9j0s
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-branch-outcome.sh processed-init
+exit=0 elapsed=0.821s
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-branch-outcome.sh unprocessed
+exit=0 elapsed=0.541s
+{"seq":2,"epoch":2,"task":"old task label","wake":"","verdict":"captain","summary":"retain decision","silent":false}
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-branch-outcome.sh append --task ../escape --verdict routine --summary must refuse
+exit=2 elapsed=0.154s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | processed-init [--held-lock] | list [--recent <n>] | startup-replay
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3D88912CWXQFKHJ9ESYNF0Y/bin/fm-wake-drain.sh
+exit=0 elapsed=4.172s
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+task-2 done: new completion after legacy history
+
+target: history SHA256=10fbf51e8f3b1e959333d09ad79be7ae9a26fd261b7517c1fd8575b9ce6dac4f; cursor=2 processed=1 unchanged; indexes=['.task-1.branch-outcome-index', '.task-2.branch-outcome-index']; drain self-healed ready=8
+Original history retained:
+{"seq": 1, "epoch": 1, "task": "task-1", "wake": "", "verdict": "routine", "summary": "history-0", "silent": false}
+{"seq": 2, "epoch": 2, "task": "old task label", "wake": "", "verdict": "captain", "summary": "retain decision", "silent": false}
+{"seq": 3, "epoch": 3, "task": "../escape", "wake": "", "verdict": "routine", "summary": "history-2", "silent": false}
+{"seq": 4, "epoch": 4, "task": "task-2", "wake": "", "verdict": "routine", "summary": "history-3", "silent": false}
+{"seq": 5, "epoch": 5, "task": "trailing-newline\n", "wake": "", "verdict": "routine", "summary": "history-4", "silent": false}
+{"seq": 6, "epoch": 6, "task": "\tbad", "wake": "", "verdict": "routine", "summary": "history-5", "silent": false}
+{"seq": 7, "epoch": 7, "task": "/absolute", "wake": "", "verdict": "routine", "summary": "history-6", "silent": false}
+{"seq": 8, "epoch": 8, "task": "fleet", "wake": "", "verdict": "routine", "summary": "history-7", "silent": false}
+
+ALL SELECTED LIVE CLI SCENARIOS PASSED.
