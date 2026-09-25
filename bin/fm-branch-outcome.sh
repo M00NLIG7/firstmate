@@ -259,7 +259,9 @@ rebuild_outcome_indexes() {
   rm -f -- "$OUTCOME_INDEX_READY" || return 1
   [ -s "$STORE" ] || { publish_outcome_index_ready 0; return; }
   rows=$(jq -r -s '
-    map(select(.task != "fleet"))
+    # Legacy outcomes allowed arbitrary task labels. Keep those rows in the
+    # authoritative history, but never interpret non-task labels as paths.
+    map(select(.task != "fleet" and (.task | test("\\A[A-Za-z0-9._-]+\\z"))))
     | group_by(.task)
     | map(.[-1])[]
     | [.task, (.seq | tostring), (.epoch | tostring),
