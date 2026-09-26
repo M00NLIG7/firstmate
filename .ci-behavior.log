@@ -1,0 +1,839 @@
+﻿2026-09-25T22:08:29.2849482Z Current runner version: '2.337.0'
+2026-09-25T22:08:29.2867085Z ##[group]Runner Image Provisioner
+2026-09-25T22:08:29.2867726Z Hosted Compute Agent
+2026-09-25T22:08:29.2868161Z Version: 20260828.587
+2026-09-25T22:08:29.2868614Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-25T22:08:29.2869134Z Build Date: 2026-08-28T16:44:25Z
+2026-09-25T22:08:29.2869624Z Worker ID: {4d6a1ec8-4da8-4750-b14c-2d6cdf64e2db}
+2026-09-25T22:08:29.2870111Z Azure Region: centralus
+2026-09-25T22:08:29.2870522Z ##[endgroup]
+2026-09-25T22:08:29.2871391Z ##[group]Operating System
+2026-09-25T22:08:29.2871819Z Ubuntu
+2026-09-25T22:08:29.2872190Z 24.04.5
+2026-09-25T22:08:29.2872610Z LTS
+2026-09-25T22:08:29.2872972Z ##[endgroup]
+2026-09-25T22:08:29.2873368Z ##[group]Runner Image
+2026-09-25T22:08:29.2873774Z Image: ubuntu-24.04
+2026-09-25T22:08:29.2874169Z Version: 20260920.314.1
+2026-09-25T22:08:29.2875041Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260920.314/images/ubuntu/Ubuntu2404-Readme.md
+2026-09-25T22:08:29.2876378Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260920.314
+2026-09-25T22:08:29.2877029Z ##[endgroup]
+2026-09-25T22:08:29.2877806Z ##[group]GITHUB_TOKEN Permissions
+2026-09-25T22:08:29.2879377Z Contents: read
+2026-09-25T22:08:29.2879832Z Metadata: read
+2026-09-25T22:08:29.2880222Z ##[endgroup]
+2026-09-25T22:08:29.2881923Z Secret source: None
+2026-09-25T22:08:29.2882590Z Cache mode: write
+2026-09-25T22:08:29.2883050Z Prepare workflow directory
+2026-09-25T22:08:29.3139858Z Prepare all required actions
+2026-09-25T22:08:29.3175136Z Getting action download info
+2026-09-25T22:08:29.5425503Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-09-25T22:08:29.6103204Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-09-25T22:08:29.8144728Z Complete job name: Behavior portable serial 8
+2026-09-25T22:08:29.8661404Z ##[group]Run actions/checkout@v6
+2026-09-25T22:08:29.8662291Z with:
+2026-09-25T22:08:29.8662650Z   fetch-depth: 0
+2026-09-25T22:08:29.8663039Z   repository: kunchenguid/firstmate
+2026-09-25T22:08:29.8666499Z   token: ***
+2026-09-25T22:08:29.8666866Z   ssh-strict: true
+2026-09-25T22:08:29.8667239Z   ssh-user: git
+2026-09-25T22:08:29.8667729Z   persist-credentials: true
+2026-09-25T22:08:29.8668133Z   clean: true
+2026-09-25T22:08:29.8668520Z   sparse-checkout-cone-mode: true
+2026-09-25T22:08:29.8668929Z   fetch-tags: false
+2026-09-25T22:08:29.8669348Z   show-progress: true
+2026-09-25T22:08:29.8669854Z   lfs: false
+2026-09-25T22:08:29.8670230Z   submodules: false
+2026-09-25T22:08:29.8670620Z   set-safe-directory: true
+2026-09-25T22:08:29.8671027Z   allow-unsafe-pr-checkout: false
+2026-09-25T22:08:29.8671769Z ##[endgroup]
+2026-09-25T22:08:29.9388071Z Syncing repository: kunchenguid/firstmate
+2026-09-25T22:08:29.9389509Z ##[group]Getting Git version info
+2026-09-25T22:08:29.9390132Z Working directory is '/home/runner/work/firstmate/firstmate'
+2026-09-25T22:08:29.9390919Z [command]/usr/bin/git version
+2026-09-25T22:08:29.9895692Z git version 2.55.0
+2026-09-25T22:08:29.9909986Z ##[endgroup]
+2026-09-25T22:08:29.9920048Z Temporarily overriding HOME='/home/runner/work/_temp/c38f8c98-32f0-4753-93fb-b966ccb186c2' before making global git config changes
+2026-09-25T22:08:29.9923688Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-25T22:08:29.9924494Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/firstmate/firstmate
+2026-09-25T22:08:29.9962059Z Deleting the contents of '/home/runner/work/firstmate/firstmate'
+2026-09-25T22:08:29.9965331Z ##[group]Determining repository object format
+2026-09-25T22:08:29.9966648Z ##[endgroup]
+2026-09-25T22:08:29.9967359Z ##[group]Initializing the repository
+2026-09-25T22:08:29.9970089Z [command]/usr/bin/git init /home/runner/work/firstmate/firstmate
+2026-09-25T22:08:30.0050504Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-09-25T22:08:30.0052026Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-09-25T22:08:30.0053019Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-09-25T22:08:30.0053906Z hint: call:
+2026-09-25T22:08:30.0054540Z hint:
+2026-09-25T22:08:30.0055238Z hint: 	git config --global init.defaultBranch <name>
+2026-09-25T22:08:30.0056445Z hint:
+2026-09-25T22:08:30.0056919Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-09-25T22:08:30.0057634Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-09-25T22:08:30.0058184Z hint:
+2026-09-25T22:08:30.0058712Z hint: 	git branch -m <name>
+2026-09-25T22:08:30.0059304Z hint:
+2026-09-25T22:08:30.0059897Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-09-25T22:08:30.0060692Z Initialized empty Git repository in /home/runner/work/firstmate/firstmate/.git/
+2026-09-25T22:08:30.0061960Z [command]/usr/bin/git remote add origin https://github.com/kunchenguid/firstmate
+2026-09-25T22:08:30.0097243Z ##[endgroup]
+2026-09-25T22:08:30.0098183Z ##[group]Disabling automatic garbage collection
+2026-09-25T22:08:30.0099879Z [command]/usr/bin/git config --local gc.auto 0
+2026-09-25T22:08:30.0123581Z ##[endgroup]
+2026-09-25T22:08:30.0124545Z ##[group]Setting up auth
+2026-09-25T22:08:30.0125139Z Removing SSH command configuration
+2026-09-25T22:08:30.0127630Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-25T22:08:30.0149157Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-25T22:08:30.0424965Z Removing HTTP extra header
+2026-09-25T22:08:30.0429006Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-25T22:08:30.0449106Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-25T22:08:30.0586653Z Removing includeIf entries pointing to credentials config files
+2026-09-25T22:08:30.0590497Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-25T22:08:30.0610645Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-25T22:08:30.0752951Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-09-25T22:08:30.0778084Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/firstmate/firstmate/.git.path /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:08:30.0799996Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:08:30.0850304Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:08:30.0872387Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:08:30.0891429Z ##[endgroup]
+2026-09-25T22:08:30.0891990Z ##[group]Fetching the repository
+2026-09-25T22:08:30.0897128Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* +59ad81890b5bbeeae177d4ecd8c8792ac1837b50:refs/remotes/pull/5720/merge
+2026-09-25T22:08:33.0554355Z From https://github.com/kunchenguid/firstmate
+2026-09-25T22:08:33.0555527Z  * [new branch]        cursor/ci-fm-ci-churn-macos-herdr-dry-e1d1 -> origin/cursor/ci-fm-ci-churn-macos-herdr-dry-e1d1
+2026-09-25T22:08:33.0556952Z  * [new branch]        devin/1790040975-secondmate-fm-root-pin -> origin/devin/1790040975-secondmate-fm-root-pin
+2026-09-25T22:08:33.0557840Z  * [new branch]        fm/afk-pi-wake-bypass-r1 -> origin/fm/afk-pi-wake-bypass-r1
+2026-09-25T22:08:33.0558850Z  * [new branch]        fm/fm-3c1-host-latch-r1 -> origin/fm/fm-3c1-host-latch-r1
+2026-09-25T22:08:33.0559438Z  * [new branch]        fm/fm-3c2-host-mirror-r1 -> origin/fm/fm-3c2-host-mirror-r1
+2026-09-25T22:08:33.0560300Z  * [new branch]        fm/fm-actionable-update-escalation-misclassification-r1 -> origin/fm/fm-actionable-update-escalation-misclassification-r1
+2026-09-25T22:08:33.0561199Z  * [new branch]        fm/fm-actionable-update-escalation-misclassification-r3 -> origin/fm/fm-actionable-update-escalation-misclassification-r3
+2026-09-25T22:08:33.0562093Z  * [new branch]        fm/fm-afk-pi-branch-both-postures-r1 -> origin/fm/fm-afk-pi-branch-both-postures-r1
+2026-09-25T22:08:33.0562863Z  * [new branch]        fm/fm-branch-note-sailboat-r2 -> origin/fm/fm-branch-note-sailboat-r2
+2026-09-25T22:08:33.0563763Z  * [new branch]        fm/fm-claude-invisible-marker-r1 -> origin/fm/fm-claude-invisible-marker-r1
+2026-09-25T22:08:33.0564739Z  * [new branch]        fm/fm-composer-thin-adapter-refactor-r1 -> origin/fm/fm-composer-thin-adapter-refactor-r1
+2026-09-25T22:08:33.0565719Z  * [new branch]        fm/fm-documentation-audience-cleanup-r1 -> origin/fm/fm-documentation-audience-cleanup-r1
+2026-09-25T22:08:33.0566854Z  * [new branch]        fm/fm-fleet-activity-ledger-r1 -> origin/fm/fm-fleet-activity-ledger-r1
+2026-09-25T22:08:33.0567852Z  * [new branch]        fm/fm-fleet-activity-ledger-r1-reviewed -> origin/fm/fm-fleet-activity-ledger-r1-reviewed
+2026-09-25T22:08:33.0568869Z  * [new branch]        fm/fm-gate-lab-live-validation-r1 -> origin/fm/fm-gate-lab-live-validation-r1
+2026-09-25T22:08:33.0570058Z  * [new branch]        fm/fm-herdr-contiguity-resume -> origin/fm/fm-herdr-contiguity-resume
+2026-09-25T22:08:33.0571098Z  * [new branch]        fm/fm-herdr-recovery-classifier-stale-agent-r1 -> origin/fm/fm-herdr-recovery-classifier-stale-agent-r1
+2026-09-25T22:08:33.0572318Z  * [new branch]        fm/fm-needs-decision-main-only-r1 -> origin/fm/fm-needs-decision-main-only-r1
+2026-09-25T22:08:33.0572987Z  * [new branch]        fm/fm-needs-decision-whole-batch-r1 -> origin/fm/fm-needs-decision-whole-batch-r1
+2026-09-25T22:08:33.0573695Z  * [new branch]        fm/fm-nm-evidence-store-firstmate-r1 -> origin/fm/fm-nm-evidence-store-firstmate-r1
+2026-09-25T22:08:33.0574350Z  * [new branch]        fm/fm-park-boundary-flake-r1 -> origin/fm/fm-park-boundary-flake-r1
+2026-09-25T22:08:33.0575018Z  * [new branch]        fm/fm-per-task-delivery-override-r1 -> origin/fm/fm-per-task-delivery-override-r1
+2026-09-25T22:08:33.0575728Z  * [new branch]        fm/fm-public-stow-readbeforewrite-port-r1 -> origin/fm/fm-public-stow-readbeforewrite-port-r1
+2026-09-25T22:08:33.0576871Z  * [new branch]        fm/fm-safe-auto-reboot-simple-r1 -> origin/fm/fm-safe-auto-reboot-simple-r1
+2026-09-25T22:08:33.0577590Z  * [new branch]        fm/fm-secondmate-creation-record-intake-r1 -> origin/fm/fm-secondmate-creation-record-intake-r1
+2026-09-25T22:08:33.0578489Z  * [new branch]        fm/fm-secondmate-parent-channel-structural-r1 -> origin/fm/fm-secondmate-parent-channel-structural-r1
+2026-09-25T22:08:33.0579423Z  * [new branch]        fm/fm-secondmate-record-atomic-transitions-r1 -> origin/fm/fm-secondmate-record-atomic-transitions-r1
+2026-09-25T22:08:33.0580126Z  * [new branch]        fm/fm-sessionstart-network-free-r1 -> origin/fm/fm-sessionstart-network-free-r1
+2026-09-25T22:08:33.0580739Z  * [new branch]        fm/fm-shared-test-fixtures-r1 -> origin/fm/fm-shared-test-fixtures-r1
+2026-09-25T22:08:33.0581335Z  * [new branch]        fm/fm-skill-frontmatter-desc-r1 -> origin/fm/fm-skill-frontmatter-desc-r1
+2026-09-25T22:08:33.0581930Z  * [new branch]        fm/fm-supervision-host-attended-r1 -> origin/fm/fm-supervision-host-attended-r1
+2026-09-25T22:08:33.0582672Z  * [new branch]        fm/fm-supervision-pr-url-hallucination-r1 -> origin/fm/fm-supervision-pr-url-hallucination-r1
+2026-09-25T22:08:33.0583280Z  * [new branch]        fm/fm-supervision-rearm-resurface-r1 -> origin/fm/fm-supervision-rearm-resurface-r1
+2026-09-25T22:08:33.0583857Z  * [new branch]        fm/fm-supervision-refused-ack-loop-r1 -> origin/fm/fm-supervision-refused-ack-loop-r1
+2026-09-25T22:08:33.0584504Z  * [new branch]        fm/fm-teardown-closes-captain-held-scout-r1 -> origin/fm/fm-teardown-closes-captain-held-scout-r1
+2026-09-25T22:08:33.0585112Z  * [new branch]        fm/fm-teardown-slot-collision-fix-r1 -> origin/fm/fm-teardown-slot-collision-fix-r1
+2026-09-25T22:08:33.0585703Z  * [new branch]        fm/fm-turnend-foreign-owner-arm-fix-r1 -> origin/fm/fm-turnend-foreign-owner-arm-fix-r1
+2026-09-25T22:08:33.0586891Z  * [new branch]        fm/fm-watcher-flap-autoarm-fix-r2 -> origin/fm/fm-watcher-flap-autoarm-fix-r2
+2026-09-25T22:08:33.0587547Z  * [new branch]        fm/fm-watcher-hardening-r1 -> origin/fm/fm-watcher-hardening-r1
+2026-09-25T22:08:33.0588055Z  * [new branch]        fm/fm-watcher-hardening-r2 -> origin/fm/fm-watcher-hardening-r2
+2026-09-25T22:08:33.0588550Z  * [new branch]        fm/fm-watcher-hardening-r3 -> origin/fm/fm-watcher-hardening-r3
+2026-09-25T22:08:33.0589123Z  * [new branch]        fm/herdr-workspace-contiguity-maintenance -> origin/fm/herdr-workspace-contiguity-maintenance
+2026-09-25T22:08:33.0589728Z  * [new branch]        fm/nm-required-exempt-release-please-r1 -> origin/fm/nm-required-exempt-release-please-r1
+2026-09-25T22:08:33.0590329Z  * [new branch]        fm/reconcile-inactive-crew-investigate-s1 -> origin/fm/reconcile-inactive-crew-investigate-s1
+2026-09-25T22:08:33.0590941Z  * [new branch]        fm/remote-send-confirm-readback-fix-r1 -> origin/fm/remote-send-confirm-readback-fix-r1
+2026-09-25T22:08:33.0591664Z  * [new branch]        fm/remote-send-delivery-delta-r1 -> origin/fm/remote-send-delivery-delta-r1
+2026-09-25T22:08:33.0592298Z  * [new branch]        fm/secondmate-autonomous-supervision-s7 -> origin/fm/secondmate-autonomous-supervision-s7
+2026-09-25T22:08:33.0592802Z  * [new branch]        main                    -> origin/main
+2026-09-25T22:08:33.0593187Z  * [new branch]        no-mistakes/evidence    -> origin/no-mistakes/evidence
+2026-09-25T22:08:33.0593663Z  * [new branch]        proto/herdr-child-workspaces -> origin/proto/herdr-child-workspaces
+2026-09-25T22:08:33.0594137Z  * [new ref]           59ad81890b5bbeeae177d4ecd8c8792ac1837b50 -> pull/5720/merge
+2026-09-25T22:08:33.0595731Z ##[endgroup]
+2026-09-25T22:08:33.0596399Z ##[group]Determining the checkout info
+2026-09-25T22:08:33.0596877Z ##[endgroup]
+2026-09-25T22:08:33.0597164Z [command]/usr/bin/git sparse-checkout disable
+2026-09-25T22:08:33.1222418Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-09-25T22:08:33.1246358Z ##[group]Checking out the ref
+2026-09-25T22:08:33.1250023Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/5720/merge
+2026-09-25T22:08:33.2017693Z Note: switching to 'refs/remotes/pull/5720/merge'.
+2026-09-25T22:08:33.2018260Z 
+2026-09-25T22:08:33.2018503Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-25T22:08:33.2018960Z changes and commit them, and you can discard any commits you make in this
+2026-09-25T22:08:33.2019431Z state without impacting any branches by switching back to a branch.
+2026-09-25T22:08:33.2019703Z 
+2026-09-25T22:08:33.2019877Z If you want to create a new branch to retain commits you create, you may
+2026-09-25T22:08:33.2020323Z do so (now or later) by using -c with the switch command. Example:
+2026-09-25T22:08:33.2020712Z 
+2026-09-25T22:08:33.2020876Z   git switch -c <new-branch-name>
+2026-09-25T22:08:33.2021153Z 
+2026-09-25T22:08:33.2021295Z Or undo this operation with:
+2026-09-25T22:08:33.2021525Z 
+2026-09-25T22:08:33.2021752Z   git switch -
+2026-09-25T22:08:33.2021966Z 
+2026-09-25T22:08:33.2022614Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-25T22:08:33.2022949Z 
+2026-09-25T22:08:33.2023332Z HEAD is now at 59ad8189 Merge 4f6f824dce4bfc4a63db65570cd0757d82ef1a0f into f54aa00097126f5328aca62c4115afa8edfde3a2
+2026-09-25T22:08:33.2025528Z ##[endgroup]
+2026-09-25T22:08:33.2059273Z [command]/usr/bin/git log -1 --format=%H
+2026-09-25T22:08:33.2077144Z 59ad81890b5bbeeae177d4ecd8c8792ac1837b50
+2026-09-25T22:08:33.2273578Z ##[group]Run set -eu
+2026-09-25T22:08:33.2274060Z [36;1mset -eu[0m
+2026-09-25T22:08:33.2274389Z [36;1mbin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"[0m
+2026-09-25T22:08:33.2274770Z [36;1mecho "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"[0m
+2026-09-25T22:08:33.2712402Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:33.2712747Z ##[endgroup]
+2026-09-25T22:08:33.7050577Z ShellCheck - shell script analysis tool
+2026-09-25T22:08:33.7051296Z version: 0.11.0
+2026-09-25T22:08:33.7051799Z license: GNU General Public License, version 3
+2026-09-25T22:08:33.7054308Z website: https://www.shellcheck.net
+2026-09-25T22:08:33.7125355Z ##[group]Run set -eu
+2026-09-25T22:08:33.7125672Z [36;1mset -eu[0m
+2026-09-25T22:08:33.7126180Z [36;1mbin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"[0m
+2026-09-25T22:08:33.7126593Z [36;1mecho "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"[0m
+2026-09-25T22:08:33.7163399Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:33.7163747Z ##[endgroup]
+2026-09-25T22:08:34.0323195Z 1.7.12
+2026-09-25T22:08:34.0323644Z installed by downloading from release page
+2026-09-25T22:08:34.0323993Z built with go1.26.1 compiler for linux/amd64
+2026-09-25T22:08:34.0374089Z ##[group]Run set -eu
+2026-09-25T22:08:34.0374395Z [36;1mset -eu[0m
+2026-09-25T22:08:34.0374705Z [36;1mcommand -v tmux >/dev/null || {[0m
+2026-09-25T22:08:34.0375103Z [36;1m  echo "::error::tmux is required for real afk injection e2e coverage"[0m
+2026-09-25T22:08:34.0375423Z [36;1m  exit 1[0m
+2026-09-25T22:08:34.0375625Z [36;1m}[0m
+2026-09-25T22:08:34.0375838Z [36;1mtmux -V[0m
+2026-09-25T22:08:34.0408117Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:34.0408395Z ##[endgroup]
+2026-09-25T22:08:34.2399773Z tmux 3.4
+2026-09-25T22:08:34.2432996Z ##[group]Run set -eu
+2026-09-25T22:08:34.2433244Z [36;1mset -eu[0m
+2026-09-25T22:08:34.2433510Z [36;1mnpm install -g tasks-axi[0m
+2026-09-25T22:08:34.2433768Z [36;1mtasks-axi --version[0m
+2026-09-25T22:08:34.2464385Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:34.2464655Z ##[endgroup]
+2026-09-25T22:08:35.4782192Z 
+2026-09-25T22:08:35.4782662Z added 3 packages in 1s
+2026-09-25T22:08:35.5171435Z 0.2.6
+2026-09-25T22:08:35.5245472Z ##[group]Run set -eu
+2026-09-25T22:08:35.5245698Z [36;1mset -eu[0m
+2026-09-25T22:08:35.5246277Z [36;1mnpm install -g @earendil-works/pi-coding-agent[0m
+2026-09-25T22:08:35.5246566Z [36;1mnpm ls -g --depth 0 @earendil-works/pi-coding-agent[0m
+2026-09-25T22:08:35.5279458Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:35.5279651Z ##[endgroup]
+2026-09-25T22:08:37.3554710Z npm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead
+2026-09-25T22:08:46.9965657Z 
+2026-09-25T22:08:46.9966191Z added 119 packages in 11s
+2026-09-25T22:08:46.9966440Z 
+2026-09-25T22:08:46.9966619Z 9 packages are looking for funding
+2026-09-25T22:08:46.9966935Z   run `npm fund` for details
+2026-09-25T22:08:49.7461325Z /usr/local/lib
+2026-09-25T22:08:49.7461975Z └── @earendil-works/pi-coding-agent@0.87.1
+2026-09-25T22:08:49.7462197Z 
+2026-09-25T22:08:49.7581349Z ##[group]Run set -eu
+2026-09-25T22:08:49.7581658Z [36;1mset -eu[0m
+2026-09-25T22:08:49.7581930Z [36;1mmkdir -p "$RUNNER_TEMP/fm-test"[0m
+2026-09-25T22:08:49.7582352Z [36;1m# The Pi package is installed above and CI provides npm and tsc, so[0m
+2026-09-25T22:08:49.7582871Z [36;1m# any missing typecheck prerequisite is a broken lane, not a valid skip.[0m
+2026-09-25T22:08:49.7583284Z [36;1mbin/fm-test-run.sh --lane "$FM_SERIAL_LANE" \[0m
+2026-09-25T22:08:49.7583694Z [36;1m  --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \[0m
+2026-09-25T22:08:49.7584369Z [36;1m  --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-serial-${FM_SERIAL_SHARD}.json"[0m
+2026-09-25T22:08:49.7620385Z shell: /usr/bin/bash -e {0}
+2026-09-25T22:08:49.7620675Z env:
+2026-09-25T22:08:49.7620937Z   FM_SERIAL_LANE: portable-serial-8of9
+2026-09-25T22:08:49.7621263Z   FM_SERIAL_SHARD: 8
+2026-09-25T22:08:49.7621510Z ##[endgroup]
+2026-09-25T22:08:50.4313343Z FM_TEST_BEGIN 2026-09-25T22:08:50Z tests/fm-secondmate-harness.test.sh family=secondmate expected_gate_skip=none
+2026-09-25T22:08:50.9228259Z ok - A1 fm-harness.sh secondmate resolves the fallback chain; crew mode unchanged
+2026-09-25T22:08:51.0353914Z ok - fm-harness detects only Cursor Agent CLI's exact invocation marker
+2026-09-25T22:08:51.2673901Z ok - C1 fm-harness.sh secondmate-model/secondmate-effort resolve the optional tokens; bare harness stays empty (backward-compat)
+2026-09-25T22:08:51.4308347Z ok - pi-signed identity: authoritative launch selection distinguishes shared wrapper ancestry
+2026-09-25T22:08:51.4789148Z ok - harness identity: dash-leading ps command names are basename operands, not options
+2026-09-25T22:08:52.9404864Z ok - B1 propagate_inheritable_config: copy, idempotence, convergence, absence-mirror, exclusion, no-op, skip diagnostics
+2026-09-25T22:08:54.3788199Z ok - B2 spawn: secondmate runs the secondmate harness; its home inherits declared config
+2026-09-25T22:08:55.7482444Z ok - B3 spawn: an absent secondmate-harness falls back to the crew harness (backward-compat)
+2026-09-25T22:08:57.1943171Z ok - B4 spawn: no config at all -> own harness and no propagation side effects
+2026-09-25T22:08:58.5625001Z ok - B5 spawn: an explicit per-spawn harness arg overrides config/secondmate-harness
+2026-09-25T22:08:58.7661171Z ok - B6 spawn: an unverified resolved secondmate harness is refused (guard intact)
+2026-09-25T22:08:58.9733139Z skip: cursor executable not resolvable in this environment, so the launch could not be built
+2026-09-25T22:09:00.4356175Z ok - B5b spawn: FM_BACKEND wins over inherited config/backend
+2026-09-25T22:09:01.9027147Z ok - B5c spawn: explicit --backend wins over FM_BACKEND and inherited config/backend
+2026-09-25T22:09:03.3005632Z ok - C2 spawn: a bare harness-only secondmate-harness file launches with no model/effort flag (backward-compat)
+2026-09-25T22:09:04.6921034Z ok - C3 spawn: config/secondmate-harness's model token threads --model into the launch and meta
+2026-09-25T22:09:06.0948129Z ok - C4 spawn: config/secondmate-harness's model+effort tokens thread into the launch and meta
+2026-09-25T22:09:07.4882116Z ok - C5 spawn: an explicit --model overrides config/secondmate-harness's model token; the file's effort token still applies
+2026-09-25T22:09:08.9177179Z ok - C6 spawn: an explicit --effort overrides config/secondmate-harness's effort token; the file's model token still applies
+2026-09-25T22:09:10.5108598Z ok - C7 spawn: an explicit --harness starts with clean model/effort defaults
+2026-09-25T22:09:11.8517636Z ok - C8 spawn: an explicit --harness still honors explicit model/effort flags
+2026-09-25T22:09:14.8984844Z ok - C9 spawn: secondmate launch pins supervision to its own harness
+2026-09-25T22:09:18.8107363Z ok - C9 spawn: the harness fallback chain still resolves with no tokens; crew/scout launches are unaffected by this feature
+2026-09-25T22:09:24.2560695Z ok - B7 bootstrap sweep pushes, re-converges, and mirrors absence; never inherits secondmate-harness
+2026-09-25T22:09:26.1512225Z ok - B8 bootstrap sweep propagates config even when the home's tracked files are already current
+2026-09-25T22:09:28.1347558Z ok - B9 bootstrap sweep defers new inherited config until the home ignores it
+2026-09-25T22:09:31.4483738Z ok - B10 bootstrap sweep materializes and inherits the startup-memory default while fast-forwarding
+2026-09-25T22:09:36.6035380Z ok - B12b backend inheritance: present values and primary absence converge exactly
+2026-09-25T22:09:38.0076858Z ok - C2b spawn: config/claude-permission-mode=auto reaches a Claude secondmate launch
+2026-09-25T22:09:41.1969262Z ok - B12c claude-permission-mode inheritance: present values and primary absence converge exactly
+2026-09-25T22:09:46.3276280Z ok - B12c presentation inheritance: the primary default converges on, and only an explicit opt-out propagates off
+2026-09-25T22:09:48.1676643Z ok - B11 bootstrap sweep surfaces config propagation failures
+2026-09-25T22:09:50.1040812Z ok - B11 bootstrap rereads completed config writes after partial propagation
+2026-09-25T22:09:52.1586988Z ok - B12 config-push propagates via shared live discovery, reports items, rereads on change only, and does not fast-forward
+2026-09-25T22:09:55.4794351Z ok - B13 config-push reports dirty, non-allowing, and invalid homes without failing warnings-only runs
+2026-09-25T22:09:55.9403148Z ok - B14 config-push exits nonzero on real propagation errors
+2026-09-25T22:09:58.0325262Z ok - B14 config-push rereads completed config writes after partial propagation
+2026-09-25T22:10:01.2911625Z ok - B15 config reread is per-home, exact-byte, ordered, and pointer-only
+2026-09-25T22:10:11.8065093Z ok - B16 config reread isolation, ABSENT, generation safety, send failure, and retry
+2026-09-25T22:10:13.8319398Z ok - B20 config reread publication failures retain exact generations for retry
+2026-09-25T22:10:17.0955474Z ok - B21 config reread instruction-write failures retain exact retry generations
+2026-09-25T22:10:20.3292780Z ok - B21 config reread preserves exact bytes when temporary adoption also fails
+2026-09-25T22:10:24.4392814Z ok - B21 config reread serializes concurrent propagation and delivery
+2026-09-25T22:10:46.2262975Z ok - B22 full config reread retry queues drain before new publication
+2026-09-25T22:11:09.2447946Z ok - B23 mixed config reread delivery failures still bound sent history
+2026-09-25T22:11:09.5012685Z ok - B26 config reread delivery stops after the oldest failed generation
+2026-09-25T22:11:10.0150779Z ok - B17 config reread skips unchanged homes and reads destination post-write bytes
+2026-09-25T22:11:13.3797267Z ok - B18 bootstrap config reread path works; spawn flexibility remains defaults-only
+2026-09-25T22:11:14.0020805Z ok - B19 bootstrap respawns before inherited-config reread
+2026-09-25T22:11:15.5730977Z ok - B25 spawn quarantines stale rereads without blocking relaunch
+2026-09-25T22:11:15.6713048Z ok - B24 bootstrap detect-only mode remains filesystem read-only
+2026-09-25T22:11:15.6713408Z # all fm-secondmate-harness tests passed
+2026-09-25T22:11:16.3404221Z FM_TEST_END 2026-09-25T22:11:16Z tests/fm-secondmate-harness.test.sh exit=0 duration_ms=145903 gate_skip=false
+2026-09-25T22:11:16.3568564Z FM_TEST_BEGIN 2026-09-25T22:11:16Z tests/fm-spawn-dispatch-profile.test.sh family=backend-dispatch expected_gate_skip=none
+2026-09-25T22:11:18.8144842Z ok - allowlist=absent preserves the operational floor and filters only when opted in
+2026-09-25T22:11:21.2039459Z ok - allowlist=missing-config preserves the operational floor and filters only when opted in
+2026-09-25T22:11:23.6616783Z ok - allowlist=enabled preserves the operational floor and filters only when opted in
+2026-09-25T22:11:26.1339505Z ok - allowlist=empty preserves the operational floor and filters only when opted in
+2026-09-25T22:11:26.4136811Z ok - invalid allowlist names refuse before launch or task publication
+2026-09-25T22:11:26.6868620Z ok - inaccessible config with present allowlist refuses before launch or task publication
+2026-09-25T22:11:26.8819495Z ok - inaccessible config with absent allowlist refuses before launch or task publication
+2026-09-25T22:11:26.9733655Z ok - inaccessible ancestor with present allowlist refuses before launch or task publication
+2026-09-25T22:11:27.0838600Z ok - inaccessible ancestor with absent allowlist refuses before launch or task publication
+2026-09-25T22:11:28.3933823Z ok - secondmate launch inherits the allowlist for subsequent worker launches
+2026-09-25T22:11:28.6131344Z ok - local inheritance preserves the allowlist on source errors and mirrors proven absence
+2026-09-25T22:11:29.1362288Z ok - remote inheritance preserves the allowlist on source errors and mirrors proven absence
+2026-09-25T22:11:49.9559078Z ok - fm-spawn: actual ship/scout launch commands deliver the worker role contract
+2026-09-25T22:11:52.3015264Z ok - no --model/--effort records defaults and types the claude launch instructions
+2026-09-25T22:11:54.6230402Z ok - non-cursor launches clear inherited Cursor identity markers
+2026-09-25T22:11:56.9102256Z ok - relative home overrides ignore CDPATH and become absolute before spawn launch construction
+2026-09-25T22:12:01.4720005Z ok - FM_HOME defaults resolve relative paths and preserve absolute spellings
+2026-09-25T22:12:03.7532829Z ok - absolute override spellings are preserved in spawn launch paths
+2026-09-25T22:12:03.8355754Z ok - unresolvable relative spawn overrides fail with named diagnostics
+2026-09-25T22:12:04.0246285Z ok - active crew-dispatch profile requires an explicit harness for ship spawns
+2026-09-25T22:12:04.2021555Z ok - active crew-dispatch profile requires an explicit harness for scout spawns
+2026-09-25T22:12:06.4713239Z ok - active crew-dispatch profile allows an explicit resolved harness
+2026-09-25T22:12:08.7378318Z ok - active crew-dispatch profile allows the legacy positional harness form
+2026-09-25T22:12:11.1222097Z ok - active crew-dispatch profile allows the raw launch-command escape hatch
+2026-09-25T22:12:13.4402306Z ok - a chained raw launch commits through the AI-trailer strip in every step
+2026-09-25T22:12:15.7912783Z ok - claude receives --model and --effort profile flags
+2026-09-25T22:12:18.0644673Z ok - codex receives --model and model_reasoning_effort profile flags
+2026-09-25T22:12:20.5331606Z ok - codex Luna receives --model and model_reasoning_effort max profile flags
+2026-09-25T22:12:22.9521825Z ok - codex omits max for models without the catalog capability
+2026-09-25T22:12:25.1896846Z ok - a codex crewmate launches with no hook layer and keeps its turn-end signal
+2026-09-25T22:12:26.3834978Z ok - a codex secondmate keeps the project hook layer its primary session runs on
+2026-09-25T22:12:28.6830017Z ok - grok receives --model and --reasoning-effort profile flags
+2026-09-25T22:12:31.0284696Z ok - grok omits unsupported max reasoning effort
+2026-09-25T22:12:33.2963477Z ok - grok omits unsupported xhigh reasoning effort
+2026-09-25T22:12:35.6270126Z ok - cursor receives its model-qualified reasoning class and exact task workspace
+2026-09-25T22:12:35.9207856Z ok - cursor refuses model ids absent from its resolved binary's live catalog
+2026-09-25T22:12:38.3005189Z ok - cursor preserves the requested model when its live catalog is unreachable
+2026-09-25T22:12:40.7213934Z ok - opencode receives --model and omits the unsupported effort axis
+2026-09-25T22:12:40.7337235Z ok - native effort validator checks harness and model as separate axes
+2026-09-25T22:12:52.5689988Z ok - Ultra is explicit for native Pi and Pi-signed, including direct-PR, and refuses unsupported profiles before provisioning
+2026-09-25T22:12:57.3696462Z ok - batch dispatch preserves native Ultra in metadata and launch flags
+2026-09-25T22:12:59.7385661Z ok - pi receives --model and --thinking max profile flags
+2026-09-25T22:13:09.1040981Z ok - Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi
+2026-09-25T22:13:11.4527203Z ok - pi-signed shares Pi launch semantics while preserving its configured and recorded identity
+2026-09-25T22:13:11.6634351Z ok - pi-signed refuses safely and actionably when the selected executable is unavailable
+2026-09-25T22:13:12.9233979Z ok - pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics
+2026-09-25T22:13:17.6149923Z ok - batch dispatch forwards shared --harness, --model, and --effort to every pair
+2026-09-25T22:13:20.0094360Z ok - claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store
+2026-09-25T22:13:22.3747488Z ok - the primary-owned Lavish server address reaches every worker launch
+2026-09-25T22:13:24.7001331Z ok - absent Lavish configuration preserves the destination environment
+2026-09-25T22:13:27.1822356Z ok - claude omits the config-dir prefix when firstmate runs with the single-store default
+2026-09-25T22:13:29.5706934Z ok - config/claude-permission-mode=bypass launches exactly as an absent file does
+2026-09-25T22:13:31.9229868Z ok - config/claude-permission-mode=auto replaces --dangerously-skip-permissions with --permission-mode auto
+2026-09-25T22:13:34.2542350Z ok - config/claude-permission-mode=auto reaches scout launches too
+2026-09-25T22:13:34.3366086Z ok - an unrecognized config/claude-permission-mode token refuses before any endpoint or metadata
+2026-09-25T22:13:36.5773642Z ok - config/claude-permission-mode changes claude launches only
+2026-09-25T22:13:38.8477329Z ok - non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix
+2026-09-25T22:13:41.1994597Z ok - a claude task launch establishes only Firstmate's task control channels through the system prompt
+2026-09-25T22:13:42.4190844Z ok - a persistent claude secondmate keeps its supervisor contract without a task-worker authority overlay
+2026-09-25T22:13:44.8493670Z ok - fm-spawn: a Claude launch longer than 1024 bytes is delivered intact through the staging path
+2026-09-25T22:13:47.1500276Z ok - a claude crewmate launch carries the attribution-off policy in its own settings
+2026-09-25T22:13:48.4421494Z ok - a claude secondmate launch carries the attribution-off policy too
+2026-09-25T22:13:49.9637939Z ok - active crew-dispatch profile does not block secondmate launches
+2026-09-25T22:13:49.9638385Z # all fm-spawn-dispatch-profile tests passed
+2026-09-25T22:13:51.5367348Z FM_TEST_END 2026-09-25T22:13:51Z tests/fm-spawn-dispatch-profile.test.sh exit=0 duration_ms=155174 gate_skip=false
+2026-09-25T22:13:51.5530936Z FM_TEST_BEGIN 2026-09-25T22:13:51Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+2026-09-25T22:14:00.2166984Z ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+2026-09-25T22:14:13.1419187Z ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+2026-09-25T22:14:13.4676240Z ok - watch-arm: an unusable launch confirm window refuses to arm by name
+2026-09-25T22:14:13.5829985Z ok - watch-arm: a disposable validation checkout refuses to arm
+2026-09-25T22:14:15.0764579Z ok - watch-arm: a watcher exits when its state directory is removed
+2026-09-25T22:14:16.6818560Z ok - watch-arm: a watcher exits when its home is removed
+2026-09-25T22:14:17.1220052Z ok - watch-arm: the test reaper stops a watcher armed for a tracked temporary home
+2026-09-25T22:14:19.1954144Z ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+2026-09-25T22:14:20.4635511Z /home/runner/work/firstmate/firstmate/bin/fm-watch-arm.sh: line 616: 137310 Killed                  "$WATCH" > "$child_out"
+2026-09-25T22:14:21.5187970Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 137898.1790374460.Ye6Faz
+2026-09-25T22:14:25.6712438Z ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+2026-09-25T22:14:25.9654772Z /home/runner/work/firstmate/firstmate/bin/fm-watch-arm.sh: line 616: 143377 Killed                  "$WATCH" > "$child_out"
+2026-09-25T22:14:39.9390833Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 143968.1790374466.it33HH
+2026-09-25T22:14:40.5094703Z ok - watch-arm: a re-arm whose recovery cycle runs slowly still surfaces it
+2026-09-25T22:14:40.8357998Z watcher: recovery state could not be persisted; retaining stale lock evidence
+2026-09-25T22:14:41.3922190Z ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+2026-09-25T22:14:43.6738882Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 147970.1790374483.TvWMfD
+2026-09-25T22:14:45.0946282Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 149493.1790374484.f86bzi
+2026-09-25T22:14:46.5314688Z ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+2026-09-25T22:14:51.8145382Z ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+2026-09-25T22:14:52.4368417Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 156619.1790374492.UeHhdB
+2026-09-25T22:14:53.3939381Z ok - watch-arm: malformed recovery state is quarantined without a successor loop
+2026-09-25T22:14:55.3132610Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 158737.1790374493.fmDPN7
+2026-09-25T22:14:55.8346679Z ok - watch-arm: publication after recovery handoff is surfaced
+2026-09-25T22:14:56.4745395Z ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+2026-09-25T22:14:57.1195128Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 160581.1790374496.q2KBDW
+2026-09-25T22:14:57.6345766Z ok - watch-arm: markerless legacy queues are adopted and recovered
+2026-09-25T22:15:04.7743097Z ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+2026-09-25T22:15:08.1193519Z ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+2026-09-25T22:15:08.5099093Z ok - watch-arm: downtime marker publication does not follow symlinks
+2026-09-25T22:15:08.9629505Z ok - watch-arm: --stop ends only this home's watcher, publishes downtime, and reports when none runs
+2026-09-25T22:15:09.0387129Z FM_TEST_END 2026-09-25T22:15:09Z tests/fm-watch-arm.test.sh exit=0 duration_ms=77480 gate_skip=false
+2026-09-25T22:15:09.0550717Z FM_TEST_BEGIN 2026-09-25T22:15:09Z tests/fm-remote-secondmate-trace-context.test.sh family=secondmate expected_gate_skip=none
+2026-09-25T22:15:10.3177062Z fatal: failed to copy file to '/tmp/fm-remote-trace-context.vzI9BZ/remote-home/.git/objects/c0/8cc0ce2e2e45f544f2301fc27bb2e8c44f8f50': No such file or directory
+2026-09-25T22:15:10.3177617Z error: could not clone the remote Firstmate home
+2026-09-25T22:15:10.3177890Z error: remote provisioning failed; registry restored
+2026-09-25T22:15:10.3262225Z not ok - remote seed did not provision the traced route
+2026-09-25T22:15:10.4319649Z FM_TEST_END 2026-09-25T22:15:10Z tests/fm-remote-secondmate-trace-context.test.sh exit=1 duration_ms=1373 gate_skip=false
+2026-09-25T22:15:10.4490812Z FM_TEST_BEGIN 2026-09-25T22:15:10Z tests/fm-agy-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:15:10.4926508Z ok - fm-harness.sh: ancestry detects a natively-named agy command
+2026-09-25T22:15:10.5186348Z ok - fm-harness.sh: ancestry rejects unrelated agy mentions
+2026-09-25T22:15:10.6220974Z ok - fm-harness.sh: no inherited launcher marker claims the agy identity
+2026-09-25T22:15:10.6267931Z ok - fm-control-lib: agy mechanics are Escape once, no clear key, and /quit
+2026-09-25T22:15:10.6392386Z ok - fm-busy-lib: only the pinned esc-to-cancel row carries the agy busy verdict
+2026-09-25T22:15:10.6467382Z ok - fm-composer-lib: agy delivery signatures never cross harnesses
+2026-09-25T22:15:10.6543722Z ok - fm-busy-lib: agy classifies busy on its marker and unknown without it
+2026-09-25T22:15:10.6740788Z ok - bin/fm-agent-process-lib.sh: agy is an agent, fragments are not
+2026-09-25T22:15:10.7612661Z ok - herdr exit detection: done with a live registry and an agy process view stays live and refuses replacement
+2026-09-25T22:15:10.8643122Z ok - herdr exit detection: a registered status over a shell-only pane is stale-agent and still refuses closing
+2026-09-25T22:15:10.9088443Z ok - herdr exit detection: a registered pane with an agy foreground stays live however its shell ranks
+2026-09-25T22:15:10.9493641Z ok - herdr exit detection: only a positively unregistered pane is agent-free
+2026-09-25T22:15:10.9942449Z ok - herdr exit detection: malformed and failed reads stay unknown
+2026-09-25T22:15:13.5964009Z ok - fm-spawn: agy launch carries brief, model, effort, and autonomy with cleared markers
+2026-09-25T22:15:16.2333632Z ok - fm-spawn: agy omits xhigh from the launch but records it in task metadata
+2026-09-25T22:15:16.4507356Z ok - fm-spawn: an unlisted agy model refuses before pane creation
+2026-09-25T22:15:19.1402431Z ok - fm-spawn: an unreachable agy listing establishes nothing and launches
+2026-09-25T22:15:22.8387521Z ok - fm-spawn: a hung agy listing is cut off by the shared bound and launches unvalidated
+2026-09-25T22:15:40.4356006Z ok - fm-spawn: a zero FM_AGY_MODELS_TIMEOUT is clamped to the default bound
+2026-09-25T22:15:40.6630663Z ok - fm-agy-trust.sh: registers the logical and resolved worktree paths and preserves the store
+2026-09-25T22:15:40.7407372Z ok - fm-agy-trust.sh: creates agy's settings store when none exists
+2026-09-25T22:15:40.8848010Z ok - fm-agy-trust.sh: refuses every out-of-scope path and never rewrites a broken store
+2026-09-25T22:15:43.6453366Z ok - fm-spawn: agy pre-registers the worktree and launches straight into a busy turn
+2026-09-25T22:15:46.2068301Z ok - fm-spawn: agy answers a dialog that renders anyway exactly once, then confirms busy
+2026-09-25T22:15:48.8123590Z ok - fm-spawn: on an unregistered path a premature busy verdict waits for the dialog to be answered
+2026-09-25T22:15:51.5179569Z ok - fm-spawn: a busy verdict on an unregistered path without a dialog fails and closes the endpoint
+2026-09-25T22:15:54.2948287Z ok - fm-spawn: an agy dialog that never turns busy fails the spawn and closes the endpoint
+2026-09-25T22:15:54.5950597Z ok - fm-spawn: a missing agy executable refuses before pane creation
+2026-09-25T22:15:54.8704264Z ok - fm-spawn: agy cannot be launched as a secondmate
+2026-09-25T22:15:57.5333063Z ok - fm-spawn: agy arms no busy wiring and writes no sidecar
+2026-09-25T22:15:57.7308366Z FM_TEST_END 2026-09-25T22:15:57Z tests/fm-agy-harness.test.sh exit=0 duration_ms=47276 gate_skip=false
+2026-09-25T22:15:57.7474802Z FM_TEST_BEGIN 2026-09-25T22:15:57Z tests/fm-muse-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:16:03.1857351Z ok - Muse preflight respects the allowlist while retaining stored authentication
+2026-09-25T22:16:03.2748469Z ok - muse is detected through any versioned muse-bin ancestor
+2026-09-25T22:16:03.7707926Z ok - muse detection does not claim unrelated muse-containing commands
+2026-09-25T22:16:06.3672967Z ok - muse launch clears foreign harness markers before ancestry detection
+2026-09-25T22:16:08.8685532Z ok - muse spawn launches with autonomy, privacy control, and a positional brief
+2026-09-25T22:16:24.7738339Z ok - muse maps the shared effort vocabulary and reaches ultra only via explicit max
+2026-09-25T22:16:24.9756264Z ok - muse spawn refuses when no credential can reach the provider
+2026-09-25T22:16:25.2004947Z ok - muse spawn refuses a META_API_KEY that cannot reach the worker
+2026-09-25T22:16:27.9083424Z ok - muse spawn accepts a stored credential without META_API_KEY
+2026-09-25T22:16:30.5561594Z ok - muse resolves relative XDG roots before preflight and launch
+2026-09-25T22:16:30.7786865Z ok - muse is refused as a secondmate harness
+2026-09-25T22:16:34.3606142Z ok - muse spawn writes a session binding that teardown removes
+2026-09-25T22:16:35.6776286Z ok - every accepted muse Escape alias clears the restored composer
+2026-09-25T22:16:35.9968132Z ok - the composer clear is scoped to muse and does not touch other adapters
+2026-09-25T22:16:36.3129076Z ok - a failed muse composer clear fails loudly instead of leaving stale input
+2026-09-25T22:16:36.3478041Z ok - the run fold tracks open, settled, interrupted, reopened, and run-free logs
+2026-09-25T22:16:36.3559243Z ok - a nested terminal record never settles an in-flight run
+2026-09-25T22:16:36.4295139Z ok - the session binding folds only the log matching this task's worktree
+2026-09-25T22:16:36.4702303Z ok - workspace bindings compare decoded paths literally
+2026-09-25T22:16:36.5130323Z ok - spawn-time exclusions select the current session across equal mtimes
+2026-09-25T22:16:36.6789660Z ok - the Muse session cache avoids rescans and refreshes safely across incarnations
+2026-09-25T22:16:36.8881787Z ok - a changed Muse namespace revalidates cached session uniqueness
+2026-09-25T22:16:36.9771671Z ok - sub-agent session logs are excluded from the parent's busy fold
+2026-09-25T22:16:37.0299862Z ok - every unproven muse binding classifies unknown rather than idle
+2026-09-25T22:16:37.1064137Z ok - a settled session log reads idle for both completed and interrupted turns
+2026-09-25T22:16:37.1081560Z ok - muse trusts no busy record source
+2026-09-25T22:16:37.2431182Z FM_TEST_END 2026-09-25T22:16:37Z tests/fm-muse-harness.test.sh exit=0 duration_ms=39489 gate_skip=false
+2026-09-25T22:16:37.2598036Z FM_TEST_BEGIN 2026-09-25T22:16:37Z tests/fm-turnend-guard.test.sh family=watcher-wake-lock expected_gate_skip=none
+2026-09-25T22:16:37.2885388Z ok - fm_supervision_unhealthy: false with no state/*.meta at all
+2026-09-25T22:16:37.2894910Z ok - fm_supervision_unhealthy: true with in-flight task and no beacon ever
+2026-09-25T22:16:37.2947703Z ok - fm_supervision_unhealthy: true with in-flight task and a beacon far outside the grace window
+2026-09-25T22:16:37.2998783Z ok - fm_supervision_unhealthy: false with in-flight task and a fresh beacon
+2026-09-25T22:16:37.3010119Z ok - fm_supervision_status: FM_SUP_QUEUE_PENDING tracks state/.wake-queue
+2026-09-25T22:16:37.3021956Z ok - fm_supervision_needed: X-mode relay poll needs supervision
+2026-09-25T22:16:37.3032404Z ok - fm_supervision_unhealthy: source-only home needs supervision
+2026-09-25T22:16:37.3647943Z ok - fm_supervision_needed: a registered custom check needs supervision with no task in flight
+2026-09-25T22:16:37.4282144Z ok - fm_supervision_needed: a registered check whose bytes drifted still needs supervision
+2026-09-25T22:16:37.4302246Z ok - fm_supervision_needed: false for a check.sh with no registration binding
+2026-09-25T22:16:37.4323139Z ok - fm_supervision_needed: a task PR poll without a trust binding is not a registered custom check
+2026-09-25T22:16:37.4334643Z ok - fm_supervision_status: the relay shim is not counted as a registered custom check
+2026-09-25T22:16:37.4806125Z ok - fm-turnend-guard: silent no-op with nothing in flight
+2026-09-25T22:16:37.6621206Z ok - fm-turnend-guard: blocks when a fresh beacon has no live watcher lock
+2026-09-25T22:16:37.7749613Z ok - fm-turnend-guard: non-Claude path blocks a source-only home
+2026-09-25T22:16:37.8885588Z ok - fm-turnend-guard: blocks on a dead watcher lock even when the beacon is fresh
+2026-09-25T22:16:37.9708357Z ok - fm-turnend-guard: silent no-op with a live watcher lock and fresh beacon
+2026-09-25T22:16:38.3258473Z ok - fm-turnend-guard: healthy non-Claude harness paths ignore Claude episode contention
+2026-09-25T22:16:38.4661099Z ok - fm-turnend-guard: blocks on a live watcher lock with an ancient beacon
+2026-09-25T22:16:38.5810092Z ok - fm-turnend-guard: blocks with the exact required reason in the primary when unhealthy
+2026-09-25T22:16:38.6891126Z ok - fm-turnend-guard: blocks from active FM_HOME state, not only repo-root state
+2026-09-25T22:16:38.7987252Z ok - fm-turnend-guard: X-mode repair reason sources the cadence config
+2026-09-25T22:16:38.9072605Z ok - fm-turnend-guard: X-mode-only supervision remains guarded in default mode
+2026-09-25T22:16:39.0729961Z ok - fm-turnend-guard: registered-check-only supervision is named in the block banner
+2026-09-25T22:16:39.1644236Z ok - fm-turnend-guard: ignores stale repo-root state when FM_HOME is set
+2026-09-25T22:16:39.2720573Z ok - fm-turnend-guard: uses FM_STATE_OVERRIDE ahead of FM_HOME/state
+2026-09-25T22:16:39.3014828Z ok - fm-turnend-guard: stop_hook_active=true always allows the stop (never blocks twice in one turn)
+2026-09-25T22:16:39.4066060Z ok - fm-turnend-guard: blocks a blind turn end in a secondmate's own home (.fm-secondmate-home no longer excludes it)
+2026-09-25T22:16:39.4449577Z ok - fm-turnend-guard: idle-by-default - silent in a secondmate home with nothing in flight
+2026-09-25T22:16:39.5605829Z ok - fm-turnend-guard: stop_hook_active=true allows the stop in a secondmate home (never blocks twice in one turn)
+2026-09-25T22:16:39.7199942Z ok - fm-turnend-guard: secondmate deferred-death recovery - silent while watched, forces re-arm once the watcher exits
+2026-09-25T22:16:39.7713606Z ok - fm-turnend-guard: inert in a secondmate's own child worktree (linked git worktree) even when unhealthy
+2026-09-25T22:16:39.8942685Z ok - fm-turnend-guard: blocks a blind turn end in a treehouse-leased LINKED secondmate home (marker force-include)
+2026-09-25T22:16:39.9916966Z ok - fm-turnend-guard: an invalid (empty) marker cannot spoof inclusion; linked worktree stays exempt
+2026-09-25T22:16:40.1251791Z ok - fm-turnend-guard: a non-ASCII marker cannot spoof inclusion; linked worktree stays exempt
+2026-09-25T22:16:40.1726362Z ok - fm-turnend-guard: inert in a crewmate/scout task worktree (linked git worktree) even when unhealthy
+2026-09-25T22:16:40.2232988Z ok - fm-turnend-guard: fails open (never blocks) when jq is missing
+2026-09-25T22:16:40.2476231Z ok - fm-turnend-guard: silent no-op on empty stdin
+2026-09-25T22:16:40.4222902Z ok - fm-turnend-guard: runs well under the generous timing margin (0s)
+2026-09-25T22:16:40.5889719Z ok - fm-turnend-guard-grok: forces one explicitly marked same-session resume when the shared predicate blocks
+2026-09-25T22:16:40.6892203Z ok - fm-turnend-guard-grok: legacy environment loop guard prevents a nested resume loop
+2026-09-25T22:16:40.8406627Z ok - fm-turnend-guard-grok: native false delegates blocking feedback with zero resume processes
+2026-09-25T22:16:40.9732558Z ok - fm-turnend-guard-grok: native true remains bounded and starts no resume process
+2026-09-25T22:16:41.2670814Z ok - fm-turnend-guard-grok: both spellings are typed and camelCase has deterministic precedence
+2026-09-25T22:16:41.3486829Z ok - fm-turnend-guard-grok: malformed, invalidly typed, and missing-prerequisite payloads start neither path
+2026-09-25T22:16:41.4262107Z ok - fm-turnend-guard-grok: missing jq and no-supervision-needed stops stay silent and bounded
+2026-09-25T22:16:41.4894535Z ok - tracked .claude/settings.json entries: 5 inert under grok, the documented subagent exception still armed, all live under Claude
+2026-09-25T22:16:41.8252638Z ok - .codex/hooks.json: Stop hook uses hook process root when payload cwd is outside
+2026-09-25T22:16:41.9472152Z ok - .codex/hooks.json: Stop hook ignores nested git root guard scripts
+2026-09-25T22:16:41.9858176Z ok - .opencode primary plugin: guard path is anchored to worktree, not directory
+2026-09-25T22:16:42.0711056Z ok - .pi primary extension: no-tool and multi-tool runs each inject exactly one guard follow-up
+2026-09-25T22:16:42.1520356Z ok - .pi primary extension: delivery failure resets the logical-run latch
+2026-09-25T22:16:42.6665978Z ok - fm-turnend-guard --claude: re-blocks a loop-guarded stop while unhealthy and unclaimed (incident regression)
+2026-09-25T22:16:43.0571540Z ok - fm-turnend-guard --claude: X-mode-only homes re-block when auto-arm recovery is absent
+2026-09-25T22:16:43.2164076Z ok - fm-turnend-guard --claude: a live arming epoch advances once and repeated observation is idempotent
+2026-09-25T22:16:44.9119307Z ok - fm-turnend-guard --claude: repeated failed-to-arming races make bounded monotonic progress
+2026-09-25T22:16:46.4323743Z ok - fm-turnend-guard --claude: terminal owner boundary excludes a concurrent start without deadlock
+2026-09-25T22:16:46.4943387Z ok - fm-turnend-guard --claude: fresh rewake epoch prevents a duplicate continuation for the same event
+2026-09-25T22:16:46.9242661Z ok - fm-turnend-guard --claude: an abandoned auto-arm claim no longer allows a blind stop (incident regression)
+2026-09-25T22:16:47.3675345Z ok - fm-turnend-guard --claude: a claim whose pid was reused stops counting as recovery even while its entry reads arming
+2026-09-25T22:16:47.8294415Z ok - fm-turnend-guard --claude: a hung owner frozen at arming with no watcher beat no longer allows a blind stop
+2026-09-25T22:16:47.9873558Z ok - fm-turnend-guard --claude: a live open generation claim owns recovery with no lock held
+2026-09-25T22:16:48.4338573Z ok - fm-turnend-guard --claude: a stuck generation claim no longer allows a blind stop
+2026-09-25T22:16:48.8723069Z ok - fm-turnend-guard --claude: the terminal path clears an abandoned claim instead of stepping aside silently
+2026-09-25T22:16:50.3035588Z ok - fm-turnend-guard --claude: fresh failed epochs preserve and advance monotonic fail-open progression
+2026-09-25T22:16:54.7717439Z ok - fm-turnend-guard --claude: integrated fresh failures reach one bounded fail-open, stop continuation, and reset on recovery
+2026-09-25T22:16:58.4861642Z ok - fm-turnend-guard --claude: an inert auto-arm's frozen epoch reaches one bounded fail-open and resets on recovery
+2026-09-25T22:16:59.9001143Z ok - fm-turnend-guard --claude: a frozen unverified epoch spends the budget yet still blocks
+2026-09-25T22:17:00.0717543Z ok - fm-turnend-guard --claude: reset contention preserves all episode state until retry
+2026-09-25T22:17:00.3043011Z ok - fm-turnend-guard --claude: concurrent auto-arm and guard resets are idempotent and deadlock-free
+2026-09-25T22:17:00.7095652Z ok - fm-turnend-guard --claude: stale rewake epoch does not allow a blind stop
+2026-09-25T22:17:01.8922688Z ok - fm-turnend-guard --claude: budget exhaustion alone cannot permit a blind stop
+2026-09-25T22:17:02.5787372Z ok - fm-turnend-guard --claude: verified fail-open is loud, bounded, attended, and non-repeating
+2026-09-25T22:17:03.1714929Z ok - fm-turnend-guard --claude: fail-open requires both exhausted retries and consumed notice
+2026-09-25T22:17:03.4743576Z ok - fm-turnend-guard --claude: away ownership excludes the Stop-autoarm fail-open
+2026-09-25T22:17:04.1159954Z ok - fm-turnend-guard --claude: positive watcher recovery resets failure episode state
+2026-09-25T22:17:04.6106861Z ok - fm-turnend-guard --claude: bounded claim wait avoids a token-consuming forced continuation
+2026-09-25T22:17:05.0431629Z ok - fm-turnend-guard --claude: secondmate home re-blocks unclaimed and allows auto-arm-claimed stops
+2026-09-25T22:17:05.1819668Z ok - fm-turnend-guard: a live away-mode daemon satisfies supervision with no watcher holding the lock
+2026-09-25T22:17:05.2771834Z ok - fm-turnend-guard: away-mode daemon ownership survives a leftover dead watcher lock
+2026-09-25T22:17:05.3934541Z ok - fm-turnend-guard: away mode with no daemon and no watcher still blocks
+2026-09-25T22:17:05.5115691Z ok - fm-turnend-guard: away mode blocks on a dead away-mode daemon
+2026-09-25T22:17:05.6335630Z ok - fm-turnend-guard: away mode blocks on a pid-reused away-mode daemon lock
+2026-09-25T22:17:05.7571376Z ok - fm-turnend-guard: away-mode daemon ownership never substitutes for a fresh beacon
+2026-09-25T22:17:05.8856404Z ok - fm-turnend-guard: a daemon lock proves nothing while away mode is off
+2026-09-25T22:17:05.9584010Z ok - fm-turnend-guard: away-mode beacon freshness uses the poll-derived grace, not the flat default
+2026-09-25T22:17:06.0884196Z ok - fm-turnend-guard: a dead away-mode daemon still blocks under the poll-derived grace
+2026-09-25T22:17:06.2196253Z ok - fm-turnend-guard: the poll-derived grace is bounded, not unlimited
+2026-09-25T22:17:06.3482714Z ok - fm-turnend-guard: with away mode off, the poll-derived grace never applies
+2026-09-25T22:17:06.4648551Z FM_TEST_END 2026-09-25T22:17:06Z tests/fm-turnend-guard.test.sh exit=0 duration_ms=29199 gate_skip=false
+2026-09-25T22:17:06.4806889Z FM_TEST_BEGIN 2026-09-25T22:17:06Z tests/fm-task-inbox.test.sh family=watcher-wake-lock expected_gate_skip=none
+2026-09-25T22:17:06.6496540Z ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+2026-09-25T22:17:06.7046509Z ok - inbox: a hostile-path doorbell executes as a no-op in bare shells
+2026-09-25T22:17:06.9556643Z ok - inbox: terminal-control paths are rejected without typing
+2026-09-25T22:17:08.7588343Z ok - inbox: the ring skips dead or missing endpoints and still rings live or unclassifiable endpoints
+2026-09-25T22:17:11.5794539Z ok - inbox: the ring submits its own stuck doorbell, skips other pending text, and retries a lost Enter once on both paths
+2026-09-25T22:17:11.7692781Z ok - inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not
+2026-09-25T22:17:11.8529205Z ok - inbox: idempotent enqueue follows a record concurrently moved to handled
+2026-09-25T22:17:12.0068460Z ok - inbox: the handled mv is the idempotent ack and sequences are never reissued
+2026-09-25T22:17:12.4408432Z ok - inbox: concurrent writers serialize on the sequence lock and lose nothing
+2026-09-25T22:17:12.4923404Z ok - inbox: a writer retries when a competing lock vanishes after its failed claim
+2026-09-25T22:17:12.6494339Z ok - inbox: ladder bookkeeping ignores a concurrently removed inbox
+2026-09-25T22:17:12.7654659Z ok - inbox: fire-and-forget records stay durable and outside the ladder
+2026-09-25T22:17:13.0252631Z ok - inbox: the re-ring ladder paces by grace, escalates once, and resets on ack
+2026-09-25T22:17:18.9511245Z ok - watcher: an unhandled aged message on an idle pane re-rings without waking firstmate, and the ack silences it
+2026-09-25T22:17:23.0488668Z ok - watcher: a busy pane just waits - the record is durable and no doorbell is typed
+2026-09-25T22:17:27.2171464Z ok - watcher: a healthy or empty inbox stays completely silent
+2026-09-25T22:17:30.2230752Z ok - watcher: acknowledgement silences an unwritable ladder without a stale wake
+2026-09-25T22:17:32.1283687Z ok - watcher: unwritable ladder bookkeeping surfaces a stale wake after the doorbell
+2026-09-25T22:17:35.5170705Z ok - watcher: a spent ring budget emits exactly one ordinary stale wake for recovery
+2026-09-25T22:17:36.3962790Z ok - watcher: a positively dead pane is never typed into and surfaces exactly one stale wake
+2026-09-25T22:17:37.2499704Z ok - watcher: dead-pane recovery overrides stale busy state
+2026-09-25T22:17:37.2962600Z FM_TEST_END 2026-09-25T22:17:37Z tests/fm-task-inbox.test.sh exit=0 duration_ms=30809 gate_skip=false
+2026-09-25T22:17:37.3125100Z FM_TEST_BEGIN 2026-09-25T22:17:37Z tests/fm-worker-account-live-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:17:37.3369843Z skip-runner: claude is not installed, so its pin check was not exercised
+2026-09-25T22:17:39.3624392Z ok - pi 0.87.1: the pin check reads auth check and the model listing, and refuses what only an ambient credential signs in
+2026-09-25T22:17:39.3627604Z skip-runner: pi-signed is not installed, so its pin check was not exercised
+2026-09-25T22:17:39.3628186Z # worker account live guard checked: pi
+2026-09-25T22:17:39.3865193Z FM_TEST_END 2026-09-25T22:17:39Z tests/fm-worker-account-live-e2e.test.sh exit=0 duration_ms=2068 gate_skip=false
+2026-09-25T22:17:39.4030221Z FM_TEST_BEGIN 2026-09-25T22:17:39Z tests/fm-kimi-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:17:39.5166164Z ok - Kimi hook install is idempotent and removal restores every foreign config byte
+2026-09-25T22:17:39.9102756Z ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+2026-09-25T22:17:39.9936326Z ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+2026-09-25T22:17:40.0015052Z ok - Kimi hook install refuses without jq before any config write
+2026-09-25T22:17:42.9219626Z ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+2026-09-25T22:17:47.4341793Z ok - fm-spawn: unsafe task roots are refused, owned roots are tightened, and launch files stay unique and 0600
+2026-09-25T22:17:50.3003833Z ok - Kimi hook stays silent and inert without a Firstmate registry token
+2026-09-25T22:17:50.5627570Z ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+2026-09-25T22:17:54.1546947Z ok - fm-teardown: Kimi task pointer and registry token are removed
+2026-09-25T22:17:57.0132691Z ok - fm-spawn: Kimi fallback expands the active HOME
+2026-09-25T22:17:57.5355452Z ok - fm-spawn: missing Kimi executable refuses before pane creation
+2026-09-25T22:18:00.3875201Z ok - fm-spawn: kimi treats a silent pointer drop as a failed spawn
+2026-09-25T22:18:03.1020687Z ok - fm-spawn: kimi never sends the brief pointer before an observable ready signal
+2026-09-25T22:18:05.8634740Z ok - fm-spawn: a fresh Kimi worktree answers the exact trust dialog once and verifies advancement
+2026-09-25T22:18:08.5321711Z ok - fm-spawn: a swallowed Kimi trust keypress is re-sent until the dialog clears
+2026-09-25T22:18:11.2794998Z ok - fm-spawn: a Kimi banner captured before the trust dialog paints does not read as ready
+2026-09-25T22:18:13.9289043Z ok - fm-spawn: an answered Kimi trust dialog left in scrollback neither re-answers nor fails the spawn
+2026-09-25T22:18:16.5909688Z ok - fm-spawn: a blank Kimi viewport frame costs its poll and nothing else
+2026-09-25T22:18:16.7738723Z ok - fm-spawn: Kimi refuses a backend that cannot read the viewport, before launching
+2026-09-25T22:18:19.4523976Z ok - fm-spawn: a Kimi trust dialog with its hint wrapped across rows is answered normally
+2026-09-25T22:18:22.1734323Z ok - fm-spawn: a blank Kimi frame between banners restarts the two-capture ready count
+2026-09-25T22:18:25.0132902Z ok - fm-spawn: a failed Kimi viewport read fails readiness with the backend named
+2026-09-25T22:18:27.7163958Z ok - fm-spawn: Kimi refuses the ready verdict while trust dialog markers remain
+2026-09-25T22:18:30.3227944Z ok - fm-spawn: a Kimi trust dialog must visibly clear before brief delivery
+2026-09-25T22:18:32.9059203Z ok - fm-spawn: Kimi trust detection requires every observed dialog signal
+2026-09-25T22:18:32.9517567Z ok - fm-harness: markerless kimi keeps its ancestry identity under an inherited marker
+2026-09-25T22:18:32.9954655Z lock acquired: harness pid 260128
+2026-09-25T22:18:33.0080366Z ok - fm-lock recognizes Kimi ancestry and live lock holders
+2026-09-25T22:18:33.1198779Z ok - busy detection: real Kimi moon-plus-middot captures require its harness while idle labels stay idle
+2026-09-25T22:18:33.3124700Z ok - fm-watch classifies Kimi as unknown rather than from its spinner, and Grok's fallback stays isolated
+2026-09-25T22:18:33.3183739Z ok - composer classifier: kimi's existing bordered > shape is already safe without an override
+2026-09-25T22:18:33.5923382Z FM_TEST_END 2026-09-25T22:18:33Z tests/fm-kimi-harness.test.sh exit=0 duration_ms=54183 gate_skip=false
+2026-09-25T22:18:33.6086384Z FM_TEST_BEGIN 2026-09-25T22:18:33Z tests/fm-wake-drain-unread-status.test.sh family=watcher-wake-lock expected_gate_skip=none
+2026-09-25T22:18:34.4187081Z ok - a note: answer buried under a later routine note: is surfaced with both lines
+2026-09-25T22:18:35.7216945Z ok - already-presented note: lines are not re-surfaced on the next drain
+2026-09-25T22:18:36.9056830Z ok - a brand-new note: after presentation is surfaced without replaying handled lines
+2026-09-25T22:18:37.9090633Z ok - a queued status signal annotates every unread note, not only the newest
+2026-09-25T22:18:38.4621413Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 265611.1790374718.rdi7HX
+2026-09-25T22:18:38.9194537Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 265611.1790374718.rdi7HX
+2026-09-25T22:18:39.3816474Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 265611.1790374718.rdi7HX
+2026-09-25T22:18:39.6886742Z ok - a pending-reply resolution buried under a later note surfaces once and closes OPEN DECISIONS
+2026-09-25T22:18:40.1495591Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 267371.1790374719.q1Pgtu
+2026-09-25T22:18:40.6834872Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 267371.1790374719.q1Pgtu
+2026-09-25T22:18:41.4079499Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 267371.1790374719.q1Pgtu
+2026-09-25T22:18:41.8943092Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 267371.1790374719.q1Pgtu
+2026-09-25T22:18:42.1998397Z ok - a self-announced pending-reply close does not wake yet still surfaces once in UNREAD STATUS
+2026-09-25T22:18:43.0176583Z ok - unread status over the former byte cap preserves every line
+2026-09-25T22:18:43.5242573Z ok - presentation cursor advances only through its captured endpoint
+2026-09-25T22:18:44.7466668Z ok - a reused task id starts its replacement status log unread at byte zero
+2026-09-25T22:18:45.4364310Z ok - fallback identity still presents and advances status state
+2026-09-25T22:18:45.6314592Z ok - snapshot failures are reported visibly
+2026-09-25T22:18:46.4441825Z ok - OPEN DECISIONS still folds needs-decision/blocked independently of unread notes
+2026-09-25T22:18:47.0107876Z WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 275185.1790374726.jHBdHf
+2026-09-25T22:18:47.2957248Z ok - an empty-queue backstop presentation still preserves the status for its later signal annotation
+2026-09-25T22:18:48.1554620Z ok - routine working and branch-covered done lines print nothing on an empty-queue drain
+2026-09-25T22:18:48.1948890Z FM_TEST_END 2026-09-25T22:18:48Z tests/fm-wake-drain-unread-status.test.sh exit=0 duration_ms=14580 gate_skip=false
+2026-09-25T22:18:48.2112150Z FM_TEST_BEGIN 2026-09-25T22:18:48Z tests/fm-update.test.sh family=session-bootstrap expected_gate_skip=none
+2026-09-25T22:18:48.6864659Z ok - T1 main + secondmate fast-forward (single-parent), reread + restart signalled
+2026-09-25T22:18:49.1285582Z ok - T3 a non-instruction advance still restarts the live secondmate
+2026-09-25T22:18:49.5681065Z ok - T3b a bin/-only advance restarts the secondmate
+2026-09-25T22:18:49.9852128Z ok - T3c an unverifiable secondmate receives the fallback nudge
+2026-09-25T22:18:50.4502189Z ok - T3d an already-stopped secondmate is left to startup recovery
+2026-09-25T22:18:50.7823459Z ok - T3e a legacy remote advance still restarts the live remote mate
+2026-09-25T22:18:51.2097262Z ok - T4 dirty secondmate skipped, local edit preserved
+2026-09-25T22:18:51.7832046Z ok - T5 diverged secondmate is preserved and durably actionable
+2026-09-25T22:18:52.4725050Z ok - T5b squash-merged divergence heals and rejoins live convergence
+2026-09-25T22:18:53.1409900Z ok - T6 an already-current live secondmate is still restarted
+2026-09-25T22:18:53.7608534Z ok - T6b an already-current mate with an unprovable runtime is steered, not claimed as reloaded
+2026-09-25T22:18:54.3077097Z ok - T7 registry backstop resolves, dedups meta+registry, excludes the firstmate repo
+2026-09-25T22:18:54.5139731Z ok - T9 firstmate off its default branch is skipped, not forced
+2026-09-25T22:18:54.7181931Z ok - T10 firstmate detached HEAD is skipped
+2026-09-25T22:18:54.9624792Z ok - T11 unsafe secondmate home is not fast-forwarded
+2026-09-25T22:18:55.5424815Z ok - T12 a self-update rebinds a locally armed watch on the primary
+2026-09-25T22:18:55.5425457Z # all fm-update tests passed
+2026-09-25T22:18:55.6902484Z FM_TEST_END 2026-09-25T22:18:55Z tests/fm-update.test.sh exit=0 duration_ms=7473 gate_skip=false
+2026-09-25T22:18:55.7066965Z FM_TEST_BEGIN 2026-09-25T22:18:55Z tests/fm-branch-supervision.test.sh family=standalone expected_gate_skip=none
+2026-09-25T22:18:56.7540106Z ok - branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor
+2026-09-25T22:18:57.1598350Z ok - outcome store is append-only and refuses sequence reuse after a torn tail
+2026-09-25T22:18:57.5427277Z ok - only routine fleet outcomes can be silent
+2026-09-25T22:18:57.7767340Z ok - startup replay cannot advance the cursor across an unrendered captain outcome
+2026-09-25T22:18:57.8964126Z ok - legacy non-task labels remain deliverable without poisoning or escaping indexes
+2026-09-25T22:18:58.2452627Z ok - malformed and ahead-of-store cursor state fail closed before any outcome can be skipped
+2026-09-25T22:18:58.5826564Z ok - cursor advancement refuses to legitimize an ahead processed marker
+2026-09-25T22:18:58.7308595Z ok - middle sequence conflicts fail closed for every store read and append
+2026-09-25T22:18:58.9084193Z ok - outcome stores require terminated single-line JSON records
+2026-09-25T22:18:59.9970227Z ok - the processed marker is sequence-bound, never ahead of the read cursor, never backwards, and migrates delivered history once
+2026-09-25T22:19:00.3932915Z ok - lease exclusivity, same-actor refresh, release, staleness, and sweep hold
+2026-09-25T22:19:00.7542586Z ok - fm-control and fm-teardown refuse the other actor's live lease and pass through otherwise
+2026-09-25T22:19:01.2550136Z ok - PR merge, local landing, and new-task spawn refuse the branch actor and spare main
+2026-09-25T22:19:01.4424689Z ok - a home without a live branch lease takes no lock and clears leftover leases in any calling context
+2026-09-25T22:19:02.3110832Z ok - an unmarked main honors a live branch lease across processes and ignores a previous session's
+2026-09-25T22:19:02.5959232Z ok - a lease file makes an unmarked guard exclude a concurrent claim for the complete mutation
+2026-09-25T22:19:02.9138244Z ok - an opted-in home's unmarked main excludes the host's first claim for its whole mutation, and other homes take no lock
+2026-09-25T22:19:03.1375956Z ok - lease liveness requires an exact valid session-lock pid
+2026-09-25T22:19:03.3167840Z ok - concurrent stale-lease claims serialize so exactly one actor succeeds
+2026-09-25T22:19:03.5823411Z ok - guard stale cleanup cannot race with or delete a newer lease claim
+2026-09-25T22:19:03.8562872Z ok - lease guard excludes a concurrent actor for the complete mutation
+2026-09-25T22:19:03.8876276Z ok - a claim naming the other actor fails loudly instead of silently impersonating it
+2026-09-25T22:19:04.0521415Z ok - release commands authorize the caller and bulk release drops only that actor's leases
+2026-09-25T22:19:04.4202428Z ok - the branch cannot force a teardown or bypass fm-control for a relaunch
+2026-09-25T22:19:07.0172750Z ok - the away-posture record relocates the PR merge and a spawn under the spend cap to the branch, never local landing, and only while confirmed and valid
+2026-09-25T22:19:09.7500756Z ok - relocated branch spawn admits only already-queued dispatchable work, including on a manual-backend home
+2026-09-25T22:19:10.3847239Z ok - the away spend cap is rechecked under the task-set lock so concurrent spawns cannot both publish
+2026-09-25T22:19:10.4326689Z FM_TEST_END 2026-09-25T22:19:10Z tests/fm-branch-supervision.test.sh exit=0 duration_ms=14720 gate_skip=false
+2026-09-25T22:19:10.4494230Z FM_TEST_BEGIN 2026-09-25T22:19:10Z tests/fm-pi-windows-shell-invocation.test.sh family=unclassified expected_gate_skip=none
+2026-09-25T22:19:10.4894932Z skip: native Windows Node required
+2026-09-25T22:19:10.5157134Z fm-test-run: gate skip: tests/fm-pi-windows-shell-invocation.test.sh: native Windows Node required
+2026-09-25T22:19:10.5157658Z FM_TEST_END 2026-09-25T22:19:10Z tests/fm-pi-windows-shell-invocation.test.sh exit=0 duration_ms=58 gate_skip=true
+2026-09-25T22:19:10.5329993Z FM_TEST_BEGIN 2026-09-25T22:19:10Z tests/fm-send-agy-confirm.test.sh family=unclassified expected_gate_skip=none
+2026-09-25T22:19:10.9532560Z ok - agy typed send: no not-submitted refusal on confirmed idle-to-busy
+2026-09-25T22:19:10.9567971Z ok - agy typed send: sleep log shows the confirm poll running to the late busy render
+2026-09-25T22:19:11.3351862Z ok - agy typed send: explicit FM_SEND_RETRIES=3 keeps the exit-1 verdict=unknown refusal
+2026-09-25T22:19:12.0621747Z ok - agy typed send: never-rendering busy footer still refuses with verdict=unknown
+2026-09-25T22:19:12.6383749Z ok - agy typed send: long-brief render (15th poll) still confirms idle-to-busy
+2026-09-25T22:19:13.0447780Z ok - claude typed send: late busy footer still refuses (agy budget is agy-scoped)
+2026-09-25T22:19:13.0719746Z FM_TEST_END 2026-09-25T22:19:13Z tests/fm-send-agy-confirm.test.sh exit=0 duration_ms=2533 gate_skip=false
+2026-09-25T22:19:13.0909494Z FM_TEST_BEGIN 2026-09-25T22:19:13Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+2026-09-25T22:19:13.2590356Z ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+2026-09-25T22:19:13.3265331Z ok - session-lock: a harness that is pid 1 of its own namespace is examined, not skipped
+2026-09-25T22:19:14.0766786Z ok - session-lock: ordinary script paths under a harness directory are not harness processes
+2026-09-25T22:19:14.1742097Z ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+2026-09-25T22:19:14.2201322Z ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+2026-09-25T22:19:15.2133123Z ok - session-lock: a trusted same-session id keeps owning a recycled background chain, and nothing weaker does
+2026-09-25T22:19:15.4480520Z ok - session-lock: a trusted id anchors the lock on the model-loop process, anything else on the outermost pid
+2026-09-25T22:19:15.9313825Z ok - session-lock e2e: a version-named session claims the home and arms supervision
+2026-09-25T22:19:16.4687861Z ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+2026-09-25T22:19:17.0063462Z ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+2026-09-25T22:19:22.5232833Z ok - session-lock e2e: a background session keeps its lock and its supervision across a recycled helper chain
+2026-09-25T22:19:23.9152911Z ok - session-lock: a same-session confirmation waits for the claim lock and refreshes a re-keyed id
+2026-09-25T22:19:25.3586172Z ok - session-lock: a waiting confirmation does not steal another session's lock
+2026-09-25T22:19:25.7210502Z ok - session-lock: a failed lock write restores the previous sidecar
+2026-09-25T22:19:25.9366425Z ok - session-lock: a failed lock write removes a newly created sidecar
+2026-09-25T22:19:26.1497631Z ok - session-lock: a verified reclaim keeps the new sidecar beside the new pid
+2026-09-25T22:19:26.1878393Z FM_TEST_END 2026-09-25T22:19:26Z tests/fm-session-lock-ancestry.test.sh exit=0 duration_ms=13091 gate_skip=false
+2026-09-25T22:19:26.2052267Z FM_TEST_BEGIN 2026-09-25T22:19:26Z tests/fm-calm-claude-mod.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:19:26.2886164Z ok - the Calm mod is one hooks module, linked into the project's auto-load path, with no command, skill, agent, or classic hook path that bypasses its exact opt-in
+2026-09-25T22:19:26.3530022Z ok - the Pi working ship renders byte-for-byte the shared sprite core's frame painted in standard ANSI, at every width, cadence step, freeze, clamp, and reset
+2026-09-25T22:19:26.4309875Z ok - the Raster packing lays the shared frame out row-major in Claude Code's dark or light theme palette, using light as the both-readable fallback, with plain padding, default backgrounds, BMP glyphs, clipping, and a standard base64 encoding
+2026-09-25T22:19:26.4837290Z ok - the Calm policy resolves the shared preference exactly as Pi does, reads on, max, and off as Pi does, and shares Pi's 240-character-or-newline preservation behavior while classifying working notes by stop reason, tool use, and restored transcript shape
+2026-09-25T22:19:27.0565582Z ok - the mod's operational-input classifier agrees with bin/fm-operational-input.sh on all 77 corpus cases: every current kind the owner encodes, every legacy shape, and every near miss
+2026-09-25T22:19:27.0807718Z FM_TEST_END 2026-09-25T22:19:27Z tests/fm-calm-claude-mod.test.sh exit=0 duration_ms=870 gate_skip=false
+2026-09-25T22:19:27.0978582Z FM_TEST_BEGIN 2026-09-25T22:19:27Z tests/fm-documentation-audiences.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:19:27.5458191Z ok - documentation inventory classifies every maintained prose surface exactly once
+2026-09-25T22:19:27.6985045Z ok - classification, setup routing, and maintained-prose scope fail safely
+2026-09-25T22:19:27.7540813Z ok - required documentation owner pointers cannot silently disappear
+2026-09-25T22:19:27.8425206Z ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+2026-09-25T22:19:27.8619484Z FM_TEST_END 2026-09-25T22:19:27Z tests/fm-documentation-audiences.test.sh exit=0 duration_ms=759 gate_skip=false
+2026-09-25T22:19:27.8777819Z FM_TEST_BEGIN 2026-09-25T22:19:27Z tests/fm-calm-claude-mod-plugin.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:19:27.8963660Z skip: live: claude absent
+2026-09-25T22:19:27.9205374Z fm-test-run: gate skip: tests/fm-calm-claude-mod-plugin.test.sh: live: claude absent
+2026-09-25T22:19:27.9206191Z FM_TEST_END 2026-09-25T22:19:27Z tests/fm-calm-claude-mod-plugin.test.sh exit=0 duration_ms=33 gate_skip=true
+2026-09-25T22:19:27.9375647Z FM_TEST_BEGIN 2026-09-25T22:19:27Z tests/fm-harness-adapter-references.test.sh family=pure-contract-unit expected_gate_skip=none
+2026-09-25T22:19:27.9639046Z ok - harness adapter routing artifact is normalized and every target is readable
+2026-09-25T22:19:27.9860473Z FM_TEST_END 2026-09-25T22:19:27Z tests/fm-harness-adapter-references.test.sh exit=0 duration_ms=43 gate_skip=false
+2026-09-25T22:19:28.0026334Z FM_TEST_BEGIN 2026-09-25T22:19:27Z tests/fm-send-secondmate-marker-herdr-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:19:28.0263527Z skip: live: opt-in; set FM_SEND_MARKER_HERDR_E2E=1 to run
+2026-09-25T22:19:28.0497202Z fm-test-run: gate skip: tests/fm-send-secondmate-marker-herdr-e2e.test.sh: live: opt-in; set FM_SEND_MARKER_HERDR_E2E=1 to run
+2026-09-25T22:19:28.0502225Z FM_TEST_END 2026-09-25T22:19:28Z tests/fm-send-secondmate-marker-herdr-e2e.test.sh exit=0 duration_ms=38 gate_skip=true
+2026-09-25T22:19:28.0678390Z FM_TEST_BEGIN 2026-09-25T22:19:28Z tests/fm-rovo-signals-live-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:19:28.0886237Z skip: live: opt-in; set FM_ROVO_SIGNALS_LIVE=1 to run
+2026-09-25T22:19:28.1118815Z fm-test-run: gate skip: tests/fm-rovo-signals-live-e2e.test.sh: live: opt-in; set FM_ROVO_SIGNALS_LIVE=1 to run
+2026-09-25T22:19:28.1119684Z FM_TEST_END 2026-09-25T22:19:28Z tests/fm-rovo-signals-live-e2e.test.sh exit=0 duration_ms=35 gate_skip=true
+2026-09-25T22:19:28.1284491Z FM_TEST_BEGIN 2026-09-25T22:19:28Z tests/fm-grok-stop-live-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:19:28.1474708Z skip: live: opt-in; set FM_GROK_STOP_LIVE_E2E=1 to run
+2026-09-25T22:19:28.1704577Z fm-test-run: gate skip: tests/fm-grok-stop-live-e2e.test.sh: live: opt-in; set FM_GROK_STOP_LIVE_E2E=1 to run
+2026-09-25T22:19:28.1705101Z FM_TEST_END 2026-09-25T22:19:28Z tests/fm-grok-stop-live-e2e.test.sh exit=0 duration_ms=33 gate_skip=true
+2026-09-25T22:19:28.1866481Z FM_TEST_BEGIN 2026-09-25T22:19:28Z tests/fm-grok-continuity-live-e2e.test.sh family=live-harness-optin expected_gate_skip=live-capability
+2026-09-25T22:19:28.2053757Z skip: live: opt-in; set FM_GROK_LIVE_E2E=1 to run
+2026-09-25T22:19:28.2287008Z fm-test-run: gate skip: tests/fm-grok-continuity-live-e2e.test.sh: live: opt-in; set FM_GROK_LIVE_E2E=1 to run
+2026-09-25T22:19:28.2287536Z FM_TEST_END 2026-09-25T22:19:28Z tests/fm-grok-continuity-live-e2e.test.sh exit=0 duration_ms=33 gate_skip=true
+2026-09-25T22:19:28.2429048Z FM_TEST_SUMMARY total=24 failed=1 skipped_gate=6 duration_ms=638459
+2026-09-25T22:19:28.2440715Z FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=155174 failed=0
+2026-09-25T22:19:28.2441142Z FM_TEST_SUMMARY_FAMILY family=live-harness-optin count=6 duration_ms=2240 failed=0
+2026-09-25T22:19:28.2441728Z FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=6 duration_ms=142620 failed=0
+2026-09-25T22:19:28.2442142Z FM_TEST_SUMMARY_FAMILY family=secondmate count=2 duration_ms=147276 failed=1
+2026-09-25T22:19:28.2442650Z FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=7473 failed=0
+2026-09-25T22:19:28.2443179Z FM_TEST_SUMMARY_FAMILY family=standalone count=1 duration_ms=14720 failed=0
+2026-09-25T22:19:28.2443621Z FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=2591 failed=0
+2026-09-25T22:19:28.2444048Z FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=5 duration_ms=165159 failed=0
+2026-09-25T22:19:28.2456757Z FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-dispatch-profile.test.sh duration_ms=155174
+2026-09-25T22:19:28.2457556Z FM_TEST_SLOWEST rank=2 script=tests/fm-secondmate-harness.test.sh duration_ms=145903
+2026-09-25T22:19:28.2457957Z FM_TEST_SLOWEST rank=3 script=tests/fm-watch-arm.test.sh duration_ms=77480
+2026-09-25T22:19:28.2460617Z FM_TEST_SLOWEST rank=4 script=tests/fm-kimi-harness.test.sh duration_ms=54183
+2026-09-25T22:19:28.2461153Z FM_TEST_SLOWEST rank=5 script=tests/fm-agy-harness.test.sh duration_ms=47276
+2026-09-25T22:19:28.2461723Z FM_TEST_SLOWEST rank=6 script=tests/fm-muse-harness.test.sh duration_ms=39489
+2026-09-25T22:19:28.2462336Z FM_TEST_SLOWEST rank=7 script=tests/fm-task-inbox.test.sh duration_ms=30809
+2026-09-25T22:19:28.2462796Z FM_TEST_SLOWEST rank=8 script=tests/fm-turnend-guard.test.sh duration_ms=29199
+2026-09-25T22:19:28.2463306Z FM_TEST_SLOWEST rank=9 script=tests/fm-branch-supervision.test.sh duration_ms=14720
+2026-09-25T22:19:28.2463772Z FM_TEST_SLOWEST rank=10 script=tests/fm-wake-drain-unread-status.test.sh duration_ms=14580
+2026-09-25T22:19:28.2464240Z FM_TEST_SLOWEST rank=11 script=tests/fm-session-lock-ancestry.test.sh duration_ms=13091
+2026-09-25T22:19:28.2464655Z FM_TEST_SLOWEST rank=12 script=tests/fm-update.test.sh duration_ms=7473
+2026-09-25T22:19:28.2465045Z FM_TEST_SLOWEST rank=13 script=tests/fm-send-agy-confirm.test.sh duration_ms=2533
+2026-09-25T22:19:28.2465582Z FM_TEST_SLOWEST rank=14 script=tests/fm-worker-account-live-e2e.test.sh duration_ms=2068
+2026-09-25T22:19:28.2466357Z FM_TEST_SLOWEST rank=15 script=tests/fm-remote-secondmate-trace-context.test.sh duration_ms=1373
+2026-09-25T22:19:28.2653266Z fm-test-run: wrote timing artifact: /home/runner/work/_temp/fm-test/fm-test-timing-portable-serial-8.json
+2026-09-25T22:19:28.2843606Z ##[error]Process completed with exit code 1.
+2026-09-25T22:19:28.2905606Z ##[group]Run actions/upload-artifact@v4
+2026-09-25T22:19:28.2905824Z with:
+2026-09-25T22:19:28.2906307Z   name: fm-test-timing-portable-serial-8
+2026-09-25T22:19:28.2906603Z   path: /home/runner/work/_temp/fm-test/fm-test-timing-portable-serial-8.json
+2026-09-25T22:19:28.2906878Z   if-no-files-found: warn
+2026-09-25T22:19:28.2907042Z   compression-level: 6
+2026-09-25T22:19:28.2907194Z   overwrite: false
+2026-09-25T22:19:28.2907345Z   include-hidden-files: false
+2026-09-25T22:19:28.2907508Z ##[endgroup]
+2026-09-25T22:19:28.4070205Z (node:310840) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-25T22:19:28.4070813Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-25T22:19:28.4103357Z With the provided path, there will be 1 file uploaded
+2026-09-25T22:19:28.4106962Z Artifact name is valid!
+2026-09-25T22:19:28.4107562Z Root directory input is valid!
+2026-09-25T22:19:28.7059584Z Beginning upload of artifact content to blob storage
+2026-09-25T22:19:28.7176929Z (node:310840) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-25T22:19:28.8886897Z Uploaded bytes 1284
+2026-09-25T22:19:28.9326684Z Finished uploading artifact content to blob storage!
+2026-09-25T22:19:28.9327160Z SHA256 digest of uploaded artifact zip is 4de3b84bf001e443c65136154103d37aae9f9af06625f5e836fc838c89dc6c54
+2026-09-25T22:19:28.9328966Z Finalizing artifact upload
+2026-09-25T22:19:29.1971965Z Artifact fm-test-timing-portable-serial-8.zip successfully finalized. Artifact ID 10889592594
+2026-09-25T22:19:29.1972641Z Artifact fm-test-timing-portable-serial-8 has been successfully uploaded! Final size is 1284 bytes. Artifact ID is 10889592594
+2026-09-25T22:19:29.1977185Z Artifact download URL: https://github.com/kunchenguid/firstmate/actions/runs/36195035782/artifacts/10889592594
+2026-09-25T22:19:29.2126340Z Post job cleanup.
+2026-09-25T22:19:29.2743191Z [command]/usr/bin/git version
+2026-09-25T22:19:29.2768982Z git version 2.55.0
+2026-09-25T22:19:29.2794060Z Temporarily overriding HOME='/home/runner/work/_temp/04023652-5e62-4e5c-93c1-c0b353f784ab' before making global git config changes
+2026-09-25T22:19:29.2794858Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-25T22:19:29.2798159Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/firstmate/firstmate
+2026-09-25T22:19:29.2819231Z Removing SSH command configuration
+2026-09-25T22:19:29.2824027Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-25T22:19:29.2847542Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-25T22:19:29.2993234Z Removing HTTP extra header
+2026-09-25T22:19:29.2996303Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-25T22:19:29.3017574Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-25T22:19:29.3154892Z Removing includeIf entries pointing to credentials config files
+2026-09-25T22:19:29.3159571Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-25T22:19:29.3174684Z includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path
+2026-09-25T22:19:29.3175207Z includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path
+2026-09-25T22:19:29.3175643Z includeif.gitdir:/github/workspace/.git.path
+2026-09-25T22:19:29.3176602Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-25T22:19:29.3180979Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path
+2026-09-25T22:19:29.3195292Z /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3201789Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/firstmate/firstmate/.git.path /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3226648Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path
+2026-09-25T22:19:29.3240601Z /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3246166Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/firstmate/firstmate/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3268702Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-09-25T22:19:29.3282013Z /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3286776Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3308585Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-09-25T22:19:29.3322626Z /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3328569Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config
+2026-09-25T22:19:29.3378399Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-25T22:19:29.3513661Z Removing credentials config '/home/runner/work/_temp/git-credentials-a4dc9515-07a3-4060-8a34-60092b56c516.config'
+2026-09-25T22:19:29.3623074Z Cleaning up orphan processes
+2026-09-25T22:19:29.3783961Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

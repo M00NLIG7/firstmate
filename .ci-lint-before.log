@@ -1,0 +1,7 @@
+
+In tests/fm-pending-reply.test.sh line 1060:
+      while IFS= read -r line || [ -n "$line" ]; do
+                         ^--^ SC2030 (info): Modification of line is local (to subshell caused by (..) group).
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2030 -- Modification of line is local (to...
