@@ -1054,12 +1054,12 @@ test_tick_skips_terminal_and_reuses_target_observation() {
     fm_backend_capture() { fail "native busy observations should not capture"; }
     # shellcheck disable=SC2329
     fm_pending_reply_find_resolve_line() {
-      local status_file=$1 corr=$2 line
+      local status_file=$1 corr=$2 scanned_line
       printf '%s\t%s\n' "$status_file" "$corr" >> "$scan_log"
       [ -f "$status_file" ] || return 0
-      while IFS= read -r line || [ -n "$line" ]; do
-        fm_pending_reply_line_resolves "$line" "$corr" || continue
-        printf '%s' "$line"
+      while IFS= read -r scanned_line || [ -n "$scanned_line" ]; do
+        fm_pending_reply_line_resolves "$scanned_line" "$corr" || continue
+        printf '%s' "$scanned_line"
         return 0
       done < "$status_file"
       return 0
