@@ -1,0 +1,48 @@
+LIVE SCENARIO: settled correlation locks cannot starve a fresh status notification
+$ bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7
+exit=0 elapsed=0.258s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7
+
+Live holder pid=28571; 100 settled records retained; locks held for never-escalated and already-closed records.
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=6.220s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7/state/worker.status
+
+Fresh notification surfaced in 6.220s while both correlation locks remained held.
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=3.239s
+1790384925	2	signal	worker.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7/state/worker.status
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: done: monitoring proof one
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: note: answer = REST \literal
+wake annotation: latest wake-EVENT observed at drain, not current state: worker.status: note: routine acknowledgement
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+worker note: answer = REST \literal
+worker note: routine acknowledgement
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 33544.1790384925.2KdPDV
+
+$ bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 33544.1790384925.2KdPDV
+exit=0 elapsed=0.851s
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=3.077s
+
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=9.448s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7/state/worker.status
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=6.102s
+1790384941	4	signal	worker.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-134fozl7/state/worker.status
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: done: monitoring proof two
+wake annotation: latest wake-EVENT observed at drain, not current state: worker.status: note: follow-up after acknowledgement
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+worker note: follow-up after acknowledgement
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 55999.1790384941.ABlLvY
+
+PASS: two real watcher arms delivered new signals; drain/ack preserved raw rows until acknowledgement, advanced presentation cursors without replay, and retained all 100 records byte-for-byte.
+LIVE SCENARIO: a resolved escalation missing its closing receipt converges once
+$ bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-vg_056fq
+exit=0 elapsed=0.063s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-vg_056fq
+
+Cleanup: disposable lab homes removed.

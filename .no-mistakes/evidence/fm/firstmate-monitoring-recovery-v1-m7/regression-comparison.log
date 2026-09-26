@@ -1,0 +1,6 @@
+Comparison: identical settled records, two real held locks, executable pending-reply tick; unchanged dependencies at target.
+base: tick remained blocked at 5s while settled-record locks were held; stopped only the test-owned process group.
+target: exit=0, elapsed=0.156s, stdout='tick-returned\n', stderr=''
+base processed-init: exit=1, stdout='', stderr='error: outcome index migration could not be completed safely\n'
+target processed-init: exit=0, stdout='', stderr=''
+PASS: both reported regression mechanisms reproduced before the fix and passed after it; source history bytes remained unchanged.

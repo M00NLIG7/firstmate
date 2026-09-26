@@ -1,0 +1,8 @@
+ok - a newest keyless done, blocked, or needs-decision event with no newer branch outcome surfaces on the next main drain
+ok - a newer task-matching branch outcome suppresses the backstop and routine latest events stay silent
+ok - only a strictly newer outcome for the same task can suppress its latest captain event
+ok - a branch annotation and queue acknowledgement cannot consume the main drain's loss backstop
+ok - status byte position distinguishes handled and later same-second events
+ok - drain cost and suppression are independent of append-only outcome history
+ok - backstop receipts prevent repeats without consuming delayed signal annotations
+ok - a failed output consumer leaves the backstop unacknowledged for retry

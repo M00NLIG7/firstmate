@@ -1,0 +1,120 @@
+LIVE SCENARIO: settled correlation locks cannot starve a fresh status notification
+$ bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b
+exit=0 elapsed=0.146s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b
+
+Live holder pid=62854; 100 settled records retained; locks held for never-escalated and already-closed records.
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=9.597s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b/state/worker.status
+
+Fresh notification surfaced in 9.597s while both correlation locks remained held.
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=4.362s
+1790385086	2	signal	worker.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b/state/worker.status
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: done: monitoring proof one
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: note: answer = REST \literal
+wake annotation: latest wake-EVENT observed at drain, not current state: worker.status: note: routine acknowledgement
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+worker note: answer = REST \literal
+worker note: routine acknowledgement
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 73828.1790385086.1Fu6Yp
+
+$ bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 73828.1790385086.1Fu6Yp
+exit=0 elapsed=1.033s
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=2.800s
+
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=6.310s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b/state/worker.status
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=2.659s
+1790385101	4	signal	worker.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-locks-_kn18r_b/state/worker.status
+wake annotation: unread wake-EVENT since last drain, not current state: worker.status: done: monitoring proof two
+wake annotation: latest wake-EVENT observed at drain, not current state: worker.status: note: follow-up after acknowledgement
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+worker note: follow-up after acknowledgement
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 93378.1790385101.jPR0id
+
+PASS: two real watcher arms delivered new signals; drain/ack preserved raw rows until acknowledgement, advanced presentation cursors without replay, and retained all 100 records byte-for-byte.
+LIVE SCENARIO: a resolved escalation missing its closing receipt converges once
+$ bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x
+exit=0 elapsed=0.047s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x
+
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=10.473s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/mate.status /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/trigger.status
+
+Persisted record:
+corr_id=abcdef0123456789
+task_id=mate
+phase=resolved
+escalated_epoch=1
+request_summary=proof
+parent_status=/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/mate.status
+resolved_via=status
+escalation_closed_epoch=1790385107
+Persisted status:
+blocked [key=pending-reply-abcdef0123456789]: pending-reply-missed: task=mate pending-reply-id=abcdef0123456789 request=proof
+resolved [key=pending-reply-abcdef0123456789] [at=1790385106]: pending-reply-resolved: task=mate pending-reply-id=abcdef0123456789 via=status
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=6.619s
+1790385113	3	signal	mate.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/mate.status /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/trigger.status
+1790385113	4	signal	trigger.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/mate.status /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/trigger.status
+wake annotation: unread wake-EVENT since last drain, not current state: mate.status: blocked [key=pending-reply-abcdef0123456789]: pending-reply-missed: task=mate pending-reply-id=abcdef0123456789 request=proof
+wake annotation: latest wake-EVENT observed at drain, not current state: mate.status: resolved [key=pending-reply-abcdef0123456789] [at=1790385106]: pending-reply-resolved: task=mate pending-reply-id=abcdef0123456789 via=status
+wake annotation: latest wake-EVENT observed at drain, not current state: trigger.status: done: unrelated new notification
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+mate resolved [key=pending-reply-abcdef0123456789] [at=1790385106]: pending-reply-resolved: task=mate pending-reply-id=abcdef0123456789 via=status
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+trigger done: unrelated new notification
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 4 --recovery-generation 7541.1790385111.A8bsDu
+
+$ env FM_POLL=1 FM_SIGNAL_GRACE=0 bin/fm-watch.sh
+exit=0 elapsed=5.508s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-close-s_ugo3_x/state/trigger.status
+
+PASS: real watcher retried the missing close, persisted one receipt, presented the resolution, and did not duplicate or rewrite it on the next arm.
+LIVE SCENARIO: recover legacy labels without rewriting history or losing captain decisions
+$ bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-history-nvvdr2rv
+exit=0 elapsed=0.042s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3DK7TM1KSHFF8N8SW9KCZMY/.live-test-tmp/fm-lab-history-nvvdr2rv
+
+$ bin/fm-branch-outcome.sh processed-init
+exit=0 elapsed=0.581s
+
+History SHA256 preserved: 97193e85d3b4a8f733babbcfe2526d21e60e7aeb67a5a8aedffc4d733e8dfacb; read cursor=2; processed=1; generation=5; derived indexes=['.task-1.branch-outcome-index', '.task-2.branch-outcome-index']
+$ bin/fm-branch-outcome.sh unprocessed
+exit=0 elapsed=0.442s
+{"seq":2,"epoch":2,"task":"old task label","wake":"","verdict":"captain","summary":"retain this decision","silent":false}
+
+$ bin/fm-branch-outcome.sh append --task new invalid label --verdict routine --summary must refuse
+exit=2 elapsed=0.064s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | processed-init [--held-lock] | list [--recent <n>] | startup-replay
+
+$ bin/fm-branch-outcome.sh append --task ../escape --verdict routine --summary must refuse
+exit=2 elapsed=0.077s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | processed-init [--held-lock] | list [--recent <n>] | startup-replay
+
+$ bin/fm-branch-outcome.sh append --task trailing-newline
+ --verdict routine --summary must refuse
+exit=2 elapsed=0.060s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | processed-init [--held-lock] | list [--recent <n>] | startup-replay
+
+$ bin/fm-wake-drain.sh
+exit=0 elapsed=3.194s
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+fresh done: new result survives legacy migration
+
+$ bin/fm-branch-outcome.sh unprocessed
+exit=0 elapsed=0.489s
+{"seq":2,"epoch":2,"task":"old task label","wake":"","verdict":"captain","summary":"retain this decision","silent":false}
+
+PASS: both explicit recovery and automatic drain recovery handled legacy labels, preserved history/acknowledgements, exposed the outstanding captain decision, and refused unsafe new labels.
+ALL LIVE SCENARIOS PASSED; no harness CLI, fake backend, production home, or default session used.
+Cleanup: disposable lab homes removed.
