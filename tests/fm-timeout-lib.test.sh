@@ -233,7 +233,7 @@ test_a_named_owner_that_is_gone_ends_the_command() {
 # fm_exec_timed - the watchdog then starts already reparented - is still
 # detected instead of leaving the command running to its bound.
 test_an_owner_that_dies_during_startup_ends_the_command() {
-  local dir watchdog started
+  local dir watchdog started pid
   dir="$TMP_ROOT/startup-owner"
   mkdir -p "$dir"
   # shellcheck disable=SC2016
@@ -242,7 +242,7 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
     (
       perl -e "print getppid(), qq(\\n)" > "$2/watchdog"
       while kill -0 "$$" 2>/dev/null; do sleep 0.05; done
-      fm_exec_timed 60 1 bash -c "exec sleep 300"
+      fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
     ) >/dev/null 2>&1 &
     exit 0
   ' _ "$ROOT" "$dir"
@@ -251,6 +251,10 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
   started=$SECONDS
   while kill -0 "$watchdog" 2>/dev/null; do
     if [ "$((SECONDS - started))" -ge 15 ]; then
+      if [ -s "$dir/pid" ]; then
+        pid=$(cat "$dir/pid")
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
       kill -KILL "$watchdog" 2>/dev/null || true
       fail "a watchdog whose owner died during startup ran on toward its bound"
     fi
@@ -263,7 +267,7 @@ test_an_owner_that_dies_during_startup_ends_the_command() {
 # Capture its parent before exec: that parent can exit while the top-level
 # shell is still on its way into the watchdog.
 test_a_top_level_parent_that_dies_during_startup_ends_the_command() {
-  local dir watchdog started
+  local dir watchdog started pid
   dir="$TMP_ROOT/top-level-parent"
   mkdir -p "$dir"
   PATH=$PERL_ONLY bash -c '
@@ -271,7 +275,7 @@ test_a_top_level_parent_that_dies_during_startup_ends_the_command() {
       . "$1/bin/fm-timeout-lib.sh"
       echo "$$" > "$2/watchdog"
       while kill -0 "$PPID" 2>/dev/null; do sleep 0.05; done
-      fm_exec_timed 60 1 bash -c "exec sleep 300"
+      fm_exec_timed 60 1 bash -c "echo \$\$ > \"\$1\"; exec sleep 300" _ "$2/pid"
     '\'' _ "$1" "$2" >/dev/null 2>&1 &
     while [ ! -s "$2/watchdog" ]; do sleep 0.02; done
     exit 0
@@ -281,6 +285,10 @@ test_a_top_level_parent_that_dies_during_startup_ends_the_command() {
   started=$SECONDS
   while kill -0 "$watchdog" 2>/dev/null; do
     if [ "$((SECONDS - started))" -ge 15 ]; then
+      if [ -s "$dir/pid" ]; then
+        pid=$(cat "$dir/pid")
+        kill -KILL -- "-$pid" 2>/dev/null || true
+      fi
       kill -KILL "$watchdog" 2>/dev/null || true
       fail "top-level watchdog lost its pre-exec parent and ran toward its bound"
     fi
