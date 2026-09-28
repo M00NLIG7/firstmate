@@ -1626,6 +1626,49 @@ test_record_reader_preserves_last_literal_value() {
   pass "record reader preserves literal values and silent read failure"
 }
 
+test_resolved_escalation_retries_missing_close_on_tick() (
+  local home state corr rec status close round
+  home=$(setup_parent resolved-close-retry)
+  state="$home/state"
+  status="$state/hibit.status"
+  export FM_HOME="$home" FM_STATE_OVERRIDE="$state"
+  export FM_PENDING_REPLY_NOW=9800 FM_PENDING_REPLY_SEND_HOOK=true
+  corr=$(fm_pending_reply_create "$home" "$state" hibit "retry missing close")
+  rec=$(fm_pending_reply_path "$state" "$corr")
+  fm_pending_reply_mark_delivered "$state" "$corr" || fail "mark delivered failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" request
+  fm_pending_reply_send_recovery "$state" "$corr" || fail "recovery send failed"
+  fm_pending_reply_mark_turn_completed "$state" "$corr" recovery
+  fm_pending_reply_maybe_escalate "$state" "$corr" || fail "escalation should fire"
+  [ -n "$(fm_pending_reply_get "$rec" escalated_epoch)" ] \
+    || fail "fixture must have a durable escalation"
+
+  # Persist the state left by interruption after resolution but before its close.
+  printf 'done [corr=%s]: delayed reply\n' "$corr" >> "$status"
+  fm_pending_reply_set "$rec" phase resolved || fail "could not seed resolved phase"
+  fm_pending_reply_set "$rec" resolved_epoch 9800 || fail "could not seed resolution time"
+  fm_pending_reply_set "$rec" resolved_via status || fail "could not seed resolution source"
+  [ -z "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" ] \
+    || fail "fixture must start without a closing receipt"
+  [ "$(status_open_decisions "$status" | cut -f1)" = "pending-reply-$corr" ] \
+    || fail "fixture must leave its escalation decision open"
+  close="resolved [key=pending-reply-$corr]: pending-reply-resolved: task=hibit pending-reply-id=$corr via=status"
+  assert_no_grep "pending-reply-resolved:" "$status" "fixture must start without a close"
+
+  for round in 1 2; do
+    export FM_PENDING_REPLY_NOW=$((9800 + round))
+    fm_pending_reply_tick "$state" || fail "close reconciliation tick failed"
+    [ "$(phase_of "$state" "$corr")" = resolved ] || fail "tick changed resolved phase"
+    [ "$(fm_pending_reply_get "$rec" escalation_closed_epoch)" = 9801 ] \
+      || fail "tick must write the missing closing receipt once"
+    [ "$(sed -E 's/ \[at=[0-9]+\]//' "$status" | grep -Fxc "$close")" = 1 ] \
+      || fail "tick must publish exactly one matching resolution"
+    [ -z "$(status_open_decisions "$status")" ] \
+      || fail "tick left the escalation decision open"
+  done
+  pass "resolved escalations retry missing closes on tick without duplicates"
+)
+
 test_settled_history_does_not_wait_for_correlation_locks() (
   local home state corr lock
   home=$(setup_parent settled-history)
@@ -1655,6 +1698,7 @@ test_settled_history_does_not_wait_for_correlation_locks() (
 # --- run --------------------------------------------------------------------
 
 test_record_reader_preserves_last_literal_value
+test_resolved_escalation_retries_missing_close_on_tick || exit 1
 test_settled_history_does_not_wait_for_correlation_locks
 test_normal_correlated_reply_resolves_once
 test_completed_turn_no_report_triggers_one_recovery
