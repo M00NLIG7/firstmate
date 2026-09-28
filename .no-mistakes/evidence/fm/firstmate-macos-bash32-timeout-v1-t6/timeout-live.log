@@ -1,0 +1,153 @@
+GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+Copyright (C) 2007 Free Software Foundation, Inc.
+
+Darwin arm64
+
+All product calls use real Bash, Perl, and child processes; no runner stubs.
+BASE REPRODUCTION: exit=127; stdout=''; stderr='/Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/base-lib.sh: line 224: BASHPID: unbound variable\n'
+
+BASH32 STATUS top-level 0
+$ /bin/bash -c '. "$1"; fm_exec_timed 5 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2'
+exit=0; elapsed=0.115s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS top-level 7
+$ /bin/bash -c '. "$1"; fm_exec_timed 5 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; exit 7'
+exit=7; elapsed=0.142s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS top-level 137
+$ /bin/bash -c '. "$1"; fm_exec_timed 5 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; kill -KILL $$'
+exit=137; elapsed=0.100s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS top-level 143
+$ /bin/bash -c '. "$1"; fm_exec_timed 5 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; kill -TERM $$'
+exit=143; elapsed=0.108s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS subshell 0
+$ /bin/bash -c '. "$1"; ( fm_exec_timed 5 1 /bin/bash -c "$2" ); rc=$?; exit "$rc"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2'
+exit=0; elapsed=0.151s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS subshell 7
+$ /bin/bash -c '. "$1"; ( fm_exec_timed 5 1 /bin/bash -c "$2" ); rc=$?; exit "$rc"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; exit 7'
+exit=7; elapsed=0.189s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS subshell 137
+$ /bin/bash -c '. "$1"; ( fm_exec_timed 5 1 /bin/bash -c "$2" ); rc=$?; exit "$rc"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; kill -KILL $$'
+exit=137; elapsed=0.168s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+BASH32 STATUS subshell 143
+$ /bin/bash -c '. "$1"; ( fm_exec_timed 5 1 /bin/bash -c "$2" ); rc=$?; exit "$rc"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo command-ran; echo command-stderr >&2; kill -TERM $$'
+exit=143; elapsed=0.170s; stdout='command-ran\n'; stderr='command-stderr\n'
+
+EXEC REPLACEMENT top-level
+$ /bin/bash -c '. "$1"; echo $$ > "$2"; fm_exec_timed 5 1 /bin/bash -c '"'"'echo parent=$PPID'"'"'' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/replace-top-level
+exit=0; elapsed=0.099s; stdout='parent=36921\n'; stderr=''
+pre-exec shell PID equals bounded command parent PID
+
+EXEC REPLACEMENT subshell
+$ /bin/bash -c '. "$1"; ( /usr/bin/perl -e '"'"'print getppid(), "\n"'"'"' > "$2"; fm_exec_timed 5 1 /bin/bash -c '"'"'echo parent=$PPID'"'"' ); rc=$?; exit "$rc"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/replace-subshell
+exit=0; elapsed=0.118s; stdout='parent=37089\n'; stderr=''
+pre-exec shell PID equals bounded command parent PID
+
+DEADLINE cooperative child
+$ /bin/bash -c '. "$1"; fm_exec_timed 1 "$2" /bin/bash -c "$3" _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 5 'echo $$ > "$1"; exec /bin/sleep 20' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/cooperative-child
+exit=124; elapsed=1.267s; stdout=''; stderr=''
+process 37350: alive=False
+
+DEADLINE TERM-ignoring child
+$ /bin/bash -c '. "$1"; fm_exec_timed 1 "$2" /bin/bash -c "$3" _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 1 'trap "" TERM; echo $$ > "$1"; exec /bin/sleep 20' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/TERM-ignoring-child
+exit=124; elapsed=2.189s; stdout=''; stderr=''
+process 38948: alive=False
+
+DEADLINE output-holding descendant
+$ /bin/bash -c '. "$1"; fm_exec_timed 1 "$2" /bin/bash -c "$3" _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 5 '( trap "" TERM; exec /bin/sleep 20 ) & echo $! > "$1"; wait' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/output-holding-descendant
+exit=124; elapsed=1.228s; stdout=''; stderr=''
+process 43253: alive=False
+
+FORWARD TERM
+$ /bin/bash -c '. "$1"; fm_exec_timed 20 1 /bin/bash -c "$2" _ "$3"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'trap "echo forwarded-TERM; exit 3" TERM; echo $$ > "$1"; while :; do /bin/sleep .1; done' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/signal-TERM
+signalled watchdog=45359; child=45679; exit=3; stdout='forwarded-TERM\n'; stderr='Terminated: 15\n'
+process 45679: alive=False
+
+FORWARD INT
+$ /bin/bash -c '. "$1"; fm_exec_timed 20 1 /bin/bash -c "$2" _ "$3"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'trap "echo forwarded-INT; exit 3" INT; echo $$ > "$1"; while :; do /bin/sleep .1; done' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/signal-INT
+signalled watchdog=45964; child=46225; exit=3; stdout='forwarded-INT\n'; stderr=''
+process 46225: alive=False
+
+FORWARD HUP
+$ /bin/bash -c '. "$1"; fm_exec_timed 20 1 /bin/bash -c "$2" _ "$3"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'trap "echo forwarded-HUP; exit 3" HUP; echo $$ > "$1"; while :; do /bin/sleep .1; done' /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/signal-HUP
+signalled watchdog=46454; child=47496; exit=3; stdout='forwarded-HUP\n'; stderr='Hangup: 1\n'
+process 47496: alive=False
+
+OWNER DEATH top-level startup
+$ /bin/bash -c '/bin/bash -c "$5" _ "$1" "$2" "$3" "$4" & while :; do /bin/sleep .02; done' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/top-levelstartup-watchdog /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/top-levelstartup-child 'echo $$ > "$1"; exec /bin/sleep 20' '. "$1"; echo $$ > "$2"; while kill -0 "$PPID" 2>/dev/null; do /bin/sleep .02; done; fm_exec_timed 20 1 /bin/bash -c "$4" _ "$3"'
+killed owner=47860; watchdog=47973; child=None; drain=1.180s; stdout=''; stderr=''
+process 47973: alive=False
+process 48303: alive=False
+unrelated sentinel=47850 remains alive
+
+OWNER DEATH top-level running
+$ /bin/bash -c '/bin/bash -c "$5" _ "$1" "$2" "$3" "$4" & while :; do /bin/sleep .02; done' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/top-levelrunning-watchdog /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/top-levelrunning-child 'echo $$ > "$1"; exec /bin/sleep 20' '. "$1"; echo $$ > "$2"; fm_exec_timed 20 1 /bin/bash -c "$4" _ "$3"'
+killed owner=50103; watchdog=50123; child=50223; drain=0.104s; stdout=''; stderr=''
+process 50123: alive=False
+process 50223: alive=False
+unrelated sentinel=47850 remains alive
+
+OWNER DEATH subshell startup
+$ /bin/bash -c '. "$1"; ( /usr/bin/perl -e '"'"'print getppid(), "\n"'"'"' > "$2"; while kill -0 "$$" 2>/dev/null; do /bin/sleep .02; done; fm_exec_timed 20 1 /bin/bash -c "$4" _ "$3" ) & while :; do /bin/sleep .02; done' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/subshellstartup-watchdog /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/subshellstartup-child 'echo $$ > "$1"; exec /bin/sleep 20' ''
+killed owner=50507; watchdog=50551; child=None; drain=0.291s; stdout=''; stderr=''
+process 50551: alive=False
+unrelated sentinel=47850 remains alive
+
+OWNER DEATH subshell running
+$ /bin/bash -c '. "$1"; ( /usr/bin/perl -e '"'"'print getppid(), "\n"'"'"' > "$2"; fm_exec_timed 20 1 /bin/bash -c "$4" _ "$3" ) & while :; do /bin/sleep .02; done' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/subshellrunning-watchdog /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/subshellrunning-child 'echo $$ > "$1"; exec /bin/sleep 20' ''
+killed owner=51153; watchdog=51188; child=51382; drain=0.149s; stdout=''; stderr=''
+process 51188: alive=False
+process 51382: alive=False
+unrelated sentinel=47850 remains alive
+
+EXPLICIT DEAD OWNER
+$ /bin/bash -c '. "$1"; fm_exec_timed 20 1 /bin/sleep 20' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh
+exit=137; elapsed=1.232s; stdout=''; stderr=''
+
+INVALID BOUND
+$ /bin/bash -c '. "$1"; fm_exec_timed "$2" "$3" /bin/bash -c '"'"'echo ran > "$1"'"'"' _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 0 1 /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/must-not-run
+exit=125; elapsed=0.013s; stdout=''; stderr='fm_exec_timed: usage: fm_exec_timed <positive-seconds> <positive-grace-seconds> <command> [args...]\n'
+
+INVALID BOUND
+$ /bin/bash -c '. "$1"; fm_exec_timed "$2" "$3" /bin/bash -c '"'"'echo ran > "$1"'"'"' _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 1 0 /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/must-not-run
+exit=125; elapsed=0.018s; stdout=''; stderr='fm_exec_timed: usage: fm_exec_timed <positive-seconds> <positive-grace-seconds> <command> [args...]\n'
+
+INVALID BOUND
+$ /bin/bash -c '. "$1"; fm_exec_timed "$2" "$3" /bin/bash -c '"'"'echo ran > "$1"'"'"' _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 01 1 /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/must-not-run
+exit=125; elapsed=0.019s; stdout=''; stderr='fm_exec_timed: usage: fm_exec_timed <positive-seconds> <positive-grace-seconds> <command> [args...]\n'
+
+INVALID BOUND
+$ /bin/bash -c '. "$1"; fm_exec_timed "$2" "$3" /bin/bash -c '"'"'echo ran > "$1"'"'"' _ "$4"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 1 x /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/must-not-run
+exit=125; elapsed=0.017s; stdout=''; stderr='fm_exec_timed: usage: fm_exec_timed <positive-seconds> <positive-grace-seconds> <command> [args...]\n'
+
+NO BOUNDING BACKEND
+$ /bin/bash -c '. "$1"; fm_exec_timed 1 1 /bin/bash -c '"'"'echo ran > "$1"'"'"' _ "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/.timeout-live-xf6lakek/must-not-run
+exit=127; elapsed=0.018s; stdout=''; stderr='fm_exec_timed: cannot bound bash within 1s: none of perl, timeout, or gtimeout is available\n'
+Requested command never executed on refused calls.
+
+RUN_TIMED REAL PERL 0
+$ /bin/bash -c '. "$1"; fm_run_timed 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'echo completed'
+exit=0; elapsed=0.062s; stdout='completed\n'; stderr=''
+
+RUN_TIMED REAL PERL 7
+$ /bin/bash -c '. "$1"; fm_run_timed 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'exit 7'
+exit=7; elapsed=0.066s; stdout=''; stderr=''
+
+RUN_TIMED REAL PERL 137
+$ /bin/bash -c '. "$1"; fm_run_timed 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'kill -KILL $$'
+exit=137; elapsed=0.056s; stdout=''; stderr=''
+
+RUN_TIMED REAL PERL 143
+$ /bin/bash -c '. "$1"; fm_run_timed 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'kill -TERM $$'
+exit=143; elapsed=0.046s; stdout=''; stderr=''
+
+RUN_TIMED REAL PERL 124
+$ /bin/bash -c '. "$1"; fm_run_timed 1 /bin/bash -c "$2"' _ /Users/cmagana/.no-mistakes/worktrees/3fd0309db9ff/01M3MGGNHDMF3XK9V987HH3479/bin/fm-timeout-lib.sh 'exec /bin/sleep 20'
+exit=124; elapsed=1.373s; stdout=''; stderr=''
+
+All manual product scenarios passed; transient inputs cleaned.
