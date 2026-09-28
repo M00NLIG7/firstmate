@@ -15,3 +15,4 @@ ok - held-lock initialization rejects callers outside the lock owner's process t
 ok - held-lock initialization accepts a descendant of the outcome lock owner
 ok - index self-heal runs only while the outcome lock is held
 ok - an over-bound unclassifiable routine event stays silent
+ok - the outcome backstop caps each item and its total task output deterministically

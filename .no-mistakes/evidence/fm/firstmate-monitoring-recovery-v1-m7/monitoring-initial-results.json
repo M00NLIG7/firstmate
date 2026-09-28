@@ -1,0 +1,27 @@
+[
+  {
+    "name": "unchanged-base settled-lock reproduction",
+    "result": "pass"
+  },
+  {
+    "name": "candidate notification delivery past settled locks",
+    "result": "pass"
+  },
+  {
+    "name": "interrupted escalation close converges exactly once",
+    "result": "fail",
+    "reason": ""
+  },
+  {
+    "name": "unread status cursors preserve literal notifications",
+    "result": "pass"
+  },
+  {
+    "name": "unchanged-base historical-label reproduction",
+    "result": "pass"
+  },
+  {
+    "name": "legacy history migration and unsafe-write guards",
+    "result": "pass"
+  }
+]

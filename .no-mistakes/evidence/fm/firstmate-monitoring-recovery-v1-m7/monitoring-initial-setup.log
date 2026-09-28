@@ -1,0 +1,142 @@
+Candidate 31f6e7803faf0ac1c1935888f370bade261acfe8
+Baseline uses the same executable script graph with the three changed production files restored byte-for-byte from d5c2507ab4cac59b1103134140af4fe0934bd0da
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/base-settled
+exit=0 elapsed=0.822s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/base-settled
+
+
+SCENARIO base-settled: 128 settled records, two genuinely held correlation locks, literal duplicate fields and unterminated final values
+UNCHANGED BASE REPRODUCTION: no notification within 8 seconds; beacon stopped advancing while the settled-record lock holder remained alive.
+All 128 original record SHA-256 hashes and the local-work sentinel remained unchanged.
+Owned watcher process group stopped; both correlation locks released.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-settled
+exit=0 elapsed=0.091s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-settled
+
+
+SCENARIO candidate-settled: 128 settled records, two genuinely held correlation locks, literal duplicate fields and unterminated final values
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-watch.sh
+exit=0 elapsed=10.027s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-settled/state/fresh.status
+
+Watcher state files: .hb-surfaced-fresh, .heartbeat-streak, .inactive-outcome-reconcile, .last-check, .last-heartbeat, .last-watcher-beat, .pending-reply-0000000000000001.lock, .pending-reply-0000000000000001.lock.owner.D4MG9z, .pending-reply-0000000000000002.lock, .pending-reply-0000000000000002.lock.owner.kglauX, .secondmate-liveness-tick, .seen-fresh_status, .wake-queue, .wake-queue.seq, .watch-deliveries.log, .watcher-down, fresh.status, home-summary.json, pending-replies, terminal-outcomes
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh
+exit=0 elapsed=3.526s
+1790625303	2	signal	fresh.status	signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-settled/state/fresh.status
+wake annotation: latest wake-EVENT observed at drain, not current state: fresh.status: done: fresh completion while historical locks remain held
+STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+fresh done: fresh completion while historical locks remain held
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 83656.1790625302.z8pJDq
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 83656.1790625302.z8pJDq
+exit=0 elapsed=0.836s
+
+Fresh notification presented while both locks stayed owned; delivery latency 10.027s.
+All 128 original record SHA-256 hashes and the local-work sentinel remained unchanged.
+Owned watcher process group stopped; both correlation locks released.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/closure-retry
+exit=0 elapsed=0.053s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/closure-retry
+
+
+SCENARIO closure retry: a resolved reply whose previous escalation still lacks its closing receipt
+$ bash -c . "$1/bin/fm-pending-reply-lib.sh"; fm_pending_reply_create "$FM_HOME" "$FM_HOME/state" mate "retain = \literal request" _ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP
+exit=0 elapsed=0.371s
+2306afd479ec7c4a
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-watch.sh
+exit=0 elapsed=6.548s
+signal: /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/closure-retry/state/fresh.status /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/closure-retry/state/mate.status
+
+Persisted parent status after actual watcher tick:
+blocked [key=pending-reply-2306afd479ec7c4a]: pending-reply-missed: task=mate pending-reply-id=2306afd479ec7c4a request=retain it
+
+FAILED interrupted escalation close converges exactly once: AssertionError()
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/unread-status
+exit=0 elapsed=0.052s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/unread-status
+
+
+SCENARIO unread presentation: multiple tasks, successive notes, and independent notification cursors
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh
+exit=0 elapsed=5.091s
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+alpha note: alpha initial message
+beta note: beta initial message
+gamma note: gamma initial message
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh
+exit=0 elapsed=4.608s
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+alpha note: alpha answer = literal \path
+alpha note: alpha trailing acknowledgement
+beta note: beta answer = literal \path
+beta note: beta trailing acknowledgement
+gamma note: gamma answer = literal \path
+gamma note: gamma trailing acknowledgement
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh
+exit=0 elapsed=3.782s
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-wake-drain.sh
+exit=0 elapsed=4.527s
+UNREAD STATUS (new since last drain, not re-printed after this presentation):
+beta note: beta follow-up after presentation
+
+Each unread line was displayed once; a later beta append surfaced without replaying the other tasks.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/base-history
+exit=0 elapsed=0.074s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/base-history
+
+
+SCENARIO base-history: rebuild derived indexes from historical labels without consuming decisions or rewriting history
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/unchanged-base/bin/fm-branch-outcome.sh processed-init
+exit=1 elapsed=1.024s
+error: outcome index migration could not be completed safely
+
+UNCHANGED BASE REPRODUCTION: valid legacy labels prevent processed-init; history and cursors remain preserved.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-history
+exit=0 elapsed=0.062s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-history
+
+
+SCENARIO candidate-history: rebuild derived indexes from historical labels without consuming decisions or rewriting history
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh processed-init
+exit=0 elapsed=0.798s
+
+Generated index paths: [".task-1.branch-outcome-index", ".task-2.branch-outcome-index"]
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh unprocessed
+exit=0 elapsed=0.543s
+{"seq":2,"epoch":2,"task":"old task label","wake":"","verdict":"captain","summary":"retain this decision","silent":false,"recordedAgo":"20724d"}
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh append --task new invalid label --verdict routine --summary must be refused
+exit=2 elapsed=0.064s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | lookup --seqs <n,...> | startup-replay
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh append --task ../escape --verdict routine --summary must be refused
+exit=2 elapsed=0.059s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | lookup --seqs <n,...> | startup-replay
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh append --task new
+ --verdict routine --summary must be refused
+exit=2 elapsed=0.072s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | lookup --seqs <n,...> | startup-replay
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh append --task new	label --verdict routine --summary must be refused
+exit=2 elapsed=0.064s
+usage: fm-branch-outcome.sh append --task <id> --verdict routine|captain --summary <text> [--wake <text>] [--silent true|false] | unread | mark-read --through <seq> | unprocessed | mark-processed --through <seq> | present | processed-init [--held-lock] | list [--recent <n>] | lookup --seqs <n,...> | startup-replay
+
+Authoritative history SHA-256 remains 45a8b8e4cde19271e41163a2a672d7158063acc4aab5513875e596bfd8bbb126; cursor=2; processed=1; legacy captain decision is still deliverable.
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh append --task valid-task --verdict routine --summary valid new notification
+exit=0 elapsed=0.554s
+8
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-lab-home.sh create /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-history-corrupt
+exit=0 elapsed=0.074s
+/Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/.test-monitoring/live/candidate-history-corrupt
+
+$ /Users/cmagana/.no-mistakes/worktrees/48ce38e9c45c/01M3MREKC49SGBXWF3FAQYRBSP/bin/fm-branch-outcome.sh processed-init
+exit=1 elapsed=0.401s
+error: refusing processed initialization because the outcome store is malformed or non-sequential
+
+Duplicate sequence corruption remains refused without publishing a ready index or changing the store.
+Removed all disposable lab homes and the baseline code copy.
