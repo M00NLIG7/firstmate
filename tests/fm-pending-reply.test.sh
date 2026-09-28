@@ -1631,7 +1631,8 @@ test_resolved_escalation_retries_missing_close_on_tick() (
   home=$(setup_parent resolved-close-retry)
   state="$home/state"
   status="$state/hibit.status"
-  export FM_HOME="$home" FM_STATE_OVERRIDE="$state"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$state"
+  export FM_HOME FM_STATE_OVERRIDE
   export FM_PENDING_REPLY_NOW=9800 FM_PENDING_REPLY_SEND_HOOK=true
   corr=$(fm_pending_reply_create "$home" "$state" hibit "retry missing close")
   rec=$(fm_pending_reply_path "$state" "$corr")
@@ -1673,7 +1674,8 @@ test_settled_history_does_not_wait_for_correlation_locks() (
   local home state corr lock
   home=$(setup_parent settled-history)
   state="$home/state"
-  export FM_HOME="$home" FM_STATE_OVERRIDE="$state"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$state"
+  export FM_HOME FM_STATE_OVERRIDE
   . "$ROOT/bin/fm-wake-lib.sh"
   . "$ROOT/bin/fm-timeout-lib.sh"
   mkdir -p "$state/pending-replies"
